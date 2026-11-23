@@ -101,6 +101,24 @@ web, and mobile. To inspect the redacted event, load output for the first page o
 Review steps still require a person. A preview never starts work, and a manual run leaves automatic
 triggers paused.
 
+## Start a Bot automation from an MCP event
+
+Choose **MCP event** as the trigger and use the same Bot for every task step. Enter the exact server
+name from that Bot's MCP resources, the event name, and the subscription arguments as JSON. For this
+trigger, the server must use native HTTP with **MCP-over-ACP** enabled and advertise **poll**
+delivery for the event. Try a dry run before enabling the trigger. Add a Review step where a person
+should inspect the input before work continues.
+
+The runtime polls while the trigger is enabled, even with the clients closed. Events wait while a
+run is active or awaiting review. The saved cursor and pending batch survive a runtime restart. Run
+receipts prevent repeated deliveries while the receipts are retained. Pausing or changing the
+trigger clears its pending events and starts a new observation window when enabled again. The run
+details show the event source. The first page of the run audit can load redacted event input.
+
+An agent can use `studio_automations` with `action: "eventStatus"` and the automation ID to inspect
+the pending count, next poll, replay support, and reported gaps. A replay gap means some upstream
+events may have been missed. The runtime also records it in activity.
+
 ## GitHub event triggers
 
 Select **GitHub event** on the trigger node (desktop/web) or in the mobile editor. Enter the GitHub

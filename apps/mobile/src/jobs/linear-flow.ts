@@ -81,5 +81,6 @@ export function triggerSummary(flow: Automation) {
     return `${scheduleChoices.find((choice) => choice.id === trigger.schedule)?.name ?? trigger.schedule} · ${trigger.timezone}`
   if (trigger?.trigger === 'github')
     return `GitHub · ${githubEventChoices.find((item) => item.id === trigger.github?.event)?.name ?? 'Event'} · ${trigger.github?.repository ?? ''}`
+  if (trigger?.trigger === 'mcp-event') return `MCP event · ${trigger.mcpEvent?.name ?? ''}`
   return trigger?.trigger === 'webhook' ? 'Webhook' : 'Manual'
 }

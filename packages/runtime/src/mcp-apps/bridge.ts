@@ -57,6 +57,7 @@ import type { Approvals } from '../agents/execution/approvals.js'
 import type { RunPolicy } from '../auth/run-credentials.js'
 import { HttpError } from '../errors.js'
 import { mcpEventsCommand, McpEventSubscriptions } from '../mcp-events/subscriptions.js'
+import { McpEventsClient } from '../mcp-events/client.js'
 import {
   object,
   appUri,
@@ -746,6 +747,24 @@ export class McpApps {
     }
   }
   /** Saved monitoring sources can read resources, never call tools or expand the Bot's scope. */
+  monitoringEventSource(taskId: string, name: string, directory: string) {
+    const { server } = this.current(taskId, name, directory)
+    if (server.transport !== 'http' || !server.acpTransport)
+      throw new HttpError(400, 'MCP event triggers need an HTTP server with MCP-over-ACP enabled.')
+    return {
+      identity: createHash('sha256')
+        .update(
+          JSON.stringify([
+            fingerprint(server),
+            directory,
+            Object.entries(mcpHeaders(server)).sort(([a], [b]) => a.localeCompare(b)),
+          ]),
+        )
+        .digest('hex'),
+      client: new McpEventsClient(server),
+    }
+  }
+
   async readMonitoringResource(
     taskId: string,
     server: string,

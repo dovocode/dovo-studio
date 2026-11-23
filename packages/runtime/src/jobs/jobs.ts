@@ -13,6 +13,7 @@ import {
 import type { Services } from '../services.js'
 import type { McpAutomationInput } from '../mcp-events/subscriptions.js'
 import { GithubTriggers } from './github-triggers.js'
+import { McpEventTriggers } from './mcp-event-triggers.js'
 import { GithubEvents } from './github-events.js'
 import type { GitService } from '../scm/git/git.js'
 import { mutableStruct } from '@dovo/protocol'
@@ -79,6 +80,7 @@ export class Jobs {
   private scheduler?: ReturnType<typeof startPolling>
   private githubScheduler?: ReturnType<typeof startPolling>
   private githubTriggers?: GithubTriggers
+  private mcpEventTriggers?: McpEventTriggers
   private unsubscribeBotPolicy: () => void
   private scheduleErrors = new Map<string, string>()
   private next = new Map<
@@ -101,7 +103,8 @@ export class Jobs {
     pollingSeed = '',
   ) {
     createRoutineChangeTable(db)
-    this.unsubscribeBotPolicy = store.onCommitted(() => {
+    this.unsubscribeBotPolicy = store.onCommitted((before, after) => {
+      if (before.automations !== after.automations) this.mcpEventTriggers?.reconcile()
       for (const run of this.runs.values()) {
         if (!['running', 'waiting'].includes(run.status)) continue
         for (const step of runSteps(run)) {
@@ -178,6 +181,22 @@ export class Jobs {
         },
         pollingSeed,
       )
+    if (botServices)
+      this.mcpEventTriggers = new McpEventTriggers(
+        db,
+        () => store.get().automations,
+        async (botId, name) => {
+          this.botTarget(botId)
+          const cwd = await botServices.checkouts.fileDirectory(botId)
+          this.botTarget(botId)
+          return botServices.mcpApps.monitoringEventSource(botId, name, cwd)
+        },
+        (id, key, payload, commit) => {
+          const { name, eventId, timestamp } = payload.event
+          this.start(id, key, payload, commit, { server: payload.server, name, eventId, timestamp })
+        },
+        (id, message) => this.activity?.add('job', id, message),
+      )
     for (const row of db.prepare('SELECT value FROM job_runs').all()) {
       let stored: StoredRun
       try {
@@ -221,6 +240,9 @@ export class Jobs {
   scheduleDiagnostics() {
     return [...this.scheduleErrors.entries()].map(([id, error]) => ({ id, error }))
   }
+  eventStatus(id: string) {
+    return this.mcpEventTriggers?.status(id)
+  }
   startScheduler() {
     if (this.scheduler || this.stopping) return
     this.scheduler = startPolling(
@@ -240,12 +262,12 @@ export class Jobs {
     )
     this.githubScheduler = startPolling(
       Effect.tryPromise(async () => {
-        await this.githubTriggers?.tick()
+        await Promise.all([this.githubTriggers?.tick(), this.mcpEventTriggers?.tick()])
       }),
       {
         interval: 1000,
         immediate: false,
-        onError: (error) => console.error('GitHub triggers failed', error),
+        onError: (error) => console.error('External automation triggers failed', error),
       },
     )
   }
@@ -1683,6 +1705,7 @@ export class Jobs {
   dispose() {
     this.unsubscribeBotPolicy()
     this.githubTriggers?.dispose()
+    this.mcpEventTriggers?.dispose()
     void this.githubScheduler?.stop()
     this.githubScheduler = undefined
     void this.scheduler?.stop()

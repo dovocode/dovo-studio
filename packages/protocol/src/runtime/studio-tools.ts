@@ -188,6 +188,7 @@ export const studioAutomationsCommandSchema = Schema.Union([
     event: mcpAutomationEvent,
   }),
   mutableStruct({ action: Schema.Literals(['runs', 'cancel', 'retry']), id }),
+  mutableStruct({ action: Schema.Literal('eventStatus'), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),
 ])
 const selector = maxValue(minValue(Schema.String, 1), 4096)

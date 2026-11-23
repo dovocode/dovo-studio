@@ -202,7 +202,7 @@ const trigger={id:'trigger',type:'automation',position:{x:0,y:0},data};
 const task={...trigger,id:'task',data:{...data,kind:'task',harness:defaultTaskHarness('codex')}};
 const flow={id:'reminder',name:'Deployment reminder',enabled:false,nodes:[trigger,task],edges:[{id:'edge',source:'trigger',target:'task'}]};
 const workspace={agents:[],tasks:[],repositories:[{id:'repo',name:'App',path:'/app',branch:'main'}]};
-function App(){const[node,setNode]=useState(trigger);const[supported,setSupported]=useState(false);window.supportResults=setSupported;window.selectTask=()=>setNode(task);window.runtime={connected:true,snapshot:{workspace,automationStepResultsSupported:supported||undefined},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
+function App(){const[node,setNode]=useState(trigger);const[supported,setSupported]=useState(false);window.supportResults=setSupported;window.selectTask=()=>setNode(task);window.runtime={connected:true,snapshot:{workspace,automationStepResultsSupported:supported||undefined,mcpEventTriggersSupported:supported||undefined},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -317,6 +317,17 @@ try {
       })),
       { trigger: 'once', runAt: '2026-10-28T09:30', timezone: 'Europe/Amsterdam' },
     )
+    assert.equal(await desktop.locator('option[value="mcp-event"]').count(), 0)
+    await page.evaluate(() => window.supportResults(true))
+    await desktop.getByLabel('Trigger', { exact: true }).selectOption('mcp-event')
+    await desktop.getByLabel('MCP server', { exact: true }).fill('fixture')
+    await desktop.getByLabel('Event name', { exact: true }).fill('incident.created')
+    assert.deepEqual(await page.evaluate(() => window.desktopData.mcpEvent), {
+      server: 'fixture',
+      name: 'incident.created',
+      argumentsJson: '{}',
+    })
+    await page.evaluate(() => window.supportResults(false))
     await page.evaluate(() => window.selectTask())
     const desktopSchema = desktop.getByLabel('Result schema (optional)', { exact: true })
     const mobileSchema = mobile.getByLabel('Result schema (optional)', { exact: true })
@@ -325,6 +336,19 @@ try {
     assert.equal(await desktopSchema.isDisabled(), true)
     assert.equal(await mobileSchema.isDisabled(), true)
     await page.evaluate(() => window.supportResults(true))
+    await page.evaluate(() => window.supportResults(false))
+    assert.equal(await mobile.locator('option[value="mcp-event"]').count(), 0)
+    await page.evaluate(() => window.supportResults(true))
+    await mobile.getByLabel('Trigger', { exact: true }).selectOption('mcp-event')
+    await mobile.getByLabel('MCP server', { exact: true }).fill('fixture')
+    await mobile.getByLabel('Event name', { exact: true }).fill('incident.created')
+    await mobile.getByLabel('Event arguments (JSON)', { exact: true }).fill('{"team":"infra"}')
+    await mobile.getByRole('button', { name: 'Save automation', exact: true }).click()
+    await mobile
+      .getByRole('alert')
+      .filter({ hasText: 'MCP event triggers need one Bot for all task steps.' })
+      .waitFor()
+    assert.equal(await page.evaluate(() => window.saved), undefined)
     const schema = '{"type":"integer"}'
     await desktopSchema.fill(schema)
     assert.equal(await page.evaluate(() => window.desktopData.resultSchema), schema)

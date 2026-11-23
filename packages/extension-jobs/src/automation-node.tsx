@@ -40,7 +40,9 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
               : data.trigger === 'github'
                 ? (githubEventChoices.find((item) => item.id === data.github?.event)?.name ??
                   'GitHub event')
-                : data.trigger
+                : data.trigger === 'mcp-event'
+                  ? `MCP event · ${data.mcpEvent?.name || 'Choose an event'}`
+                  : data.trigger
           : data.kind === 'task'
             ? data.objective || 'Configure thread instructions'
             : 'Pause for your review'}

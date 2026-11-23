@@ -116,6 +116,8 @@ function triggerText(data: AutomationNode['data']) {
       return `One time ${data.runAt?.replace('T', ' ') ?? ''} · ${data.timezone}`
     case 'github':
       return `GitHub ${data.github?.event ?? ''} · ${data.github?.repository ?? ''}`
+    case 'mcp-event':
+      return `MCP event ${data.mcpEvent?.name ?? ''} · ${data.mcpEvent?.server ?? ''}`
     case 'webhook':
       return 'Webhook'
     case 'manual':

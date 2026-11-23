@@ -90,10 +90,12 @@ export function dryRunAutomation(
     return result
   }
   const kind = trigger.data.trigger
+  const eventConfig = trigger.data.mcpEvent
   const automatic = kind !== 'manual'
   // Real runs pass trigger data only for deliveries. Schedules pass their due time to Bot workers.
   const triggerPayload =
-    context.mcpEvent ?? (kind === 'webhook' || kind === 'github' ? input.payload : undefined)
+    context.mcpEvent ??
+    (kind === 'webhook' || kind === 'github' || kind === 'mcp-event' ? input.payload : undefined)
   const monitor = flow.monitor
   const source =
     monitor && input.sourceText
@@ -256,7 +258,9 @@ export function dryRunAutomation(
       name: 'Instructions',
       value: taskStepObjective(data.objective, {
         triggerPayload,
-        mcpEvent: context.mcpEvent,
+        mcpEvent:
+          context.mcpEvent ??
+          (kind === 'mcp-event' && eventConfig ? { server: eventConfig.server } : undefined),
         ...source,
       }),
     })
@@ -305,7 +309,9 @@ function triggerStep(
                 ? 'Webhook delivery'
                 : github
                   ? `GitHub ${githubEventChoices.find((item) => item.id === github.event)?.name ?? github.event} in ${github.repository}`
-                  : 'Manual start',
+                  : data.trigger === 'mcp-event'
+                    ? `MCP event ${data.mcpEvent?.name ?? ''} from ${data.mcpEvent?.server ?? ''}`
+                    : 'Manual start',
       },
     ],
     output:

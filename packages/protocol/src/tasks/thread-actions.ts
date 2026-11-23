@@ -9,7 +9,7 @@ import {
   strictStruct,
 } from '../shared/schema.js'
 
-import { githubTriggerSchema } from '../automation/triggers.js'
+import { githubTriggerSchema, mcpEventTriggerSchema } from '../automation/triggers.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 const actionText = maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000)
@@ -184,12 +184,20 @@ export const automationReviewWorkflowSchema = mutableStruct({
         data: mutableStruct({
           kind: Schema.Literals(['trigger', 'task', 'review']),
           label: Schema.String,
-          trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github']),
+          trigger: Schema.Literals([
+            'manual',
+            'schedule',
+            'once',
+            'webhook',
+            'github',
+            'mcp-event',
+          ]),
           schedule: Schema.String,
           timezone: Schema.String,
           runAt: Schema.optional(Schema.String),
           objective: Schema.String,
           github: Schema.optional(githubTriggerSchema),
+          mcpEvent: Schema.optional(mcpEventTriggerSchema),
         }),
       }),
     ),

@@ -109,6 +109,17 @@ export function automationDryRunDefaults(
     }
   }
   if (flow.monitor) input.sourceText = 'Sample source content'
+  if (data?.trigger === 'mcp-event')
+    input.payload = {
+      source: 'mcp-event',
+      server: data.mcpEvent?.server ?? '',
+      event: {
+        eventId: 'dry-run',
+        name: data.mcpEvent?.name ?? '',
+        timestamp: new Date(now).toISOString(),
+        data: {},
+      },
+    }
   return input
 }
 
@@ -132,7 +143,7 @@ export type AutomationDryRunFields = ReturnType<typeof automationDryRunFields>
 export function automationDryRunFieldUse(flow: Pick<Automation, 'nodes' | 'monitor'>) {
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')?.data.trigger
   return {
-    payload: trigger === 'webhook' || trigger === 'github',
+    payload: trigger === 'webhook' || trigger === 'github' || trigger === 'mcp-event',
     scheduledFor: trigger === 'schedule' || trigger === 'once',
     source: !!flow.monitor,
     /** Steps that can fail or be rejected. */

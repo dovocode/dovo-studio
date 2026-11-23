@@ -1,6 +1,11 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
-import { defaultGithubTrigger, githubEventChoices, automationScheduleChoices } from '@dovo/protocol'
+import {
+  defaultGithubTrigger,
+  defaultMcpEventTrigger,
+  githubEventChoices,
+  automationScheduleChoices,
+} from '@dovo/protocol'
 import {
   resolveScopedAgents,
   type RuntimeDefaults,
@@ -63,12 +68,16 @@ export function NodeInspector({
                   value === 'schedule' ||
                   value === 'once' ||
                   value === 'webhook' ||
-                  value === 'github'
+                  value === 'github' ||
+                  (value === 'mcp-event' && snapshot?.mcpEventTriggersSupported)
                 )
                   field({
                     trigger: value,
                     ...(value === 'github'
                       ? { github: data.github ?? { ...defaultGithubTrigger } }
+                      : {}),
+                    ...(value === 'mcp-event'
+                      ? { mcpEvent: data.mcpEvent ?? defaultMcpEventTrigger }
                       : {}),
                   })
               }}
@@ -78,6 +87,12 @@ export function NodeInspector({
               <option value="once">One time</option>
               <option value="webhook">External webhook</option>
               <option value="github">GitHub event</option>
+              {snapshot?.mcpEventTriggersSupported && <option value="mcp-event">MCP event</option>}
+              {data.trigger === 'mcp-event' && !snapshot?.mcpEventTriggersSupported && (
+                <option value="mcp-event" disabled>
+                  MCP event · Update runtime
+                </option>
+              )}
             </ChoicePicker>
           </FormField>
           {data.trigger === 'once' && (
@@ -135,6 +150,52 @@ export function NodeInspector({
                 <Input
                   value={data.timezone}
                   onChange={(event) => field({ timezone: event.target.value })}
+                />
+              </FormField>
+            </>
+          )}
+          {data.trigger === 'mcp-event' && snapshot?.mcpEventTriggersSupported && (
+            <>
+              <FormField label="MCP server">
+                <Input
+                  aria-label="MCP server"
+                  value={data.mcpEvent?.server ?? ''}
+                  onChange={(event) =>
+                    field({
+                      mcpEvent: {
+                        ...(data.mcpEvent ?? defaultMcpEventTrigger),
+                        server: event.target.value,
+                      },
+                    })
+                  }
+                />
+              </FormField>
+              <FormField label="Event name">
+                <Input
+                  aria-label="Event name"
+                  value={data.mcpEvent?.name ?? ''}
+                  onChange={(event) =>
+                    field({
+                      mcpEvent: {
+                        ...(data.mcpEvent ?? defaultMcpEventTrigger),
+                        name: event.target.value,
+                      },
+                    })
+                  }
+                />
+              </FormField>
+              <FormField label="Event arguments (JSON)">
+                <Textarea
+                  aria-label="Event arguments (JSON)"
+                  value={data.mcpEvent?.argumentsJson ?? '{}'}
+                  onChange={(event) =>
+                    field({
+                      mcpEvent: {
+                        ...(data.mcpEvent ?? defaultMcpEventTrigger),
+                        argumentsJson: event.target.value,
+                      },
+                    })
+                  }
                 />
               </FormField>
             </>

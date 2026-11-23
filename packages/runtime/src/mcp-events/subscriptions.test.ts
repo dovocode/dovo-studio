@@ -567,3 +567,116 @@ it('resumes an HTTP event stream from its saved heartbeat and skips replayed eve
     removed: true,
   })
 })
+
+it('starts an idle Bot automation from native HTTP polling and stops at its human review gate', async () => {
+  const { startRuntime } = await import('../index.js')
+  const { fixture } = await import('../testing/fixture.js')
+  const url = await endpoint((input, _request, response) => {
+    const result =
+      input.method === 'server/discover'
+        ? discover
+        : input.method === 'events/list'
+          ? { resultType: 'complete', events: [{ ...descriptor, delivery: ['poll'] }] }
+          : input.params.cursor === null
+            ? { resultType: 'complete', cursor: 'start', events: [], nextPollMs: 1000 }
+            : {
+                resultType: 'complete',
+                cursor: 'observed',
+                nextPollMs: 1000,
+                events: [{ eventId: 'idle-event', name, timestamp, data }],
+              }
+    response
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ jsonrpc: '2.0', id: input.id, result }))
+  })
+  const f = await fixture()
+  cleanup.push(f.cleanup)
+  f.workspace.agents[0].resources = {
+    mcpServers: [
+      decode(mcpServerSchema, {
+        name: 'fixture',
+        enabled: true,
+        transport: 'http',
+        url,
+        acpTransport: true,
+      }),
+    ],
+    skills: [],
+  }
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    port: 0,
+    ownerToken: 'test-owner-secret',
+  })
+  cleanup.push(async () => {
+    await runtime.close()
+  })
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const bot = s.tasks.create({
+    title: 'Idle Bot',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  s.store.updateTask(bot.id, (task) => ({
+    ...task,
+    bot: {
+      role: 'Triage',
+      responsibilities: 'Summarize incidents.',
+      state: 'active',
+      revision: 'b5ea8f85-16c2-4db8-a6e4-de7467981644',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  }))
+  const flow = decode(automationSchema, {
+    id: 'idle-flow',
+    name: 'Incident triage',
+    enabled: true,
+    nodes: ['trigger', 'review', 'task'].map((kind, index) => ({
+      id: kind,
+      type: 'automation',
+      position: { x: index, y: 0 },
+      data: {
+        kind,
+        label: kind,
+        trigger: 'mcp-event',
+        schedule: '',
+        timezone: 'UTC',
+        objective: 'Summarize the incident',
+        agentId: '',
+        repositoryId: '',
+        ...(kind === 'trigger'
+          ? {
+              mcpEvent: { server: 'fixture', name, argumentsJson: JSON.stringify(args) },
+            }
+          : undefined),
+        ...(kind === 'task' ? { botId: bot.id } : undefined),
+      },
+    })),
+    edges: [
+      { id: 'a', source: 'trigger', target: 'review' },
+      { id: 'b', source: 'review', target: 'task' },
+    ],
+  })
+  s.store.update((workspace) => ({ ...workspace, automations: [flow] }))
+  await vi.waitFor(
+    () =>
+      expect(s.jobs.list()).toMatchObject([
+        {
+          status: 'waiting',
+          waitingNodeId: 'review',
+          taskIds: [],
+          mcpEvent: { server: 'fixture', eventId: 'idle-event' },
+        },
+      ]),
+    { timeout: 7000 },
+  )
+  expect(s.store.taskSummary(bot.id).activeRunId).toBeUndefined()
+  expect(s.jobs.eventStatus(flow.id)).toMatchObject({
+    enabled: true,
+    pending: 0,
+    replayAvailable: true,
+  })
+})

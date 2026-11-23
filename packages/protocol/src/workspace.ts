@@ -11,7 +11,7 @@ import {
   threadWatchSummarySchema,
   threadWatchCountsSchema,
 } from './tasks/thread-watches.js'
-import { githubTriggerSchema } from './automation/triggers.js'
+import { githubTriggerSchema, mcpEventTriggerSchema } from './automation/triggers.js'
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct, strictStruct } from './shared/schema.js'
@@ -1143,10 +1143,11 @@ export const nodeDataSchema = mutableStruct({
   resultSchema: Schema.optional(maxValue(Schema.String, 32000)),
   kind: Schema.Literals(['trigger', 'task', 'review']),
   label: Schema.String,
-  trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github']),
+  trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github', 'mcp-event']),
   /** Local date/time (YYYY-MM-DDTHH:mm), interpreted in timezone. */
   runAt: Schema.optional(Schema.String),
   github: Schema.optional(githubTriggerSchema),
+  mcpEvent: Schema.optional(mcpEventTriggerSchema),
   schedule: Schema.String,
   timezone: Schema.String,
   objective: Schema.String,

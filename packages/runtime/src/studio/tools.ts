@@ -217,6 +217,7 @@ export function studioReadAction(part: string, action: unknown) {
         'validate',
         'dryRun',
         'previewFromEvent',
+        'eventStatus',
         'runs',
         'wait',
       ].includes(String(action))) ||
@@ -743,6 +744,11 @@ export async function studioTool(
     if (command.action === 'read') return { automation: flow }
     if (command.action === 'runs')
       return { runs: s.jobs.list().filter((run) => run.automationId === flow.id) }
+    if (command.action === 'eventStatus') {
+      if (!flow.nodes.some(({ data }) => data.kind === 'trigger' && data.trigger === 'mcp-event'))
+        throw new HttpError(400, 'This automation does not use an MCP event trigger')
+      return { eventTrigger: s.jobs.eventStatus(flow.id) }
+    }
     if (command.action === 'previewFromEvent' || command.action === 'runFromEvent') {
       if (policy?.taskId !== taskId || forwardedCaller)
         throw new HttpError(403, 'MCP event input requires the local thread’s active run')

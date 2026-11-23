@@ -1,6 +1,6 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RoutineOptions } from './routine-options'
-import { defaultGithubTrigger, githubEventChoices } from '@dovo/protocol'
+import { defaultGithubTrigger, defaultMcpEventTrigger, githubEventChoices } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -165,6 +165,9 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 name: uiText('Webhook'),
               },
               { id: 'github', name: uiText('GitHub event') },
+              ...(snapshot?.mcpEventTriggersSupported || trigger.data.trigger === 'mcp-event'
+                ? [{ id: 'mcp-event', name: uiText('MCP event') }]
+                : []),
             ]}
             disabled={busy}
             onChange={(value) => {
@@ -173,12 +176,16 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 value === 'schedule' ||
                 value === 'once' ||
                 value === 'webhook' ||
-                value === 'github'
+                value === 'github' ||
+                (value === 'mcp-event' && snapshot?.mcpEventTriggersSupported)
               )
                 updateNode(trigger.id, {
                   trigger: value,
                   ...(value === 'github'
                     ? { github: trigger.data.github ?? { ...defaultGithubTrigger } }
+                    : {}),
+                  ...(value === 'mcp-event'
+                    ? { mcpEvent: trigger.data.mcpEvent ?? defaultMcpEventTrigger }
                     : {}),
                 })
             }}
@@ -254,6 +261,51 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               </Text>
             </>
           )}
+          {trigger.data.trigger === 'mcp-event' &&
+            (snapshot?.mcpEventTriggersSupported ? (
+              <>
+                <Field
+                  label={uiText('MCP server')}
+                  value={trigger.data.mcpEvent?.server ?? ''}
+                  editable={!busy}
+                  onChangeText={(server) =>
+                    updateNode(trigger.id, {
+                      mcpEvent: { ...(trigger.data.mcpEvent ?? defaultMcpEventTrigger), server },
+                    })
+                  }
+                />
+                <Field
+                  label={uiText('Event name')}
+                  value={trigger.data.mcpEvent?.name ?? ''}
+                  editable={!busy}
+                  onChangeText={(name) =>
+                    updateNode(trigger.id, {
+                      mcpEvent: { ...(trigger.data.mcpEvent ?? defaultMcpEventTrigger), name },
+                    })
+                  }
+                />
+                <Field
+                  label={uiText('Event arguments (JSON)')}
+                  value={trigger.data.mcpEvent?.argumentsJson ?? '{}'}
+                  editable={!busy}
+                  multiline
+                  onChangeText={(argumentsJson) =>
+                    updateNode(trigger.id, {
+                      mcpEvent: {
+                        ...(trigger.data.mcpEvent ?? defaultMcpEventTrigger),
+                        argumentsJson,
+                      },
+                    })
+                  }
+                />
+              </>
+            ) : (
+              <Text style={styles.muted}>
+                <InterfaceText>
+                  {'Update this computer to configure MCP event triggers.'}
+                </InterfaceText>
+              </Text>
+            ))}
           {trigger.data.trigger === 'github' &&
             (() => {
               const github = trigger.data.github ?? defaultGithubTrigger

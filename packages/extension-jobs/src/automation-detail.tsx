@@ -383,9 +383,11 @@ export function AutomationDetail({
                                 ? `${trigger.data.schedule} · ${trigger.data.timezone}`
                                 : trigger.data.trigger === 'github'
                                   ? `GitHub · ${githubEventChoices.find((item) => item.id === trigger.data.github?.event)?.name ?? 'Event'} · ${trigger.data.github?.repository ?? ''}`
-                                  : trigger.data.trigger === 'webhook'
-                                    ? 'Authenticated webhook'
-                                    : 'Manual start'}
+                                  : trigger.data.trigger === 'mcp-event'
+                                    ? `MCP event · ${trigger.data.mcpEvent?.name || 'Choose an event'}`
+                                    : trigger.data.trigger === 'webhook'
+                                      ? 'Authenticated webhook'
+                                      : 'Manual start'}
                           </span>
                         </span>
                         <span className="text-xs text-muted-foreground">Configure</span>

@@ -93,7 +93,9 @@ stream until reads free space. Event payloads are external data and carry no too
 
 Webhook-only sources require an HTTPS receiver or a relay that exposes poll or push. The thread tool
 uses poll and push and does not provision public callbacks. These subscriptions deliver data to the
-calling harness. They do not schedule a run when the thread is idle.
+calling harness. Use a saved
+[MCP event automation](automations.md#start-a-bot-automation-from-an-mcp-event) to start a Bot
+workflow from upstream activity while the clients are closed.
 
 To use a received event in a saved automation, call `studio_automations` before acknowledging the
 item. Choose a Manual automation on the same computer and pass the event's `subscriptionId`, item

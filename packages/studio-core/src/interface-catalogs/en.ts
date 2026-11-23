@@ -186,6 +186,11 @@ export default {
   'Edits stay in the Bot draft. Select Save Bot to apply them. Shared definitions stay unchanged.':
     'Edits stay in the Bot draft. Select Save Bot to apply them. Shared definitions stay unchanged.',
   'MCP server': 'MCP server',
+  'MCP event': 'MCP event',
+  'Event name': 'Event name',
+  'Event arguments (JSON)': 'Event arguments (JSON)',
+  'Update this computer to configure MCP event triggers.':
+    'Update this computer to configure MCP event triggers.',
   Skill: 'Skill',
   Inherited: 'Inherited',
   'Bot override': 'Bot override',

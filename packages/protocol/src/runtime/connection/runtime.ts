@@ -411,6 +411,7 @@ export const snapshotSchema = mutableStruct({
   pendingBotHarnessSupported: Schema.optional(Schema.Literal(true)),
   routineJsonMonitoringSupported: Schema.optional(Schema.Literal(true)),
   routineMcpMonitoringSupported: Schema.optional(Schema.Literal(true)),
+  mcpEventTriggersSupported: Schema.optional(Schema.Literal(true)),
   freezeProfilesSupported: Schema.optional(Schema.Literal(true)),
   runAuditSupported: Schema.optional(Schema.Literal(true)),
   attachmentDraftCompareSupported: Schema.optional(Schema.Boolean),

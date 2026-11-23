@@ -1,4 +1,5 @@
 import { routineMonitorUrl } from './routine-policy.js'
+import { mcpEventArguments, mcpEventBotId } from './triggers.js'
 import { CronDate, CronExpressionParser } from 'cron-parser'
 import { resolveTaskAgent } from '../workspace.js'
 import { supportsAccess } from '../auth/access.js'
@@ -166,6 +167,18 @@ export function automationIssues(
         errors.push('PR synchronization polling cannot filter by pusher or write access.')
       if (config?.actor && !/^[A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?$/.test(config.actor))
         errors.push('Enter a GitHub actor login without @.')
+    }
+    if (data.kind === 'trigger' && data.trigger === 'mcp-event') {
+      if (!mcpEventBotId(flow)) errors.push('MCP event triggers need one Bot for all task steps.')
+      if (!data.mcpEvent?.server.trim() || !data.mcpEvent.name.trim())
+        errors.push('Enter an MCP server and event name.')
+      if (data.mcpEvent) {
+        try {
+          mcpEventArguments(data.mcpEvent)
+        } catch {
+          errors.push('MCP event arguments must be a JSON object.')
+        }
+      }
     }
     if (data.kind === 'task' && data.botId !== undefined) {
       // A Bot step runs in an isolated worker with the Bot's current settings.

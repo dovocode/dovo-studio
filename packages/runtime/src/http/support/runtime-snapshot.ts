@@ -357,6 +357,7 @@ export function runtimeSnapshot(
       pendingBotHarnessSupported: true,
       routineJsonMonitoringSupported: true,
       routineMcpMonitoringSupported: true,
+      mcpEventTriggersSupported: true,
       freezeProfilesSupported: true,
       runAuditSupported: true,
       automationRestoreSupported: true,

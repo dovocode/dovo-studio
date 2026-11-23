@@ -1,5 +1,26 @@
 import { Schema } from 'effect'
-import { mutableStruct } from '../shared/schema.js'
+import { decode, maxValue, mutableStruct } from '../shared/schema.js'
+
+export const mcpEventTriggerSchema = mutableStruct({
+  server: maxValue(Schema.String, 80),
+  name: maxValue(Schema.String, 512),
+  argumentsJson: maxValue(Schema.String, 16000),
+})
+export type McpEventTrigger = typeof mcpEventTriggerSchema.Type
+export const defaultMcpEventTrigger: McpEventTrigger = { server: '', name: '', argumentsJson: '{}' }
+
+export function mcpEventArguments(config: McpEventTrigger) {
+  return decode(Schema.Record(Schema.String, Schema.Json), JSON.parse(config.argumentsJson))
+}
+
+export function mcpEventBotId(flow: {
+  nodes: readonly { data: { kind: string; botId?: string } }[]
+}) {
+  const bots = new Set(
+    flow.nodes.filter(({ data }) => data.kind === 'task').map(({ data }) => data.botId),
+  )
+  return bots.size === 1 ? [...bots][0] : undefined
+}
 
 export const githubEventChoices = [
   { id: 'issue.created', name: 'Issue · Created' },
