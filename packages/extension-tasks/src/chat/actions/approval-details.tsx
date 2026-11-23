@@ -148,7 +148,7 @@ export function ApprovalButtons({
     >
       {uiText(label)}
       {decision === 'approve' || decision === 'deny' ? (
-        <kbd aria-hidden="true" className="shrink-0 text-[0.625rem] opacity-80">
+        <kbd aria-hidden="true" className="shrink-0 text-[0.625rem]">
           {decision === 'approve' ? 'Y / Enter' : 'N'}
         </kbd>
       ) : null}

@@ -366,7 +366,8 @@ it('retains pinned exited sessions at capacity until unpinned or explicitly clos
   const terminals = new Terminals()
   try {
     const pinned = await Promise.all(
-      Array.from({ length: 20 }, async () => {
+      Array.from({ length: 20 }, async (_, index) => {
+        const receipt = join(f.directory, `pinned-exit-${index}`)
         const terminal = terminals.createCommand(
           'task',
           f.directory,
@@ -374,42 +375,54 @@ it('retains pinned exited sessions at capacity until unpinned or explicitly clos
             command: process.execPath,
             args: [
               '-e',
-              'console.log("pinned-output"); process.stdin.once("data", () => process.exit(0))',
+              `console.log('pinned-output');
+               process.stdin.once('data', () => {
+                 require('node:fs').writeFileSync(process.argv[1], 'received');
+                 process.exit(0);
+               });`,
+              receipt,
             ],
             env: {},
           },
           'Pinned',
         )
         await terminals.update({ id: terminal.id, pinned: true })
-        return terminal.id
+        return { id: terminal.id, receipt }
       }),
     )
+    const ids = pinned.map(({ id }) => id)
     // Establish captured output before exit: a burst of short-lived macOS PTYs can close
     // before their output is read. This test checks retention and eviction of captured data.
     await waitForRuntime(() => {
-      for (const id of pinned) expect(terminals.get(id).buffer).toContain('pinned-output')
+      for (const id of ids) expect(terminals.get(id).buffer).toContain('pinned-output')
     })
-    for (const id of pinned) terminals.input(id, '\r')
+    for (const id of ids) terminals.input(id, '\r')
     await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
       timeout: 10000,
     })
-    for (const session of terminals.list()) expect(session.exitCode).toBe(0)
+    // ConPTY can close its output pipe before node-pty receives the exit code.
+    // The receipt proves the fixture handled input and reached its exit path.
+    const successfulExitCodes = process.platform === 'win32' ? [0, undefined] : [0]
+    for (const { id, receipt } of pinned) {
+      expect(await readFile(receipt, 'utf8')).toBe('received')
+      expect(successfulExitCodes).toContain(terminals.get(id).info.exitCode)
+    }
     expect(() => terminals.create('task', f.directory)).toThrow(
       'Close a terminal before opening another (limit 20)',
     )
-    expect(terminals.list().map((session) => session.id)).toEqual(pinned)
-    expect(terminals.get(pinned[0]!).buffer).toContain('pinned-output')
+    expect(terminals.list().map((session) => session.id)).toEqual(ids)
+    expect(terminals.get(ids[0]!).buffer).toContain('pinned-output')
 
-    const candidate = pinned.at(-1)!
+    const candidate = ids.at(-1)!
     await terminals.update({ id: candidate, pinned: false })
     const replacement = terminals.create('task', f.directory)
     expect(terminals.list()).toHaveLength(20)
     expect(() => terminals.get(candidate)).toThrow('Terminal not found')
-    for (const id of pinned.slice(0, -1)) expect(terminals.get(id).info.pinned).toBe(true)
+    for (const id of ids.slice(0, -1)) expect(terminals.get(id).info.pinned).toBe(true)
     expect(terminals.get(replacement.id).info.exited).toBe(false)
 
-    await terminals.close(pinned[0]!)
-    expect(() => terminals.get(pinned[0]!)).toThrow('Terminal not found')
+    await terminals.close(ids[0]!)
+    expect(() => terminals.get(ids[0]!)).toThrow('Terminal not found')
     terminals.create('task', f.directory)
     expect(terminals.list()).toHaveLength(20)
   } finally {
