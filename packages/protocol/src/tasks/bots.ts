@@ -161,15 +161,16 @@ export function botInstructions(bot: Bot, delegationAvailable = false) {
     .join('\n\n')
 }
 
-/** The project whose scoped settings (resources) a thread inherits. A Bot is standalone: it
- * inherits global and computer settings only, also when an older Bot still has a project. */
+/** Bot coordinators and their explicit calls inherit global and computer settings. A human
+ * mention copies a source conversation and keeps that conversation's project scope. */
 export const inheritedResourceProject = (task: {
   repositoryId: string
   bot?: unknown
-}): string | undefined => (task.bot ? undefined : task.repositoryId)
+  botMention?: { sourceRuntimeId?: string }
+}): string | undefined =>
+  task.bot || task.botMention?.sourceRuntimeId ? undefined : task.repositoryId
 
-/** The resources a Bot's coordinator turns receive. Returns `inherited` unchanged for
- * other threads. Children of a Bot use their own settings, never these. */
+/** Apply a Bot's resource layer for coordinator turns and explicitly targeted Bot invocations. */
 export function applyBotResources(
   inherited: ResourceSettings,
   bot: Pick<Bot, 'resources'> | undefined,

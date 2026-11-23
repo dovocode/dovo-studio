@@ -557,8 +557,9 @@ export async function studioTool(
             check()
             const current = s.store.taskSummary(target.id)
             const bot = current.bot
-            if (!bot || bot.state === 'paused')
-              throw new HttpError(409, 'Resume the Bot before calling it')
+            if (!bot || current.replica || current.archivedAt)
+              throw new HttpError(404, 'This Bot is unavailable on this computer')
+            if (bot.state === 'paused') throw new HttpError(409, 'Resume the Bot before calling it')
             withinPolicy(s, current, policy, command.allowPermissionIncrease)
             const agent = resolveTaskAgent(current, s.store.get().agents)
             if (!agent) throw new HttpError(400, 'Select an agent for this Bot first')
@@ -569,6 +570,7 @@ export async function studioTool(
               agentId: '',
               harness: decode(taskHarnessSchema, {
                 ...agent,
+                resources: undefined,
                 instructions: [
                   agent.instructions,
                   `Bot role: ${bot.role}\nStanding responsibilities: ${bot.responsibilities}`,
@@ -577,6 +579,7 @@ export async function studioTool(
                   .join('\n\n'),
               }),
               objective: command.text,
+              linkedCheckouts: current.pendingLinkedCheckouts ?? current.linkedCheckouts ?? [],
               messageSource: agentMessageSource(s, caller),
               coordinationDepth: depth,
               botMention: {

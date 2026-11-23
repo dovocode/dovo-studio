@@ -280,20 +280,20 @@ export function Composer({
   }, [task.id, stashRuntimeId])
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const composerResources = taskResources(
-    turnSettings?.harness
-      ? {
-          ...task,
-          repositoryId: task.bot ? '' : task.repositoryId,
-          agentId: '',
-          agentOverrides: undefined,
-          harness: turnSettings.harness,
-        }
-      : task.bot
-        ? { ...task, repositoryId: '' }
-        : task,
+    {
+      ...task,
+      repositoryId: task.bot ? '' : task.repositoryId,
+      botMention: snapshot?.botInvocationResourcesSupported ? task.botMention : undefined,
+      ...(turnSettings?.harness && {
+        agentId: '',
+        agentOverrides: undefined,
+        harness: turnSettings.harness,
+      }),
+    },
     {
       agents: snapshot?.workspace.agents ?? [],
       repositories: snapshot?.workspace.repositories ?? [],
+      tasks: snapshot?.workspace.tasks,
     },
     snapshot?.defaults,
   )

@@ -213,9 +213,9 @@ another computer, because their memory and routines stay on this one.
 
 ## MCP servers and skills for one Bot
 
-Each Bot can have its own MCP servers and skills. They apply only to that Bot's own thread. They do
-not change the shared agent, profile, project or any other Bot, and they stay when you switch the
-Bot's harness.
+Each Bot can have its own MCP servers and skills. They apply to its coordinator and to conversations
+started by a Studio Tools send to that Bot. These settings belong to the Bot and stay with it when
+you switch harnesses.
 
 The Bot inherits the MCP servers and skills of the global and computer settings and of its agent. It
 never inherits project settings, also when an older Bot still has a project. For one Bot you can:
@@ -230,8 +230,8 @@ rule for agent turns, MCP Apps and the Dovo MCP bridge, skill reads, and `@`, `$
 
 Rules:
 
-- Child agents and threads started from a Bot use their own settings. They do not receive the Bot's
-  own resources or its memory.
+- Ordinary child agents and project threads that a Bot starts use their own settings.
+- Calls to a Bot inherit its selected linked checkouts at launch and use current Bot resources.
 - Managed policy and approval rules apply as for agent resources.
 - Literal `envValues` and `headerValues` stay on this computer. Snapshots, responses and durable
   retry receipts show `dovo-stored-secret:` references instead. Send a reference back unchanged to

@@ -149,6 +149,14 @@ export function Composer({
     snapshot,
     activeRuntimeId,
   } = useWorkspaceSelector(selectComposerWorkspace, sameComposerWorkspace)
+  const invocation = snapshot?.botInvocationResourcesSupported ? task.botMention : undefined
+  const resourceBot = useWorkspaceSelector(
+    (value) =>
+      invocation?.sourceRuntimeId
+        ? value.workspace.tasks.find((candidate) => candidate.id === invocation.botId)
+        : undefined,
+    Object.is,
+  )
   const loadComposerHistory = useCommittedCallback((signal: AbortSignal, before?: string) => {
     if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
     return Effect.runPromise(
@@ -529,10 +537,16 @@ export function Composer({
   const resources = useMemo(
     () => ({
       ...taskResources(
-        turnSettings?.harness
-          ? { ...task, agentId: '', agentOverrides: undefined, harness: turnSettings.harness }
-          : task,
-        workspace,
+        {
+          ...task,
+          botMention: invocation,
+          ...(turnSettings?.harness && {
+            agentId: '',
+            agentOverrides: undefined,
+            harness: turnSettings.harness,
+          }),
+        },
+        { ...workspace, tasks: resourceBot ? [resourceBot] : [] },
         snapshot?.defaults,
       ),
       agents: resolveScopedAgents(
@@ -549,6 +563,8 @@ export function Composer({
       task.agentOverrides,
       task.harness,
       task.bot,
+      invocation,
+      resourceBot,
       turnSettings,
       task.repositoryId,
       workspace.agents,

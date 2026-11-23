@@ -10,6 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
   automationDryRunSchema,
   decode,
+  mcpServerSchema,
   messageSourceFor,
   messageSourceLabel,
   mutableStruct,
@@ -1120,11 +1121,59 @@ it('preserves the remote caller identity for Bot calls and keeps Bot project wat
   const source = await setup()
   const target = await setup()
   const pairing = await pairComputers(source, target)
-  source.s.store.updateTask(source.parent.id, (task) => ({ ...task, bot: botMetadata() }))
-  target.s.store.updateTask(target.parent.id, (task) => ({ ...task, bot: botMetadata() }))
+  const mcp = (name: string) =>
+    decode(mcpServerSchema, {
+      name,
+      enabled: true,
+      transport: 'stdio',
+      command: process.execPath,
+      args: [],
+    })
+  const skill = (name: string) => ({ name, enabled: true, description: name, content: name })
+  source.s.store.updateTask(source.parent.id, (task) => ({
+    ...task,
+    bot: {
+      ...botMetadata(),
+      resources: {
+        mcpServers: [mcp('caller-only')],
+        skills: [skill('caller-only')],
+        disabledMcpServers: [],
+        disabledSkills: [],
+      },
+    },
+    linkedCheckouts: [
+      { id: 'caller-link', repositoryId: 'repo', execution: 'main', access: 'read-only' },
+    ],
+  }))
+  target.s.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({
+      ...agent,
+      resources: { mcpServers: [mcp('disabled-mcp')], skills: [skill('disabled-skill')] },
+    })),
+  }))
+  target.s.store.updateTask(target.parent.id, (task) => ({
+    ...task,
+    bot: {
+      ...botMetadata(),
+      resources: {
+        mcpServers: [mcp('dokploy-fixture')],
+        skills: [skill('deployment-procedure')],
+        disabledMcpServers: ['disabled-mcp'],
+        disabledSkills: ['disabled-skill'],
+      },
+    },
+    linkedCheckouts: [
+      { id: 'bot-link', repositoryId: 'repo', execution: 'main', access: 'read-only' },
+    ],
+  }))
+  const runs = vi.fn<AgentAdapter['run']>(async (run) => {
+    const bindings = target.s.mcpApps.codeBindings(run.taskId!)
+    run.onText(JSON.stringify(bindings.map((binding) => binding.name)))
+  })
   vi.spyOn(target.s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (run) => run.onText('Remote Bot answer'),
+    run: runs,
   })
   const call = await source.post(
     'threads',
@@ -1144,6 +1193,43 @@ it('preserves the remote caller identity for Bot calls and keeps Bot project wat
     sourceTaskId: source.parent.id,
     sourceRuntimeId: source.s.runtimeId,
   })
+  expect((await target.post('threads', { action: 'wait', id })).status).toBe(200)
+  const [run] = runs.mock.calls[0] ?? []
+  expect(
+    run?.agent.resources?.mcpServers
+      .filter((server) => server.enabled && server.name !== 'dovo_task')
+      .map((server) => server.name),
+  ).toEqual(['dokploy-fixture'])
+  expect(
+    run?.agent.resources?.mcpServers.find((server) => server.name === 'disabled-mcp')?.enabled,
+  ).toBe(false)
+  expect(run?.agent.instructions).toContain('deployment-procedure')
+  expect(run?.agent.instructions).not.toMatch(/caller-only|disabled-skill/)
+  expect(run?.linkedDirectories?.map(({ id, access }) => ({ id, access }))).toEqual([
+    { id: 'bot-link', access: 'read-only' },
+  ])
+  expect(target.s.store.task(id).messages).toEqual(
+    expect.arrayContaining([expect.objectContaining({ text: '["dokploy-fixture"]' })]),
+  )
+  expect(target.s.store.task(id).harness?.resources).toBeUndefined()
+  expect(target.s.mcpApps.marketplaceSources(id).servers).toEqual(['dokploy-fixture'])
+  target.s.store.updateTask(target.parent.id, (task) => ({
+    ...task,
+    bot: { ...task.bot!, resources: { ...task.bot!.resources!, mcpServers: [], skills: [] } },
+  }))
+  expect(target.s.mcpApps.marketplaceSources(id).servers).toEqual([])
+  expect(
+    (
+      await target.post('threads', {
+        action: 'send',
+        id,
+        text: 'Follow up',
+        messageId: randomUUID(),
+      })
+    ).status,
+  ).toBe(200)
+  expect((await target.post('threads', { action: 'wait', id })).status).toBe(200)
+  expect(runs.mock.calls[1]?.[0].agent.instructions).not.toContain('deployment-procedure')
   const created = await source.post(
     'threads',
     {

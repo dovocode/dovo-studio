@@ -446,6 +446,7 @@ export const snapshotSchema = mutableStruct({
   routineFindingGroupsSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.bot.resources` and `/api/bots/update` `resources`. */
   botResourcesSupported: Schema.optional(Schema.Literal(true)),
+  botInvocationResourcesSupported: Schema.optional(Schema.Literal(true)),
   botAvatarsSupported: Schema.optional(Schema.Literal(true)),
   botAvatarHarnessSelectionSupported: Schema.optional(Schema.Literal(true)),
   botMemoryReviewSupported: Schema.optional(Schema.Literal(true)),

@@ -28,6 +28,7 @@ export function selectComposerWorkspace(
     snapshot: snapshot
       ? {
           defaults: snapshot.defaults,
+          botInvocationResourcesSupported: snapshot.botInvocationResourcesSupported,
           retryUsesCurrentFiles: snapshot.retryUsesCurrentFiles,
           questions: snapshot.questions,
           planModeSupported: snapshot.planModeSupported,

@@ -158,6 +158,9 @@ export function TaskMessageResponse({
         const task = userMessage
           ? value.workspace.tasks.find((task) => task.id === taskId)
           : undefined
+        const botMention = value.snapshot?.botInvocationResourcesSupported
+          ? task?.botMention
+          : undefined
         return {
           id: task?.id,
           repositoryId: task?.repositoryId,
@@ -165,6 +168,10 @@ export function TaskMessageResponse({
           agentOverrides: task?.agentOverrides,
           harness: task?.harness,
           bot: task?.bot,
+          botMention,
+          resourceBot: botMention?.sourceRuntimeId
+            ? value.workspace.tasks.find((candidate) => candidate.id === botMention.botId)
+            : undefined,
           agents: userMessage ? value.workspace.agents : undefined,
           repositories: userMessage ? value.workspace.repositories : undefined,
           defaults: userMessage ? value.snapshot?.defaults : undefined,
@@ -176,7 +183,7 @@ export function TaskMessageResponse({
   )
   const referenceResources = useMemo(() => {
     if (!userMessage) return undefined
-    const { agents = [], repositories = [], defaults } = referenceState
+    const { agents = [], repositories = [], defaults, resourceBot } = referenceState
     const task = {
       ...referenceState,
       id: referenceState.id ?? taskId,
@@ -184,7 +191,11 @@ export function TaskMessageResponse({
       repositoryId: referenceState.repositoryId ?? '',
     }
     return {
-      ...taskResources(task, { agents, repositories }, defaults),
+      ...taskResources(
+        task,
+        { agents, repositories, tasks: resourceBot ? [resourceBot] : [] },
+        defaults,
+      ),
       agents: resolveScopedAgents(
         defaults,
         repositories.find((repository) => repository.id === task.repositoryId),

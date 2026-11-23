@@ -28,18 +28,35 @@ export function UserMessageText({ text, onLink }: { text: string; onLink: (url: 
   const { styles, colors } = useTheme()
   const id = useConversationSelector((value) => value.task.id)
   const bot = useConversationSelector((value) => value.task.bot)
+  const botMention = useConversationSelector((value) => value.task.botMention)
   const repositoryId = useConversationSelector((value) =>
     value.task.bot ? '' : value.task.repositoryId,
   )
   const agentId = useConversationSelector((value) => value.task.agentId)
   const agentOverrides = useConversationSelector((value) => value.task.agentOverrides)
   const harness = useConversationSelector((value) => value.task.harness)
-  const { agents, repositories, defaults } = useRuntimeSelector(selectResources, sameRuntimeFields)
+  const { agents, repositories, defaults, invocation, resourceBot } = useRuntimeSelector(
+    (value) => {
+      const invocation = value.snapshot?.botInvocationResourcesSupported ? botMention : undefined
+      return {
+        ...selectResources(value),
+        invocation,
+        resourceBot: invocation?.sourceRuntimeId
+          ? value.snapshot?.workspace.tasks.find((task) => task.id === invocation.botId)
+          : undefined,
+      }
+    },
+    sameRuntimeFields,
+  )
   const resources = useMemo(
     () => ({
       ...taskResources(
-        { id, repositoryId, agentId, agentOverrides, harness, bot },
-        { agents: agents ?? [], repositories: repositories ?? [] },
+        { id, repositoryId, agentId, agentOverrides, harness, bot, botMention: invocation },
+        {
+          agents: agents ?? [],
+          repositories: repositories ?? [],
+          tasks: resourceBot ? [resourceBot] : [],
+        },
         defaults,
       ),
       agents: resolveScopedAgents(
@@ -48,7 +65,19 @@ export function UserMessageText({ text, onLink }: { text: string; onLink: (url: 
         agents ?? [],
       ),
     }),
-    [id, repositoryId, agentId, agentOverrides, harness, bot, agents, repositories, defaults],
+    [
+      id,
+      repositoryId,
+      agentId,
+      agentOverrides,
+      harness,
+      bot,
+      invocation,
+      agents,
+      repositories,
+      defaults,
+      resourceBot,
+    ],
   )
   const references = useMemo(() => messageReferences(text, resources), [text, resources])
   const parts = useMemo(() => {

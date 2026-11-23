@@ -27,22 +27,46 @@ export function composerMention(text: string, caret: number): ComposerMention | 
   return undefined
 }
 
-/** The skills and MCP servers a task's agent receives: its project's merged with its agent's,
- * then a Bot's own resources on its coordinator thread. A Bot skips project resources.
- * Bot settings show inherited rows with `{ ...task, bot: { ...task.bot, resources: undefined } }`. */
+type ResourceThread = Pick<
+  Task,
+  'id' | 'agentId' | 'agentOverrides' | 'harness' | 'repositoryId' | 'bot' | 'botMention'
+>
+type ResourceBot = ResourceThread & Pick<Task, 'replica' | 'archivedAt'>
+
+/** Merge a thread's project and agent settings. An explicit Bot call resolves the local
+ * coordinator's current settings and Bot overrides. */
 export function taskResources(
-  task: Pick<Task, 'id' | 'agentId' | 'agentOverrides' | 'harness' | 'repositoryId' | 'bot'>,
-  workspace: { agents: readonly Agent[]; repositories: readonly Repository[] },
+  task: ResourceThread,
+  workspace: {
+    agents: readonly Agent[]
+    repositories: readonly Repository[]
+    tasks?: readonly ResourceBot[]
+    runtimeId?: string
+  },
   defaults?: RuntimeDefaults,
+  agent?: Pick<Agent, 'resources'>,
 ): ResourceSettings {
-  const project = inheritedResourceProject(task)
+  const invocation = task.botMention?.sourceRuntimeId ? task.botMention : undefined
+  if (invocation && workspace.runtimeId && invocation.runtimeId !== workspace.runtimeId)
+    return mergeResources()
+  const owner = invocation
+    ? workspace.tasks?.find(
+        (candidate) =>
+          candidate.id === invocation.botId &&
+          !!candidate.bot &&
+          !candidate.replica &&
+          !candidate.archivedAt,
+      )
+    : task
+  if (!owner) return mergeResources()
+  const project = inheritedResourceProject(owner)
   const repository = workspace.repositories.find((repository) => repository.id === project)
+  const ownerAgent = invocation
+    ? resolveTaskAgent(owner, workspace.agents)
+    : (agent ?? resolveTaskAgent(task, workspace.agents))
   return applyBotResources(
-    mergeResources(
-      resolveScopedSettings(defaults, repository).resources,
-      resolveTaskAgent(task, workspace.agents)?.resources,
-    ),
-    task.bot,
+    mergeResources(resolveScopedSettings(defaults, repository).resources, ownerAgent?.resources),
+    owner.bot,
   )
 }
 

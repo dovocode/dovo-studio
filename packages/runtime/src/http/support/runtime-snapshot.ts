@@ -381,6 +381,7 @@ export function runtimeSnapshot(
       problemReportTimelineSupported: true,
       routineFindingGroupsSupported: true,
       botResourcesSupported: true,
+      botInvocationResourcesSupported: true,
       botAvatarsSupported: true,
       botAvatarHarnessSelectionSupported: true,
       botConversationArchiveSupported: true,

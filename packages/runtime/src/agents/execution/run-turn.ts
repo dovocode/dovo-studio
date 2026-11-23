@@ -69,9 +69,6 @@ import {
   applyTurnSettings,
   turnSettingsMatchHarness,
   lockedTaskProvider,
-  mergeResources,
-  applyBotResources,
-  inheritedResourceProject,
   reportedPlanLimits,
   mergePlanLimits,
   nativeAgentWorking,
@@ -336,14 +333,7 @@ export class TaskTurnRunner {
             409,
             `This task uses ${providerLock}. Select a model or custom agent within that provider before continuing.`,
           )
-        // A Bot's own MCP servers and skills apply to its coordinator thread only.
-        const resources = applyBotResources(
-          mergeResources(
-            this.store.projectSettings(inheritedResourceProject(task)).resources,
-            configured.resources,
-          ),
-          task.bot,
-        )
+        const resources = this.store.taskResources(task, configured)
         // Some restricted harness modes disable MCP; keep their skill bodies inline.
         const scopedSkillReads =
           !!this.taskTools &&

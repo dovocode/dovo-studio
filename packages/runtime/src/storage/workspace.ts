@@ -37,6 +37,7 @@ import {
   latestCompletedTaskTurn,
   lockedTaskProvider,
   resolveTaskAgent,
+  taskResources,
   permissionPolicyWithinCeiling,
   taskFamilyIds,
   taskFamilyWorking,
@@ -207,11 +208,13 @@ function storedHistorySummary(
 export interface WorkspaceStoreOptions {
   /** Complete histories kept in memory, least recently used first out. */
   historyBudget?: HistoryBudget
+  runtimeId?: string
 }
 /** The runtime workspace. Memory holds task summaries: metadata and bounded facts about each
  * history. `task(id)` and `updateTaskHistory` read and write a complete conversation through a
  * bounded cache over `conversation_items`; nothing else loads history. */
 export class WorkspaceStore {
+  private readonly runtimeId?: string
   private readonly secrets: McpSecrets
   private workspace: WorkspaceSummary
   private readonly conversations: Conversations
@@ -302,6 +305,7 @@ export class WorkspaceStore {
     private onUpdate?: (change: WorkspaceChange) => void,
     options: WorkspaceStoreOptions = {},
   ) {
+    this.runtimeId = options.runtimeId
     this.conversations = new Conversations(db)
     this.histories = new TaskHistories(db, options.historyBudget)
     this.documents = new WorkspaceDocuments(db)
@@ -709,6 +713,17 @@ export class WorkspaceStore {
     return resolveScopedSettings(
       new RuntimeDefaults(this.db).get(),
       this.workspace.repositories.find((repo) => repo.id === repositoryId),
+    )
+  }
+  taskResources(
+    task: Parameters<typeof taskResources>[0],
+    agent?: Parameters<typeof taskResources>[3],
+  ) {
+    return taskResources(
+      task,
+      { ...this.workspace, runtimeId: this.runtimeId },
+      new RuntimeDefaults(this.db).get(),
+      agent,
     )
   }
   agentsFor(repositoryId?: string) {

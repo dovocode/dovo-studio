@@ -52,11 +52,13 @@ accepts up to 20 seconds and returns current state on timeout without cancelling
 list/history cursors are returned as before. A thread that creates a thread gets a subthread. A Bot
 that creates a project thread can steer and monitor it, while the thread appears on its own in the
 project. When `send` targets a Bot, the tool returns the ID and reference for a new conversation on
-the Bot’s computer. Open it from the caller’s side threads. A Bot calling itself gets a subthread.
-For cross-computer sends, update both runtimes. Automation run and runs take an automation ID; wait,
-cancel and retry take a run ID. Runs retain their original workflow when retried. Supported triggers
-are manual, schedule (cron and timezone), webhook and GitHub; workflows use the existing
-trigger/task/review graph schema.
+the Bot’s computer. The new conversation uses the Bot’s effective MCP servers and skills. It
+inherits the Bot’s linked checkouts at launch and preserves each checkout’s access level. Open the
+conversation from the caller’s side threads. A Bot calling itself gets a subthread. Update the Bot’s
+runtime to make its resources available in these calls. For cross-computer sends, update both
+runtimes. Automation run and runs take an automation ID; wait, cancel and retry take a run ID. Runs
+retain their original workflow when retried. Supported triggers are manual, schedule (cron and
+timezone), webhook and GitHub; workflows use the existing trigger/task/review graph schema.
 
 Thread reads return a short thread summary and up to 16,000 characters of recent message text. Use
 the returned `before` cursor for older messages. When a message has `nextOffset`, use

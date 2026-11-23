@@ -154,13 +154,17 @@ export function createServices(
   let artifacts: Artifacts | undefined
   let pushNotifications: PushNotifications
   const taskListUndo = new TaskListUndo(db)
-  const store = new WorkspaceStore(db, (change) => {
-    if (change.before.tasks !== change.after.tasks)
-      taskListUndo.invalidateChangedFamilies(change.after.tasks)
-    activity.workspace(change)
-    artifacts?.workspace(change)
-    pushNotifications?.workspace(change)
-  })
+  const store = new WorkspaceStore(
+    db,
+    (change) => {
+      if (change.before.tasks !== change.after.tasks)
+        taskListUndo.invalidateChangedFamilies(change.after.tasks)
+      activity.workspace(change)
+      artifacts?.workspace(change)
+      pushNotifications?.workspace(change)
+    },
+    { runtimeId },
+  )
   artifacts = new Artifacts(db, store, activity, () => preferences.get())
   const forgeCli = new ForgeCliAccounts(() => commands.get())
   const forges = new ForgeConnections(

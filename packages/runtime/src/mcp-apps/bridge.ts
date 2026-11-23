@@ -39,9 +39,6 @@ import {
   permissionPolicyReadOnly,
   effectivePermissionPolicy,
   samePermissionPolicy,
-  mergeResources,
-  applyBotResources,
-  inheritedResourceProject,
   type McpServer,
   type McpAutomationEvent,
   type Agent,
@@ -205,13 +202,9 @@ export class McpApps {
     const agent = resolveTaskAgent(task, this.store.get().agents)
     if (!agent) throw new HttpError(409, 'The thread no longer has an agent')
     const project = this.store.get().repositories.find((item) => item.id === task.repositoryId)
-    const server = applyBotResources(
-      mergeResources(
-        this.store.projectSettings(inheritedResourceProject(task)).resources,
-        agent.resources,
-      ),
-      task.bot,
-    ).mcpServers.find((entry) => entry.enabled && entry.name === name)
+    const server = this.store
+      .taskResources(task, agent)
+      .mcpServers.find((entry) => entry.enabled && entry.name === name)
     if (!server) throw new HttpError(403, 'This MCP server is no longer enabled for the thread')
     const scope = [...this.scopes.values()].find(
       (entry) => entry.taskId === taskId && fingerprint(entry.server) === fingerprint(server),
@@ -856,13 +849,9 @@ export class McpApps {
       if (requireEditable) throw new HttpError(403, 'Live feeds require an editable thread')
       return []
     }
-    return applyBotResources(
-      mergeResources(
-        this.store.projectSettings(inheritedResourceProject(task)).resources,
-        agent.resources,
-      ),
-      task.bot,
-    ).mcpServers.filter((server) => server.enabled && server.name !== 'dovo_task')
+    return this.store
+      .taskResources(task, agent)
+      .mcpServers.filter((server) => server.enabled && server.name !== 'dovo_task')
   }
 
   marketplaceSources(taskId: string) {

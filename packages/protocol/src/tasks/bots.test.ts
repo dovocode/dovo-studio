@@ -1,8 +1,22 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
-import { botContextMessages, botInstructions, botLifecyclePresentation } from './bots.js'
+import { readFileSync } from 'node:fs'
+import {
+  applyBotResources,
+  botContextMessages,
+  botInstructions,
+  botLifecyclePresentation,
+  inheritedResourceProject,
+} from './bots.js'
 import { compareBotActivity } from './bot-activity.js'
-import { botSchema, decode, taskSchema } from '../index.js'
+import {
+  botSchema,
+  decode,
+  defaultTaskHarness,
+  mcpServerSchema,
+  taskResources,
+  taskSchema,
+} from '../index.js'
 
 const bot = decode(botSchema, {
   role: 'Release manager',
@@ -11,6 +25,96 @@ const bot = decode(botSchema, {
   revision: randomUUID(),
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-01T00:00:00Z',
+})
+
+it('matches Lean’s Bot resource precedence and project scope for every generated case', () => {
+  const fixture = new URL('../../../../verification/bot-invocation-cases.jsonl', import.meta.url)
+  const cases = readFileSync(fixture, 'utf8').trim().split('\n')
+  expect(cases).toHaveLength(72)
+  for (const line of cases) {
+    const { input, inheritsProject, resource, invocation, missingCoordinator, foreignCoordinator } =
+      JSON.parse(line) as {
+        input: {
+          scope: 'thread' | 'mentionCopy' | 'coordinator' | 'invocation'
+          own: boolean | null
+          inherited: boolean | null
+          disabled: boolean
+        }
+        inheritsProject: boolean
+        resource: boolean | null
+        invocation: boolean | null
+        missingCoordinator: boolean | null
+        foreignCoordinator: boolean | null
+      }
+    const { scope, own, inherited, disabled } = input
+    const repositoryId = 'project'
+    const task = {
+      repositoryId,
+      bot: scope === 'coordinator' ? bot : undefined,
+      botMention:
+        scope === 'invocation' || scope === 'mentionCopy'
+          ? { sourceRuntimeId: scope === 'invocation' ? 'caller-runtime' : undefined }
+          : undefined,
+    }
+    expect(inheritedResourceProject(task)).toBe(inheritsProject ? repositoryId : undefined)
+    const settings = (enabled: boolean | null) => ({
+      skills:
+        enabled === null
+          ? []
+          : [{ name: 'probe', enabled, description: 'Probe', content: 'Probe' }],
+      mcpServers:
+        enabled === null
+          ? []
+          : [
+              decode(mcpServerSchema, {
+                name: 'probe',
+                enabled,
+                transport: 'stdio',
+                command: 'probe',
+                args: [],
+              }),
+            ],
+    })
+    const disabledNames = disabled ? ['probe'] : []
+    const resources = {
+      ...settings(own),
+      disabledMcpServers: disabledNames,
+      disabledSkills: disabledNames,
+    }
+    const applied = applyBotResources(settings(inherited), { resources })
+    expect(applied.skills[0]?.enabled ?? null).toBe(resource)
+    expect(applied.mcpServers[0]?.enabled ?? null).toBe(resource)
+    if (scope !== 'invocation') continue
+    const caller = {
+      id: 'invocation',
+      agentId: '',
+      repositoryId,
+      harness: { ...defaultTaskHarness('codex'), resources: settings(true) },
+      botMention: {
+        runtimeId: 'host',
+        botId: 'bot',
+        sourceTaskId: 'caller',
+        sourceMessageId: 'send',
+        sourceRuntimeId: 'caller-runtime',
+      },
+    }
+    const target = {
+      id: 'bot',
+      agentId: '',
+      repositoryId,
+      bot: { ...bot, resources },
+      harness: { ...defaultTaskHarness('codex'), resources: settings(inherited) },
+    }
+    for (const [runtimeId, tasks, expected] of [
+      ['host', [target], invocation],
+      ['host', [], missingCoordinator],
+      ['different-host', [target], foreignCoordinator],
+    ] as const) {
+      const effective = taskResources(caller, { runtimeId, agents: [], repositories: [], tasks })
+      expect(effective.skills[0]?.enabled ?? null).toBe(expected)
+      expect(effective.mcpServers[0]?.enabled ?? null).toBe(expected)
+    }
+  }
 })
 
 it('separates the Bot hold from an active turn and a separately paused queue', () => {
