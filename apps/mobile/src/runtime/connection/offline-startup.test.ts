@@ -4,6 +4,7 @@ import {
   cachedRuntimeThread,
   createRuntimeReadCache,
   decode,
+  hydrateOfflineOverview,
   runtimeProfile,
   runtimeSnapshotCacheSchema,
   snapshotSchema,
@@ -12,7 +13,7 @@ import {
   type RuntimeOverview,
   type Task,
 } from '@dovo/protocol'
-import { hydrateOfflineOverview, settleMutationEffect, startupReadCache } from './offline-startup'
+import { settleMutationEffect, startupReadCache } from './offline-startup'
 
 const connection = { address: 'http://computer.local:51464', token: 'test-device-credential-123' }
 const profile = runtimeProfile(connection)

@@ -142,7 +142,26 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Pro
               contents: `import {useAppPreferences} from '${root}packages/studio-core/src/preferences.ts';export {readAppPreferences as readMobilePreferences,updateAppPreferences as updateMobilePreferences} from '${root}packages/studio-core/src/preferences.ts';export const useMobilePreferences=()=>({...useAppPreferences(),computerRefresh:'manual'});`,
             },
           ]
-        : []),
+        : [
+            {
+              path: './read-cache',
+              importer: root + 'packages/studio-core/src/workspace/provider.tsx',
+              contents: `
+import {Effect} from 'effect';
+import {browserReadCache as createCache} from '${root}packages/studio-core/src/workspace/read-cache.ts';
+export * from '${root}packages/studio-core/src/workspace/read-cache.ts';
+export function browserReadCache(connection) {
+  const cache=createCache(connection);
+  if (!window.startupOffline || new URL(connection.address).hostname!=='two.lan') return cache;
+  const readEffect=cache.readEffect;
+  cache.readEffect=(key,schema)=>key==='snapshot'
+    ? Effect.promise(()=>new Promise(resolve=>{window.releaseOfflineCache=resolve})).pipe(Effect.andThen(readEffect(key,schema)))
+    : readEffect(key,schema);
+  return cache;
+}
+`,
+            },
+          ]),
     ],
   )
 }
@@ -226,6 +245,13 @@ try {
     await page.reload()
     await page.evaluate(() => (window.startupOffline = true))
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    if (!mobile) {
+      // An offline refresh can finish while the unselected computer's cache is still loading.
+      await page.waitForFunction(() => window.releaseOfflineCache)
+      await page.evaluate(() => window.refresh())
+      await page.waitForFunction(() => window.entries[1]?.error)
+      await page.evaluate(() => window.releaseOfflineCache())
+    }
     await page
       .waitForFunction(
         () =>

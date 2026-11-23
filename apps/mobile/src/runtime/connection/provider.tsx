@@ -12,6 +12,7 @@ import {
   mergeSharedSettings,
   SharedStateSynchronization,
   writeRuntimeSnapshotCache,
+  hydrateOfflineOverview,
   RuntimeMutations,
   recoverableMutation,
   attachmentUploadResultSchema,
@@ -98,7 +99,7 @@ import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Result, Schema, Semaphore } from 'effect'
 import { mobileReadCache } from './read-cache'
-import { hydrateOfflineOverview, startupReadCache, type StartupReadCache } from './offline-startup'
+import { startupReadCache, type StartupReadCache } from './offline-startup'
 import {
   clientScopeKey,
   startPolling,

@@ -14,6 +14,9 @@ the host reports a history removal or rewind, clients invalidate older cached hi
 expanded conversation. Offline clients wait for the host if their saved history predates that
 change.
 
+At startup, Studio shows saved threads from paired computers while it checks their connections. An
+offline computer can still show its saved threads. Its connection status updates when it reconnects.
+
 Delegated agents appear as active pills on their main thread. Completed agents remain in the
 thread's **Agents** view. Settling, snoozing, archiving, restoring, or deleting a thread applies to
 all its delegated descendants. Stop active work and close live terminals before archiving or

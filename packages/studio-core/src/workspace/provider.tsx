@@ -40,6 +40,7 @@ import {
   pullOverviewScope,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
+  hydrateOfflineOverview,
   retainRuntimeSnapshot,
   sameRuntimeConnection,
   resolveRuntimeTarget,
@@ -1551,7 +1552,6 @@ export function WorkspaceProvider({
       let migrated = true
       const restoreCache = (profile: RuntimeProfile) =>
         Effect.gen(function* () {
-          const before = overviewsRef.current[profile.id]
           let lastSeen: string | null = null
           let pulls: RuntimeOverview['pulls'] = null
           yield* Effect.gen(function* () {
@@ -1577,22 +1577,15 @@ export function WorkspaceProvider({
               }),
             ),
           )
+          if (disposed) return
+          const previous = currentRuntimeOverview(profile, overviewsRef.current[profile.id])
+          const entry = previous ?? idleRuntimeOverview(profile)
           const value = cached[profile.id]
-          if (value)
-            cached[profile.id] = {
-              ...value,
-              approvals: [],
-              questions: [],
-              terminals: [],
-              pendingDevices: [],
-            }
-          // A live refresh or user selection may finish while an inactive cache is loading.
-          if (disposed || overviewsRef.current[profile.id] !== before) return
-          updateOverview({
-            ...idleRuntimeOverview(profile, cached[profile.id] ?? null),
-            lastSeen,
-            pulls,
-          })
+          const restored = value
+            ? hydrateOfflineOverview(entry, { snapshot: value, lastSeen, pulls })
+            : entry
+          if (restored.snapshot) cached[profile.id] = restored.snapshot
+          if (restored !== previous) updateOverview(restored)
         })
       const active = registry.profiles.find((profile) => profile.id === registry.activeId)
       if (active) yield* restoreCache(active)

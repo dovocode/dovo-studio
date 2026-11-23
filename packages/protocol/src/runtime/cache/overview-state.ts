@@ -2,6 +2,7 @@ import { retainWorkspace } from './retain-workspace.js'
 import { getRuntimeSnapshotTag, copyRuntimeSnapshotTag } from '../../shared/client.js'
 import type { RuntimeOverview } from '../connection/runtime-fleet.js'
 import type { RuntimeConnection, RuntimeSnapshot } from '../connection/runtime.js'
+import type { runtimeSnapshotCacheSchema } from './read-cache.js'
 const ownedSnapshots = new WeakMap<RuntimeSnapshot, RuntimeSnapshot>()
 
 /** Older runtimes and saved caches can include foreign thread projections. Keep their
@@ -77,6 +78,16 @@ export function retainOverviewSnapshot(
   previous: RuntimeOverview | undefined,
   next: RuntimeOverview,
 ) {
+  // An offline response can arrive after the cache fills the overview it started with.
+  if (
+    previous?.snapshot &&
+    !next.connected &&
+    !next.snapshot &&
+    next.error &&
+    previous.profile.id === next.profile.id &&
+    sameRuntimeConnection(previous.profile.connection, next.profile.connection)
+  )
+    return hydrateOfflineOverview(next, { ...previous, snapshot: previous.snapshot })
   const snapshot = retainRuntimeSnapshot(
     previous?.snapshot ?? null,
     previous?.profile.connection ?? null,
@@ -84,6 +95,26 @@ export function retainOverviewSnapshot(
     next.profile.connection,
   )
   return snapshot === next.snapshot ? next : { ...next, snapshot }
+}
+
+/** Fill a missing snapshot without changing the status of the current connection. */
+export function hydrateOfflineOverview(
+  entry: RuntimeOverview,
+  cached: typeof runtimeSnapshotCacheSchema.Type,
+): RuntimeOverview {
+  if (entry.connected || entry.snapshot) return entry
+  return {
+    ...entry,
+    snapshot: {
+      ...cached.snapshot,
+      approvals: [],
+      questions: [],
+      terminals: [],
+      pendingDevices: [],
+    },
+    lastSeen: entry.lastSeen ?? cached.lastSeen,
+    pulls: entry.pulls ?? (cached.pulls ? { ...cached.pulls, partial: true } : null),
+  }
 }
 
 export function shouldPublishOverview(

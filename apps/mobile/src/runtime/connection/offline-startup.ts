@@ -4,7 +4,6 @@ import {
   type CachedRead,
   type ReadCacheError,
   type RuntimeConnection,
-  type RuntimeOverview,
   type RuntimeProfile,
   type RuntimeReadCache,
 } from '@dovo/protocol'
@@ -89,30 +88,6 @@ export function startupReadCache(cache: RuntimeReadCache): StartupReadCache {
     remove: (key) => run(removeEffect(key)),
     clear: () => run(clearEffect()),
     close: () => run(closeEffect()),
-  }
-}
-
-/**
- * Apply a saved snapshot to an overview restored at launch. Network state may arrive first now
- * that the selected computer connects without waiting for every cache; it is always newer, so a
- * cached snapshot only fills an entry that has no snapshot yet and never marks it offline.
- */
-export function hydrateOfflineOverview(
-  entry: RuntimeOverview,
-  cached: SnapshotEnvelope,
-): RuntimeOverview {
-  if (entry.connected || entry.snapshot) return entry
-  return {
-    ...entry,
-    snapshot: {
-      ...cached.snapshot,
-      approvals: [],
-      questions: [],
-      terminals: [],
-      pendingDevices: [],
-    },
-    lastSeen: entry.lastSeen ?? cached.lastSeen,
-    pulls: entry.pulls ?? (cached.pulls ? { ...cached.pulls, partial: true } : null),
   }
 }
 

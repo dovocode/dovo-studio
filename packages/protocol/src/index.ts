@@ -142,6 +142,7 @@ export * from './tasks/task-machine-draft.js'
 export * from './tasks/thread-handoff.js'
 
 export {
+  hydrateOfflineOverview,
   retainRuntimeSnapshot,
   retainOverviewSnapshot,
   shouldPublishOverview,

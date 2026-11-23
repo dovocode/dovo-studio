@@ -174,6 +174,31 @@ it('never reuses an ETag after the device token changes', async () => {
   )
 })
 
+it('keeps a snapshot restored while an offline refresh was in flight', () => {
+  const restored = {
+    ...overview(snapshot),
+    connected: false,
+    pulls: { total: 2, needsAttention: 1, reviewRequested: 1, partial: false },
+  }
+  const failed = {
+    ...restored,
+    snapshot: null,
+    lastSeen: null,
+    pulls: null,
+    error: 'Offline',
+  }
+  expect(retainOverviewSnapshot(restored, failed)).toEqual({
+    ...restored,
+    error: 'Offline',
+    pulls: { ...restored.pulls, partial: true },
+  })
+  const replaced = {
+    ...failed,
+    profile: { ...profile, connection: { ...profile.connection, token: 'new-token' } },
+  }
+  expect(retainOverviewSnapshot(restored, replaced)).toBe(replaced)
+})
+
 it('does not reuse snapshots when either response lacks a validator', async () => {
   const previous = await taggedSnapshot(profile.connection, snapshot, 'W/"same"')
   const untagged = await taggedSnapshot({ ...profile.connection }, snapshot)
