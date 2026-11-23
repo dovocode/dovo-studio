@@ -14,12 +14,14 @@ import {internetPublicKey,sealInternet,peerAddress} from '@dovo/protocol';
 import {ConnectSettings as Desktop} from '${desktop}/connect-settings';
 import {ConnectSettings as Mobile} from '${native}/connect-settings';
 window.writes=[];window.calls=[];window.connected=true;window.supported=true;window.enabled=false;window.signedIn=true;window.fail=false;window.refreshes=[];window.connects=[];window.secret=new Uint8Array(32).fill(7);
-window.storage={read:async()=>window.signedIn?'a'.repeat(43):null,write:async()=>{}};window.open=async()=>{};
+window.storage={read:async()=>window.signedIn?'a'.repeat(43):null,write:async()=>{}};window.open=async url=>{window.opened=url};window.copy=async value=>{window.copied=value;return true};
+Object.defineProperty(navigator,'clipboard',{value:{writeText:window.copy}});
+const internet=()=>({enabled:window.enabled,connected:window.enabled,error:'',...(window.mcpSupported&&{remoteMcp:{enabled:window.mcpEnabled,managementUrl:'https://connect.dovo.studio/mcp/manage',...(window.mcpEnabled&&{serverUrl:'https://connect.dovo.studio/mcp/server-b'})}})});
 const profile={id:'paired-b',name:'Server B',connection:{address:'http://server-b.vpn:51464',token:'paired-b-secret',runtimeId:'server-b'}};
-window.scope=()=>({profile,snapshot:{runtimeId:'server-b',owner:false,internetSetupSupported:window.supported,internet:{enabled:window.enabled,connected:window.enabled,error:''}},connected:window.connected,activeRuntimeId:'paired-b',runtimeRegistry:{profiles:[profile]},request:window.request,call:window.request,refreshRuntime:async p=>{window.refreshes.push(p.id);window.render()},refresh:async()=>{window.refreshes.push('paired-b');window.render()},connect:async connection=>window.connects.push(connection)});
-window.request=async(path,input)=>{window.writes.push({target:'paired-b',path,input});if(window.fail)throw Error('Server B rejected setup');if(path.endsWith('/setup'))return {id:'setup-b',registration:{id:'server-b',name:'Server B',identity:'installation-b',publicKey:internetPublicKey(window.secret),timestamp:Date.now(),signature:'proof-b'}};window.enabled=true;return {enabled:true,connected:true,error:''}};
+window.scope=()=>({profile,snapshot:{runtimeId:'server-b',owner:false,internetSetupSupported:window.supported,internet:internet()},connected:window.connected,activeRuntimeId:'paired-b',runtimeRegistry:{profiles:[profile]},request:window.request,call:window.request,refreshRuntime:async p=>{window.refreshes.push(p.id);window.render()},refresh:async()=>{window.refreshes.push('paired-b');window.render()},connect:async connection=>window.connects.push(connection)});
+window.request=async(path,input)=>{window.writes.push({target:'paired-b',path,input});if(window.fail)throw Error('Server B rejected setup');if(path.endsWith('/remote-mcp')){window.mcpEnabled=input.enabled;return internet()}if(path.endsWith('/setup'))return {id:'setup-b',registration:{id:'server-b',name:'Server B',identity:'installation-b',publicKey:internetPublicKey(window.secret),timestamp:Date.now(),signature:'proof-b'}};window.enabled=true;return {enabled:true,connected:true,error:''}};
 window.fetch=async(url,init)=>{const path=new URL(url).pathname;window.calls.push({path,authorization:new Headers(init.headers).get('Authorization'),input:init.body?JSON.parse(init.body):null});if(path==='/v1/servers')return Response.json({user:{id:'owner',name:'Dominic'},servers:window.enabled?[{id:'server-b',name:'Server B',address:'',internet:{publicKey:internetPublicKey(window.secret),online:true}}]:[]});if(path==='/v1/internet/hosts')return Response.json({grant:'scoped-grant-b'});if(path==='/v1/internet/connections'){if(init.method==='POST'){window.clientKey=JSON.parse(init.body).publicKey;return Response.json({id:'connection-b'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64),relay:'dovo'};return Response.json({publicKey:internetPublicKey(window.secret),box:sealInternet({requestId:'connection-b',runtimeId:'server-b',connection:{address:peerAddress(peer),runtimeId:'server-b',peer,token:'account-b-private-token-123456789'}},window.clientKey,window.secret,new Uint8Array(24).fill(8))})}return Response.json({ok:true})};
-const app=createRoot(document.getElementById('app'));window.kind='desktop';window.key=0;window.render=()=>flushSync(()=>app.render(window.kind==='desktop'?<Desktop key={window.key}/>:<Mobile key={window.key}/>));window.reset=kind=>{window.kind=kind;window.key++;window.enabled=false;window.fail=false;window.approve=false;window.connected=true;window.supported=true;window.writes=[];window.calls=[];window.refreshes=[];window.render()};window.reset('desktop');
+const app=createRoot(document.getElementById('app'));window.kind='desktop';window.key=0;window.render=()=>flushSync(()=>app.render(window.kind==='desktop'?<Desktop key={window.key}/>:<Mobile key={window.key}/>));window.reset=kind=>{window.kind=kind;window.key++;window.enabled=false;window.fail=false;window.approve=false;window.connected=true;window.supported=true;window.writes=[];window.calls=[];window.refreshes=[];window.mcpSupported=false;window.mcpEnabled=false;window.copied=undefined;window.opened=undefined;window.render()};window.reset('desktop');
 `,
       loader: 'tsx',
       resolveDir: root,
@@ -58,11 +60,15 @@ const app=createRoot(document.getElementById('app'));window.kind='desktop';windo
       path: 'react-native',
       contents:
         controls +
-        `export const Alert={alert:(title,message,buttons)=>{window.consent={title,message};if(window.approve)buttons.find(b=>b.text==='Enable Connect + relay').onPress()}};`,
+        `export const Alert={alert:(title,message,buttons)=>{window.consent={title,message};if(window.approve)buttons.find(b=>b.onPress).onPress()}};export const Linking={openURL:url=>window.open(url)};`,
     },
     {
       path: 'expo-crypto',
       contents: `export const getRandomBytes=n=>crypto.getRandomValues(new Uint8Array(n));`,
+    },
+    {
+      path: 'expo-clipboard',
+      contents: `export const setStringAsync=value=>window.copy(value);`,
     },
     {
       path: './peer-transport',
@@ -162,15 +168,56 @@ try {
       window.supported = undefined
       window.render()
     })
-    await page.getByText(/Update Dovo on this computer/).waitFor()
+    await page
+      .getByText('Update Dovo on this computer to enable Connect from a paired device.', {
+        exact: true,
+      })
+      .waitFor()
+    await page
+      .getByText('Update Dovo on this computer to configure remote MCP.', { exact: true })
+      .waitFor()
     assert.equal(
       await page.getByRole('button', { name: 'Enable Dovo Connect + relay', exact: true }).count(),
       0,
     )
   }
+  for (const kind of ['desktop', 'mobile']) {
+    await page.evaluate((kind) => {
+      window.reset(kind)
+      window.enabled = true
+      window.approve = true
+      window.mcpSupported = true
+      window.render()
+    }, kind)
+    await page.getByRole('button', { name: 'Enable remote MCP', exact: true }).click()
+    if (kind === 'desktop') {
+      assert.equal(await page.evaluate(() => window.mcpEnabled), false)
+      await page.getByRole('button', { name: 'Confirm remote MCP access' }).click()
+    }
+    await page.getByRole('button', { name: 'Copy MCP server URL' }).click()
+    await page.getByRole('button', { name: 'Copied', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Manage connected apps' }).click()
+    await page.getByRole('button', { name: 'Disable remote MCP' }).click()
+    await page.getByRole('button', { name: 'Enable remote MCP', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Copy MCP server URL' }).count(), 0)
+    assert.equal(await page.evaluate(() => window.enabled), true)
+    assert.equal(
+      await page.evaluate(() => window.copied),
+      'https://connect.dovo.studio/mcp/server-b',
+    )
+    assert.equal(await page.evaluate(() => window.opened), 'https://connect.dovo.studio/mcp/manage')
+    assert.deepEqual(
+      await page.evaluate(() => window.writes),
+      [true, false].map((enabled) => ({
+        target: 'paired-b',
+        path: '/api/runtime/internet/remote-mcp',
+        input: { enabled, consent: true },
+      })),
+    )
+  }
   assert.deepEqual(errors, [])
   console.log(
-    'Paired Connect desktop/mobile: confirmation, target scope, token isolation, offline, failure/retry, compatibility and mobile account fallback passed',
+    'Paired Connect desktop/mobile: confirmation, target scope, token isolation, offline, failure/retry, compatibility, mobile account fallback and Remote MCP settings passed',
   )
 } finally {
   await browser.close()
