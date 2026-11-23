@@ -119,14 +119,16 @@ completed before enclosing bundles and the root app signed last. The pinned `@el
 patch serializes `Contents/MacOS` executables so bundle inspection cannot race temporary signing
 files, deduplicates framework symlink aliases and waits for in-flight signatures before reporting a
 failure or allowing builder retries. Identity selection, entitlements, timestamps, hardened runtime
-and strict verification stay with the existing signer. When `codesign` reports a missing timestamp,
-the signer retries that file twice with the same signing options, after delays of one and two
-seconds. Notarization and stapling follow successful signing. The temporary notarization ZIP uses
-compression level 1 to reduce local compression time. Distributed ZIP/DMG compression is unchanged.
-After stapling, the mise archive runs alongside DMG and update ZIP creation. Release summaries
-separately time notarization signature checks, ZIP creation, upload plus Apple processing, and
-stapling. Apple processing and upload remain one timed command; these timings do not imply control
-over Apple's queue or a guaranteed release speedup.
+and strict verification stay with the existing signer. In the bundled runtime, Mach-O files and
+explicit signing targets get their own signatures. The enclosing app signature seals runtime data
+such as images and model weights. When `codesign` reports a missing timestamp, the signer retries
+that file twice with the same signing options, after delays of one and two seconds. Notarization and
+stapling follow successful signing. The temporary notarization ZIP uses compression level 1 to
+reduce local compression time. Distributed ZIP/DMG compression is unchanged. After stapling, the
+mise archive runs alongside DMG and update ZIP creation. Release summaries separately time
+notarization signature checks, ZIP creation, upload plus Apple processing, and stapling. Apple
+processing and upload remain one timed command; these timings do not imply control over Apple's
+queue or a guaranteed release speedup.
 
 Both workflows cache the pnpm package store and registry metadata. Metadata entries refresh daily;
 frozen-lockfile supply-chain checks remain enabled. Release jobs also cache Node headers and

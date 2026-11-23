@@ -72,6 +72,33 @@ function options(f) {
   }
 }
 
+await test('signs native runtime files individually and seals data with the app', async (t) => {
+  const f = await fixture(t)
+  const binary = f.parallel[0]
+  await writeFile(binary, Buffer.from('cffaedfe00000000', 'hex'))
+  const image = join(dirname(binary), 'logo.png')
+  await writeFile(image, Buffer.from('89504e470d0a1a0a', 'hex'))
+  const explicit = join(dirname(binary), 'explicit')
+  await writeFile(explicit, '#!/bin/sh\nexit 0\n')
+  const signed = []
+  const execute = mock.method(transport, 'execFileAsync', async (_command, args) => {
+    if (args.includes('--sign')) signed.push(args.at(-1))
+    return ''
+  })
+  t.after(() => execute.mock.restore())
+  const packager = { doSign: signAsync }
+  configureMacSigning(packager)
+  const opts = options(f)
+  opts.binaries = [explicit]
+  await packager.doSign(opts)
+  assert.ok(signed.includes(binary))
+  assert.ok(signed.includes(explicit))
+  assert.ok(!signed.includes(image))
+  assert.equal(signed.at(-1), f.app)
+  assert.ok(!signed.includes(f.ignored), 'Preserve the original ignore function')
+  assert.ok(execute.mock.calls.some(({ arguments: [, args] }) => args.includes('--verify')))
+})
+
 await test(
   'installed scanner handles a wide runtime tree with a low file descriptor limit',
   { skip: process.platform === 'win32' },
@@ -339,7 +366,13 @@ await test('desktop opt-in preserves installed builder identity resolution, opti
   const failure = new Error('signing failed')
   let attempt = 0
   const execute = mock.method(signing, 'sign', async (received) => {
-    assert.deepEqual(received, { ...opts, identity: identity.name, signingConcurrency: 4 })
+    assert.deepEqual(received, {
+      ...opts,
+      identity: identity.name,
+      signingConcurrency: 4,
+      ignore: received.ignore,
+    })
+    assert.equal(received.ignore('/fixture/Dovo.app/Contents/MacOS/Dovo'), false)
     if (attempt++) throw failure
     return 'signed'
   })
@@ -387,7 +420,11 @@ await test(
       )
     }
     await symlink('Versions/Current/Resources', join(f.framework, 'Resources'))
-    await signAsync({
+    const resource = join(dirname(f.parallel[0]), 'logo.png')
+    await writeFile(resource, Buffer.from('89504e470d0a1a0a', 'hex'))
+    const packager = { doSign: signAsync }
+    configureMacSigning(packager)
+    await packager.doSign({
       ...options(f),
       identity: '-',
       keychain: undefined,
@@ -398,5 +435,9 @@ await test(
       execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle])
     }
     assert.equal(execFileSync(f.main).length, 0)
+    await writeFile(resource, 'modified resource')
+    const verification = spawnSync('codesign', ['--verify', '--deep', '--strict', f.app])
+    assert.equal(verification.status, 1)
+    assert.match(verification.stderr.toString(), /a sealed resource is missing or invalid/)
   },
 )
