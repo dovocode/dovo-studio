@@ -20,7 +20,7 @@ const result = await build({
 import {NativeComposerInput,NativeReferenceMessage,nativeComposerAvailable,nativeReferenceMessagesAvailable,dismissComposerKeyboard} from './apps/mobile/src/tasks/composer/native-composer-input.native';
 import {resolveScopedAgents,messageReferences} from '@dovo/protocol';
 window.available=nativeComposerAvailable;window.messageAvailable=nativeReferenceMessagesAvailable;window.dismiss=dismissComposerKeyboard;
-const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}],agents:resolveScopedAgents(undefined,undefined,[])};
+const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}],agents:[...resolveScopedAgents(undefined,undefined,[]),{id:'reviewer',provider:'claude'}]};
 function App(){const input=useRef();window.read=()=>input.current.readText();const tick=String.fromCharCode(96);const [value,setValue]=useState('🚀 @file:"docs/Release notes.md" $review @docs '+tick+'model:agent%3Adovo%3Acodex/gpt'+tick+' @Reviewer ('+tick+'agent:mac/project/reviewer'+tick+') ');const [revision,setRevision]=useState('first');
 const [message,setMessage]=useState(false);window.showMessage=()=>setMessage(true);
 window.external=text=>flushSync(()=>{setRevision('next');setValue(text)});
@@ -106,6 +106,9 @@ try {
       assert.equal(model.provider, 'codex')
       assert.ok(model.icon.startsWith('iVBOR'), 'The native bridge must receive bundled PNG data')
       assert.equal(model.iconTemplate, true)
+      const agent = await page.evaluate(() => window.nativeProps.content.references[4])
+      assert.equal(agent.provider, 'claude')
+      assert.equal(agent.iconTemplate, false)
       await page.evaluate(() =>
         window.nativeProps.onTextChange({
           nativeEvent: { text: 'Fast native typing 🚀', eventCount: 7 },

@@ -303,15 +303,20 @@ export function Composer({
     .filter((server) => server.enabled)
     .map((server) => server.name)
     .join('\n')
+  const agentRepository = task.bot ? undefined : repository
   const chipResources = useMemo(
     () => ({
       skills: skillNames ? skillNames.split('\n').map((name) => ({ name })) : [],
       mcpServers: serverNames
         ? serverNames.split('\n').map((name) => ({ name, enabled: true }))
         : [],
-      agents: resolveScopedAgents(snapshot?.defaults, repository, snapshot?.workspace.agents ?? []),
+      agents: resolveScopedAgents(
+        snapshot?.defaults,
+        agentRepository,
+        snapshot?.workspace.agents ?? [],
+      ),
     }),
-    [skillNames, serverNames, snapshot?.defaults, repository, snapshot?.workspace.agents],
+    [skillNames, serverNames, snapshot?.defaults, agentRepository, snapshot?.workspace.agents],
   )
   const [draftFocus, setDraftFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
@@ -1196,7 +1201,7 @@ export function Composer({
           {focused && !composerHistory.active && (
             <FileMentions
               taskId={task.id}
-              repositoryId={repository?.id}
+              repositoryId={agentRepository?.id}
               provider={composerAgent?.provider}
               text={draft.text}
               caret={caret}

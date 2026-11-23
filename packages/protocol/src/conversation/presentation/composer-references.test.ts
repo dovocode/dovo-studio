@@ -124,6 +124,23 @@ it('uses the referenced harness for model icons, including custom agents and ACP
   expect(composerModelReference('model:harness%3Aunknown/same-model')?.provider).toBeUndefined()
 })
 
+it('uses the scoped agent provider while preserving the saved mention and fallback', () => {
+  const text = '@Review agent (`agent:mac/project/review%2F1`)'
+  const agents = [{ id: 'review/1', provider: 'claude' as const }]
+  expect(messageReferences(text, { ...resources, agents })).toEqual([
+    { start: 0, end: text.length, kind: 'agent', label: '@Review agent', provider: 'claude' },
+  ])
+  expect(messageReferences(text, resources)[0]).toMatchObject({
+    kind: 'agent',
+    label: '@Review agent',
+  })
+  expect(messageReferences(text, resources)[0]?.provider).toBeUndefined()
+  expect(
+    messageReferences('@Review agent (`agent:mac/project/%ZZ`)', { ...resources, agents })[0]
+      ?.provider,
+  ).toBeUndefined()
+})
+
 it('identifies the file type and reference kind without adding a label prefix', () => {
   expect(
     ['App.tsx', 'package.json', 'README.md', '.env', 'logo.png', 'run.sh', 'unknown.bin'].map(

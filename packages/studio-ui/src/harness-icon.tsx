@@ -10,6 +10,7 @@ export function HarnessIcon({
   return (
     <svg
       aria-hidden="true"
+      data-harness={provider}
       viewBox={data.viewBox}
       className={className}
       fill={data.fill ?? 'currentColor'}

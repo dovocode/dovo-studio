@@ -15,8 +15,10 @@ same Lucide and harness icon data and keep brand colors or apply the current tex
 appropriate.
 
 Type `@` to find Bots and agents. Bot results include paired computers. Agent results use the
-current computer and project settings. Selecting an agent inserts its name and scoped ID in the
-message. Use `@thread:title` to search other threads, including archived threads.
+current computer and project settings. The picker and the inserted chip show the agent's harness
+icon. The chip uses a generic icon if the agent is unavailable. Selecting an agent inserts its name
+and scoped ID in the message. Use `@thread:title` to search other threads, including archived
+threads.
 
 Type `@file` to browse files or `@file:src/app` to search. A selection inserts `@file:src/app.ts`.
 Paths with spaces use quotes, such as `@file:"docs/Review Notes.md"`. Older saved file mentions such

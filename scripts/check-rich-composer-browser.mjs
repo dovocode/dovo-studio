@@ -17,7 +17,7 @@ import { selectComposerInput, composerSelection } from './src/chat/composer/comp
 const controller = createComposerDraft('', () => {}, console.error);
 window.editorRenders = 0; window.controller = controller; window.submits = []; window.alternatives = 0; window.commands = [];
 const messages = [{ role: 'user', text: 'First message' }, { role: 'user', text: 'Second **message**' }];
-const resources = { skills: [{ name: 'review', enabled: true }], mcpServers: [{ name: 'docs', enabled: true }], agents: [{ id: 'work', provider: 'claude' }] };
+const resources = { skills: [{ name: 'review', enabled: true }], mcpServers: [{ name: 'docs', enabled: true }], agents: [{ id: 'work', provider: 'claude' }, { id: 'custom-reviewer', provider: 'codex' }] };
 const history = () => messages;
 const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
@@ -75,7 +75,7 @@ export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
 export const useResolvedTheme = () => 'dark';`
-            : `export {BotAvatar} from '../studio-ui/src/bot-avatar'; export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
+            : `export {BotAvatar} from '../studio-ui/src/bot-avatar'; export {HarnessIcon} from '../studio-ui/src/harness-icon'; export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
 export const Button = ({ children, variant, ...props }) => <button {...props}>{children}</button>;
 export const IconButton = ({ label, children, ...props }) => <button aria-label={label} {...props}>{children}</button>;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -312,7 +312,9 @@ try {
   assert.equal(await text(), '`model:harness%3Acodex/gpt%2Fexact` ')
   await source.fill('@release')
   await source.press('End')
-  await page.getByRole('option').filter({ hasText: 'Agent · codex' }).click()
+  const agentOption = page.getByRole('option').filter({ hasText: 'Agent · codex' })
+  await agentOption.locator('svg[data-harness="codex"]').waitFor({ timeout: 3000 })
+  await agentOption.click()
   assert.equal(await text(), '@Release helper (`agent:local//custom-reviewer`) ')
   assert.equal(await page.evaluate(() => window.fileQueries ?? 0), 0)
   await source.fill('@file')
@@ -340,8 +342,17 @@ try {
   await setDraft('')
   await editor.pressSequentially('@release')
   await page.getByRole('option').filter({ hasText: 'Agent · codex' }).click()
-  await editor.locator('[data-reference-kind="agent"]').waitFor()
+  const agentChip = editor.locator('[data-reference-kind="agent"]')
+  await agentChip.locator('svg[data-harness="codex"]').waitFor()
   assert.equal(await text(), '@Release helper (`agent:local//custom-reviewer`) ')
+  await page.evaluate(() => window.setReferenceAgents([]))
+  await agentChip.locator('[data-reference-icon="model"]').waitFor()
+  await page.evaluate(() =>
+    window.setReferenceAgents([{ id: 'custom-reviewer', provider: 'claude' }]),
+  )
+  await agentChip.locator('svg[data-harness="claude"]').waitFor()
+  assert.equal(await text(), '@Release helper (`agent:local//custom-reviewer`) ')
+  await page.evaluate(() => window.setReferenceAgents([{ id: 'work', provider: 'claude' }]))
   await setDraft('')
   await editor.pressSequentially('@release')
   assert.equal(await page.getByRole('option').filter({ hasText: 'Thread ·' }).count(), 0)

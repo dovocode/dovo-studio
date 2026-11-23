@@ -32,17 +32,43 @@ export const composerReferenceIcon = (
       ? 'model'
       : reference.kind
 
-/** Recognize the saved mention format without requiring a live Bot catalog. */
-function savedMentionReferences(text: string): ComposerReference[] {
+const scopedAgentReference = /^agent:[^/]+\/[^/]*\/([^/]+)$/
+
+export function composerAgentReferenceProvider(
+  reference: string,
+  agents: ComposerReferenceResources['agents'],
+): ComposerReference['provider'] {
+  const encodedId = scopedAgentReference.exec(reference)?.[1]
+  if (!encodedId || !agents?.length) return
+  try {
+    const id = decodeURIComponent(encodedId)
+    return agents.find((agent) => agent.id === id)?.provider
+  } catch {
+    return
+  }
+}
+
+/** Recognize saved mentions even when their agent or Bot is no longer available. */
+function savedMentionReferences(
+  text: string,
+  agents: ComposerReferenceResources['agents'],
+): ComposerReference[] {
   const found: ComposerReference[] = []
   for (const match of maskFileMentions(text).matchAll(
     /(^|\s)@([^@\n\r`]+?) \(`((?:studio|agent):[^`\s]+)`\)/g,
   )) {
-    const kind = /^agent:[^/]+\/[^/]*\/[^/]+$/.test(match[3]) ? 'agent' : 'bot'
+    const kind = scopedAgentReference.test(match[3]) ? 'agent' : 'bot'
     if ((kind === 'bot' && parseStudioReference(match[3])?.kind !== 'thread') || !match[2].trim())
       continue
     const start = match.index! + match[1].length
-    found.push({ start, end: match.index! + match[0].length, kind, label: `@${match[2]}` })
+    const provider = kind === 'agent' ? composerAgentReferenceProvider(match[3], agents) : undefined
+    found.push({
+      start,
+      end: match.index! + match[0].length,
+      kind,
+      label: `@${match[2]}`,
+      ...(provider ? { provider } : {}),
+    })
   }
   return found
 }
@@ -152,7 +178,7 @@ export function composerReferences(
     if ('children' in node) for (const child of node.children) visit(child)
   }
   for (const node of fromMarkdown(text).children) visit(node)
-  for (const reference of savedMentionReferences(text))
+  for (const reference of savedMentionReferences(text, resources.agents))
     if (
       !excluded.some(
         (range) =>

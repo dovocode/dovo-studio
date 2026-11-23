@@ -89,11 +89,11 @@ const stubs = [
     path: 'react-native-reanimated',
     contents: `import {View} from 'react-native';const transition={duration:()=>transition,delay:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},FadeIn=transition,FadeOut=transition,LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
   },
-  {
-    path: '../../agents/harness-icon',
+  ...['../../agents/harness-icon', '../../../agents/harness-icon'].map((path) => ({
+    path,
     importer: mobile,
     contents: 'export const HarnessIcon=()=>null;',
-  },
+  })),
   ...['./icon', '../content/text', '../theme'].map((path) => ({
     path,
     importer: mobile + 'src/ui/controls/',

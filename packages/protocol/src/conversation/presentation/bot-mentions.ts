@@ -61,6 +61,7 @@ export function agentMentionSuggestions(
       kind: 'agent' as const,
       reference: `agent:${[runtimeId, repositoryId ?? '', agent.id].map(encodeURIComponent).join('/')}`,
       name: agent.name,
+      provider: agent.provider,
       detail: `Agent · ${agent.provider}`,
     }))
 }

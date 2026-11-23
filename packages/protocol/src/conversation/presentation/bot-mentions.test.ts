@@ -43,6 +43,7 @@ it('keeps same-named Bots on different computers distinct and inserts only a ref
   expect(choice).toEqual({
     kind: 'agent',
     name: bot.title,
+    provider: 'codex',
     detail: 'Agent · codex',
     reference: 'agent:mac%2F1/my%20project/review%2F1',
   })

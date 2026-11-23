@@ -1,6 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
-import { Pressable, ScrollView } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
 import { Schema } from 'effect'
 import {
   modelMentionsSchema,
@@ -28,6 +28,7 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { BotAvatar } from '../../../bots/bot-avatar'
+import { HarnessIcon } from '../../../agents/harness-icon'
 
 const filesSchema = mutableStruct({
   files: mutableArray(Schema.String),
@@ -37,6 +38,7 @@ const filesSchema = mutableStruct({
 type Suggestion = {
   kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'agent' | 'bot' | 'thread'
   avatar?: string
+  provider?: Agent['provider']
   value: string
   name?: string
   detail: string
@@ -163,6 +165,12 @@ export function FileMentions({
     ? []
     : resourceSuggestions(resources, mention.trigger, mention.query)
   const suggestions: Suggestion[] = [
+    ...(mention.trigger === '@' && !threadOnly && runtimeId
+      ? agentMentionSuggestions(runtimeId, repositoryId, agents, mention.query).map((agent) => ({
+          ...agent,
+          value: agent.reference,
+        }))
+      : []),
     ...(mention.trigger === '@'
       ? contextMentionSuggestions(
           overviews.map((owner) => ({
@@ -178,12 +186,6 @@ export function FileMentions({
           name: bot.name,
           detail: bot.detail,
           avatar: bot.avatar,
-        }))
-      : []),
-    ...(mention.trigger === '@' && !threadOnly && runtimeId
-      ? agentMentionSuggestions(runtimeId, repositoryId, agents, mention.query).map((agent) => ({
-          ...agent,
-          value: agent.reference,
         }))
       : []),
     ...(modelsSupported && modelLookup?.key === key
@@ -361,9 +363,12 @@ export function FileMentions({
             {item.kind === 'bot' && (
               <BotAvatar avatar={item.avatar} name={item.name ?? 'Bot'} size={24} />
             )}
-            <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13 }}>
-              {label}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {item.provider && <HarnessIcon provider={item.provider} size={14} />}
+              <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13, flexShrink: 1 }}>
+                {label}
+              </Text>
+            </View>
             {!!item.detail && (
               <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 11 }}>
                 {item.detail}

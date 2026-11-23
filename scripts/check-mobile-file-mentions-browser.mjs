@@ -42,7 +42,16 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
     {
       path: 'react-native',
-      contents: `import React from 'react';export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,accessibilityLabel,onPress})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;`,
+      contents: `import React from 'react';export const View=({children,style})=><div style={{display:'flex',...style}}>{children}</div>;export const ScrollView=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;export const Pressable=({children,accessibilityLabel,onPress})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;`,
+    },
+    {
+      path: 'react-native-svg',
+      contents: `import React from 'react';export default ({accessible, ...props})=><svg {...props}/>;export const Path=props=><path {...props}/>;`,
+    },
+    {
+      path: '../ui/theme',
+      importer: mobile + 'src/agents/',
+      contents: "export const useTheme=()=>({colors:{muted:'#888'}});",
     },
     {
       path: '../../../runtime/connection/provider',
@@ -205,6 +214,12 @@ try {
   await bots.first().waitFor()
   assert.equal(await bots.count(), 2)
   assert.equal(await thread.count(), 0)
+  const picker = page.getByLabel('Agent, Bot, model and MCP server suggestions')
+  assert.equal(
+    await picker.getByRole('button').first().getAttribute('aria-label'),
+    'Mention agent Release agent',
+  )
+  assert.equal(await agent.locator('svg').getAttribute('fill'), '#d97757')
   await agent.click()
   assert.equal(
     await page.evaluate(() => window.runtime.text),

@@ -20,6 +20,7 @@ import {
   runtimeComputerName,
   insertModelMention,
   type ModelMention,
+  type Agent,
   commandSuggestions,
   composerMention,
   insertMention,
@@ -31,7 +32,7 @@ import {
   resourceSuggestions,
   type ResourceSettings,
 } from '@dovo/protocol'
-import { BotAvatar, cn } from '@dovo/studio-ui'
+import { BotAvatar, HarnessIcon, cn } from '@dovo/studio-ui'
 import {
   sameWorkspaceFields,
   useAppPreferences,
@@ -42,15 +43,22 @@ import { composerSelection, selectComposerInput } from './composer-input'
 import { selectConversationConnection } from '../thread/workspace-selection'
 import type { RichComposerHandle } from './rich-composer-editor'
 
-type IdentityMention = { reference: string; name: string; detail: string; avatar?: string }
-const sameBotMentions = (a: IdentityMention[], b: IdentityMention[]) =>
+type IdentityMention = {
+  reference: string
+  name: string
+  detail: string
+  avatar?: string
+  provider?: Agent['provider']
+}
+const sameIdentityMentions = (a: IdentityMention[], b: IdentityMention[]) =>
   a.length === b.length &&
   a.every(
     (item, i) =>
       item.reference === b[i]?.reference &&
       item.name === b[i]?.name &&
       item.detail === b[i]?.detail &&
-      item.avatar === b[i]?.avatar,
+      item.avatar === b[i]?.avatar &&
+      item.provider === b[i]?.provider,
   )
 
 const filesSchema = mutableStruct({
@@ -61,6 +69,7 @@ const filesSchema = mutableStruct({
 type Suggestion = {
   kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot' | 'thread' | 'agent'
   avatar?: string
+  provider?: Agent['provider']
   /** Prompt suggestions: shown name, while `detail` previews the text. */
   name?: string
   value: string
@@ -185,12 +194,14 @@ export function useFileMentions({
         : [],
     [trigger, query],
   )
-  const bots = useWorkspaceSelector(selectBots, sameBotMentions)
+  const bots = useWorkspaceSelector(selectBots, sameIdentityMentions)
   const selectAgents = useCallback(
     (state: WorkspaceContextValue) => {
       if (trigger !== '@' || query?.toLowerCase().startsWith('thread:')) return []
-      const repositoryId = state.workspace.tasks.find((task) => task.id === taskId)?.repositoryId
-      const repository = state.workspace.repositories?.find((repo) => repo.id === repositoryId)
+      const task = state.workspace.tasks.find((task) => task.id === taskId)
+      const repository = task?.bot
+        ? undefined
+        : state.workspace.repositories?.find((repo) => repo.id === task?.repositoryId)
       const agents = resolveScopedAgents(
         state.snapshot?.defaults,
         repository,
@@ -198,14 +209,14 @@ export function useFileMentions({
       )
       return agentMentionSuggestions(
         state.snapshot?.runtimeId ?? state.connection?.runtimeId ?? 'local',
-        repositoryId,
+        repository?.id,
         agents,
         query ?? '',
       )
     },
     [trigger, query, taskId],
   )
-  const agents = useWorkspaceSelector(selectAgents, sameBotMentions)
+  const agents = useWorkspaceSelector(selectAgents, sameIdentityMentions)
   const resourceItems: Suggestion[] = mention
     ? resourceSuggestions(resources, mention.trigger, mention.query)
         .filter((item) => mention.trigger !== '/' || showSkillsInSlashMenu || item.kind !== 'skill')
@@ -267,10 +278,8 @@ export function useFileMentions({
   const searching = trigger === '@file:' && connected && lookup?.key !== lookupKey
   const suggestions: Suggestion[] = [
     ...agents.map((agent) => ({
-      kind: agent.kind,
+      ...agent,
       value: agent.reference,
-      name: agent.name,
-      detail: agent.detail,
     })),
     ...bots.map((bot) => ({
       kind: bot.kind ?? ('bot' as const),
@@ -548,6 +557,8 @@ export function useFileMentions({
                 name={item.name ?? 'Bot'}
                 className="size-6 rounded-lg [&_svg]:size-3.5"
               />
+            ) : item.provider ? (
+              <HarnessIcon provider={item.provider} className="size-3.5 shrink-0" />
             ) : (
               <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             )}

@@ -1,4 +1,5 @@
 import {
+  composerAgentReferenceProvider,
   composerModelReference,
   composerReferences,
   composerTextReferences,
@@ -76,10 +77,21 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
       const linked = node.marks.some((mark) => mark.type === richSchema.marks.link)
       if (!node.isText || code || linked) {
         flush()
-        if (node.type === richSchema.nodes.context_reference && node.attrs.kind === 'model') {
-          const reference = composerModelReference(node.textContent, resources.agents)
-          if (reference && node.attrs.provider !== (reference.provider ?? null))
-            updates.push({ position: start, node, provider: reference.provider })
+        if (node.type === richSchema.nodes.context_reference) {
+          const kind = node.attrs.kind
+          if (kind === 'model' || kind === 'agent') {
+            const provider =
+              kind === 'model'
+                ? composerModelReference(node.textContent, resources.agents)?.provider
+                : composerAgentReferenceProvider(
+                    node.children.find((part) =>
+                      part.marks.some((mark) => mark.type === richSchema.marks.code),
+                    )?.text ?? '',
+                    resources.agents,
+                  )
+            if (node.attrs.provider !== (provider ?? null))
+              updates.push({ position: start, node, provider })
+          }
           return
         }
         const model =
@@ -161,7 +173,7 @@ export function referenceNodeView(node: Node) {
   dom.title = node.textContent
   dom.setAttribute('aria-label', `${node.attrs.kind}: ${node.textContent}`)
   const provider = providerSchema.literals.find((provider) => provider === node.attrs.provider)
-  if (node.attrs.kind === 'model' && provider) {
+  if (provider) {
     const data = harnessIconData[provider]
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     icon.classList.add('dovo-composer-reference-icon')
@@ -176,8 +188,7 @@ export function referenceNodeView(node: Node) {
       icon.append(element)
     }
     dom.append(icon)
-  }
-  if (!provider) {
+  } else {
     const kind = node.attrs.kind
     if (
       kind === 'file' ||
