@@ -169,6 +169,14 @@ export const resourceSettingsSchema = superRefine(
 export const mcpTestResultSchema = mutableStruct({
   tools: mutableArray(Schema.String),
   server: Schema.String,
+  events: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        name: Schema.String,
+        delivery: mutableArray(Schema.Literals(['poll', 'push', 'webhook'])),
+      }),
+    ),
+  ),
 })
 export type McpServer = Schema.Schema.Type<typeof mcpServerSchema>
 export type ManagedSkill = Schema.Schema.Type<typeof managedSkillSchema>

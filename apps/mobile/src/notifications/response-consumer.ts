@@ -12,8 +12,12 @@ export function createNotificationResponseConsumer(options: {
   last: () => Response | null
   clear: () => void
   onError: (operation: 'open' | 'clear') => void
+  onClearRecovered?: () => void
+  pendingClears?: string[]
+  savePendingClears?: (keys: string[]) => void
 }) {
-  const seen = new Set<string>()
+  const failedClears = new Set(options.pendingClears)
+  const seen = new Set(failedClears)
   const pending: Array<{ key: string; target: NotificationTarget }> = []
   let disposed = false
   const keyOf = (response: Response) =>
@@ -24,10 +28,22 @@ export function createNotificationResponseConsumer(options: {
       const last = options.last()
       if (last && keyOf(last) === key) options.clear()
     } catch {
-      if (!disposed) options.onError('clear')
+      if (!disposed) {
+        if (!failedClears.has(key)) {
+          failedClears.add(key)
+          options.savePendingClears?.([...failedClears])
+        }
+        options.onError('clear')
+      }
+      return
+    }
+    if (failedClears.delete(key)) {
+      options.savePendingClears?.([...failedClears])
+      if (!failedClears.size) options.onClearRecovered?.()
     }
   }
   const flush = () => {
+    for (const key of failedClears) consume(key)
     while (!disposed && options.ready() && pending.length) {
       const entry = pending[0]
       try {
@@ -45,7 +61,8 @@ export function createNotificationResponseConsumer(options: {
       if (disposed) return
       const key = keyOf(response)
       if (seen.has(key)) {
-        if (pending.some((entry) => entry.key === key)) flush()
+        if (failedClears.has(key)) consume(key)
+        else if (pending.some((entry) => entry.key === key)) flush()
         return
       }
       seen.add(key)

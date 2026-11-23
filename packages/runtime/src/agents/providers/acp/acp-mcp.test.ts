@@ -154,3 +154,78 @@ it('tests native MCP servers through discovery and paginated tools without a leg
   ).toEqual({ server: 'Native MCP', tools: ['first', 'second'] })
   expect(methods).toEqual(['server/discover', 'tools/list', 'tools/list'])
 })
+
+it.each([false, true])(
+  'discovers advertised event types through native MCP (repeated cursor: %s)',
+  async (repeatedCursor) => {
+    const { testMcpServer } = await import('../../configuration/resources.js')
+    const extension = 'io.modelcontextprotocol/events'
+    const calls: Array<{ method: string; cursor?: string; capabilities: unknown }> = []
+    const url = await endpoint(async (request, response) => {
+      const buffers: Buffer[] = []
+      for await (const chunk of request) buffers.push(chunk)
+      const input = JSON.parse(Buffer.concat(buffers).toString())
+      if (request.headers['mcp-method'] !== input.method) {
+        response.writeHead(400).end('Missing method header')
+        return
+      }
+      const cursor = input.params?.cursor
+      calls.push({
+        method: input.method,
+        cursor,
+        capabilities: input.params._meta['io.modelcontextprotocol/clientCapabilities'],
+      })
+      const result =
+        input.method === 'server/discover'
+          ? {
+              supportedVersions: [MCP_PROTOCOL_VERSION],
+              capabilities: { extensions: { [extension]: {} } },
+            }
+          : {
+              resultType: 'complete',
+              events: [
+                {
+                  name: cursor ? 'incident.resolved' : 'incident.created',
+                  delivery: cursor ? ['push', 'webhook'] : ['poll'],
+                  inputSchema: { type: 'object' },
+                  payloadSchema: { type: 'object' },
+                },
+              ],
+              ...(!cursor || repeatedCursor ? { nextCursor: 'next' } : {}),
+            }
+      response
+        .writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ jsonrpc: '2.0', id: input.id, result }))
+    })
+    const result = await testMcpServer({
+      name: 'native',
+      enabled: true,
+      transport: 'http',
+      url,
+      acpTransport: true,
+    }).then(
+      (value) => ({ value }),
+      (error: Error) => ({ error: error.message }),
+    )
+    expect(result).toEqual(
+      repeatedCursor
+        ? { error: 'MCP events/list repeated a pagination cursor' }
+        : {
+            value: {
+              server: 'native',
+              tools: [],
+              events: [
+                { name: 'incident.created', delivery: ['poll'] },
+                { name: 'incident.resolved', delivery: ['push', 'webhook'] },
+              ],
+            },
+          },
+    )
+    const capabilities = { extensions: { [extension]: {} } }
+    expect(calls).toEqual([
+      { method: 'server/discover', cursor: undefined, capabilities },
+      { method: 'events/list', cursor: undefined, capabilities },
+      { method: 'events/list', cursor: 'next', capabilities },
+    ])
+  },
+)

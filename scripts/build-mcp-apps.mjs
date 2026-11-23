@@ -2,6 +2,7 @@ import { build } from 'esbuild'
 import { mkdir, writeFile, rename, rm, readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { a2uiMediaPolicy } from '../packages/studio-ui/mcp-apps/security.ts'
 const base = new URL('../packages/studio-ui/mcp-apps/', import.meta.url)
 await mkdir(base, { recursive: true })
 // Typechecks and builds can read these assets while another workspace task regenerates them.
@@ -50,6 +51,6 @@ await publish(
   '../../runtime/src/mcp-apps/a2ui-renderer.json',
   page(
     await bundle('../../a2ui/src/app.tsx'),
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';",
-  ).replace('</style>', `${a2uiStyles}</style>`),
+    `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; ${a2uiMediaPolicy} connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';`,
+  ).replace('</style>', `${a2uiStyles}</style><meta name="referrer" content="no-referrer">`),
 )

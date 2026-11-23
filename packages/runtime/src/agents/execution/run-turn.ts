@@ -193,17 +193,13 @@ export class TaskTurnRunner {
   ) {
     this.sharedSkills = new SharedSkillBundles(skillCacheDirectory)
   }
-  /** Retry only change capture for an already terminal provider turn. */
+  /** Finish saving an already terminal provider turn. */
   finalizeEffect(id: string, cwd: string, hasGit: boolean) {
     return Effect.gen({ self: this }, function* () {
       const turn = this.store.task(id).turns?.at(-1)
-      if (
-        turn &&
-        turn.status !== 'running' &&
-        turn.finishedAt &&
-        !turn.checkpoint?.linked?.length &&
-        !hasGit
-      ) {
+      if (!turn || turn.status === 'running' || !turn.finishedAt)
+        throw new HttpError(409, 'No completed provider turn is awaiting change capture')
+      if (!turn.checkpoint || (!hasGit && !turn.checkpoint.linked?.length)) {
         this.store.updateTask(id, (task) => ({
           ...task,
           status: turn.status === 'completed' ? 'review' : turn.status,
@@ -212,12 +208,10 @@ export class TaskTurnRunner {
           restartRecovery: undefined,
           activity: undefined,
           error: turn.error,
-          files: [],
+          files: hasGit ? task.files : [],
         }))
         return
       }
-      if (!turn || turn.status === 'running' || !turn.finishedAt || !turn.checkpoint)
-        throw new HttpError(409, 'No completed provider turn is awaiting change capture')
       const action = {
         id: `checkpoint:${turn.id}`,
         taskId: id,

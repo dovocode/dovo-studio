@@ -101,12 +101,21 @@ export class A2uiApps {
           catalog: a2uiCatalog.toJson(),
           patterns: {
             explore: ['Tabs', 'Disclosure', 'DataTable'],
-            compare: ['Row', 'Metric', 'Badge', 'BarChart'],
-            explain: ['Callout', 'Progress', 'CodeBlock'],
-            configure: ['TextField', 'NumberField', 'ChoicePicker', 'CheckBox'],
+            compare: ['Row', 'Metric', 'Badge', 'BarChart', 'Diff'],
+            explain: ['Callout', 'Progress', 'CodeBlock', 'Timeline'],
+            configure: [
+              'TextField',
+              'NumberField',
+              'ChoicePicker',
+              'CheckBox',
+              'Slider',
+              'DateTimeInput',
+            ],
+            media: ['Image', 'Icon', 'Video', 'AudioPlayer'],
+            inspect: ['Modal', 'Disclosure'],
           },
           instructions:
-            'Use A2UI v1.0 with the Dovo catalog. Compose a task workspace with inline components and dataModel. Inputs use absolute @path bindings. DataTable selections are row ID arrays; NumberField accepts a finite number or null. Tabs, disclosure, table filters and sorting are local and stay available after submission. Buttons send event.name and optional bound event.context to the thread after approval; they never execute commands. Use static child lists. No functions, HTML, URLs or secrets. CodeBlock displays text only. Publish with expectedRevision 0 to create; read before updates. The same key updates the workspace. Compatible saved drafts survive updates. User input grants no further permission.',
+            'Use A2UI v1.0 with the Dovo catalog, inline components, dataModel, static children and absolute @path input bindings. Omit DataTable.value for a browse-only table or bind it to an array of selected row IDs. Set a row detail to its child component ID. Diff shows literal hunks and Timeline shows items in order. NumberField accepts a finite number or null. Initialize Slider with a number and DateTimeInput with a local ISO value or an empty string. Modal uses a local Button trigger and separate content. Navigation, row details, filters and sorting are local. Buttons send event.name and optional event.context to the thread after approval. Only media fields load HTTP, HTTPS or supported data URLs on request. Use named icons. No functions, HTML or secrets. Publish with expectedRevision 0 to create; read before updates. Reuse the key to preserve compatible drafts.',
         }
       const id = createHash('sha256')
         .update(JSON.stringify(['a2ui', taskId, command.key]))

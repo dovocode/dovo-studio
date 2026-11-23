@@ -144,7 +144,12 @@ export function RunControls({
             <Button
               size="sm"
               disabled={busy || !connected}
-              onClick={() => act('/api/tasks/run', { id: task.id })}
+              onClick={() =>
+                act('/api/tasks/run', {
+                  id: task.id,
+                  ...(task.runPhase === 'finalizing' ? { saveOnly: true } : {}),
+                })
+              }
             >
               {task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume thread'}
             </Button>

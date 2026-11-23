@@ -384,6 +384,7 @@ export const snapshotSchema = mutableStruct({
   studioSourcePoliciesSupported: Schema.optional(Schema.Literal(true)),
   dashboardsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionCustomPropsSupported: Schema.optional(Schema.Literal(true)),
+  studioExtensionAppViewsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionComponentVersion: Schema.optional(Schema.Literal(1)),
   studioExtensionPinnedPages: Schema.optional(mutableArray(studioExtensionPageLinkSchema)),
   studioExtensionMarketplaceSupported: Schema.optional(Schema.Literal(true)),

@@ -1146,6 +1146,7 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
   const update = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['update']>()
   const refresh = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['refresh']>()
   vi.stubGlobal('window', { dovo: { runtimeSync: { subscribe, update, refresh } } })
+  vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })
   const fetcher = vi.fn<typeof fetch>()
   vi.stubGlobal('fetch', fetcher)
   const task = watchRuntimeTask(connection, 'author')
@@ -1165,6 +1166,9 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
     unwatch()
   })
   expect(live.shared).toBe(true)
+  expect(subscribe.mock.calls[0][0].id).toMatch(
+    /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
+  )
   expect(subscribe.mock.calls[0][0]).toMatchObject({
     tasks: ['author'],
     scopes: ['author'],

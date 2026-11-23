@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { type Task, responses } from '@dovo/protocol'
+import { type Task, randomUUID, responses } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button } from '@dovo/studio-ui'
@@ -17,7 +17,7 @@ export function NativeGoal({ task }: { task: Task }) {
     try {
       await request(
         '/api/tasks/message',
-        { id: task.id, messageId: crypto.randomUUID(), text: `/goal ${action}`, attachmentIds: [] },
+        { id: task.id, messageId: randomUUID(), text: `/goal ${action}`, attachmentIds: [] },
         responses.ok,
       )
     } catch (cause) {

@@ -33,9 +33,14 @@ it('retains shifted PRs and removes closed PRs only after the opened depth is re
   expect(closed.hasMore).toBe(false)
   expect(closed.paginationNotice).toBe('Open older requests on the provider.')
 })
-it('deduplicates moving page boundaries and keeps the last refreshed cursor', () => {
-  const result = refreshPullPage(undefined, page([8, 7], 1), [page([7, 6], 2)])
+it('keeps the earlier PR details and the last refreshed cursor at moving page boundaries', () => {
+  const first = page([8, 7], 1)
+  const second = page([7, 6], 2)
+  first.pulls[1] = { ...first.pulls[1], title: 'Current title', checksState: 'SUCCESS' }
+  second.pulls[0] = { ...second.pulls[0], title: 'Saved title', checksState: 'PENDING' }
+  const result = refreshPullPage(undefined, first, [second])
   expect(result.pulls.map((pull) => pull.number)).toEqual([8, 7, 6])
+  expect(result.pulls[1]).toEqual(first.pulls[1])
   expect(result.page).toBe(2)
   expect(result.hasMore).toBe(true)
 })

@@ -113,6 +113,10 @@ export function dataGrid(input: Omit<Node<'data-grid'>, 'kind'>): Node<'data-gri
   return { ...input, kind: 'data-grid' }
 }
 
+export function appView(id: string, source: string): Node<'app'> {
+  return { id, kind: 'app', source }
+}
+
 /** Build a v1 manifest and check references to settings, tools and data sources. */
 export function defineExtension(
   input: Omit<StudioExtensionManifest, 'version'>,

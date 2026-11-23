@@ -1045,6 +1045,14 @@ async function handoffFixture(persistentTarget = false, persistentSource = false
 }
 it('continues a full thread only after durable ownership release, carrying files and remapped attachments', async () => {
   const { source, target, task, attachment, input, path, result } = await handoffFixture()
+  source.services.store.updateTask(task.id, (current) => ({ ...current, runPhase: 'finalizing' }))
+  const blocked = await source.post('start', input)
+  expect(blocked.status).toBe(409)
+  expect(await blocked.text()).toContain('Finish saving changes')
+  expect(source.services.store.task(task.id).machineHandoff).toBeUndefined()
+  expect(target.services.store.get().tasks).toEqual([])
+  source.services.store.updateTask(task.id, (current) => ({ ...current, runPhase: undefined }))
+
   const sourceTask = source.services.store.task(task.id)
   const targetStart = vi.spyOn(target.services.tasks, 'start')
   const activate = target.services.projectTransfers.activate.bind(target.services.projectTransfers)
@@ -1248,11 +1256,35 @@ it('confirms an empty destination before cancel releases a source after an uncer
   expect(source.services.store.task(task.id).machineHandoff?.state).toBe('preparing')
   fetch.mockRestore()
   begin.mockRestore()
-  expect((await source.post('cancel', { id: input.id })).status).toBe(200)
+  const discard = target.services.projectTransfers.discard.bind(target.services.projectTransfers)
+  let release!: () => void
+  const releaseDiscard = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const slowDiscard = vi
+    .spyOn(target.services.projectTransfers, 'discard')
+    .mockImplementationOnce(async (...args) => {
+      await releaseDiscard
+      return discard(...args)
+    })
+  const cancellation = source.post('cancel', { id: input.id })
+  try {
+    await waitForRuntime(() => expect(slowDiscard).toHaveBeenCalledTimes(1))
+    expect((await source.post('retry', { id: input.id })).status).toBe(409)
+    expect(source.services.store.task(task.id).machineHandoff?.state).toBe('preparing')
+  } finally {
+    release()
+    expect((await cancellation).status).toBe(200)
+  }
   expect(source.services.store.task(task.id).machineHandoff).toBeUndefined()
   expect(source.services.projectTransfers.list()[0]?.state).toBe('cancelled')
   expect(target.services.store.get().tasks).toHaveLength(0)
   expect(target.services.store.get().repositories).toHaveLength(0)
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('completed'),
+  )
+  expect(target.services.store.get().tasks).toHaveLength(1)
 })
 it('reports an uncertain active cancellation as blocked until destination cleanup can be checked', async () => {
   const { source, target, task, input } = await handoffFixture()

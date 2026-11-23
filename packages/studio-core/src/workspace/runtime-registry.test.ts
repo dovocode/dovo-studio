@@ -1,3 +1,7 @@
+/// <reference types="node" />
+
+import { readFileSync } from 'node:fs'
+import { runtimeProfile, type RuntimeRegistry } from '@dovo/protocol'
 import { expect, it, vi } from 'vite-plus/test'
 import {
   decodeRuntimeRegistry,
@@ -10,6 +14,92 @@ vi.mock('./read-cache', () => ({
   commitRegistryCacheChange: async () => {},
 }))
 const connection = { address: 'http://remote:8787/', token: 'a-valid-runtime-token-123456' }
+
+type RegistryModel = {
+  first: number | null
+  second: number | null
+  pending: number | null
+  active: 'first' | 'second' | null
+}
+type RegistryCase = {
+  input: { name: string; current: RegistryModel; before: RegistryModel; next: RegistryModel }
+  merged: RegistryModel | null
+}
+const registryCases = readFileSync(
+  new URL('../../../../verification/runtime-registry-cases.jsonl', import.meta.url),
+  'utf8',
+)
+  .trim()
+  .split('\n')
+  .map((line) => JSON.parse(line) as RegistryCase)
+
+const computerAddress = (computer: string) => `http://${computer}.lan:8787`
+const modelProfile = (computer: string, revision: number) =>
+  runtimeProfile(
+    {
+      address: computerAddress(computer),
+      token: `synthetic-pairing-token-${computer}-${revision}`,
+    },
+    `${computer} revision ${revision}`,
+  )
+
+function modelRegistry(model: RegistryModel): RuntimeRegistry {
+  const profiles = (['first', 'second'] as const).flatMap((computer) => {
+    const revision = model[computer]
+    return revision === null ? [] : [modelProfile(computer, revision)]
+  })
+  return {
+    version: 1,
+    activeId: model.active === null ? null : computerAddress(model.active),
+    profiles,
+    ...(model.pending === null
+      ? {}
+      : {
+          pendingPairings: [
+            {
+              profile: modelProfile('unconfirmed', model.pending),
+              proof: {
+                id: `proof-${model.pending}`,
+                secret: 'synthetic-pairing-proof',
+                expiresAt: '2026-12-01T12:00:00.000Z',
+              },
+            },
+          ],
+        }),
+  }
+}
+
+it.each(registryCases.filter((example) => example.merged === null))(
+  'rejects the conflict predicted by Lean for $input.name',
+  ({ input }) => {
+    const current = modelRegistry(input.current)
+    expect(() =>
+      mergeRuntimeRegistry(current, modelRegistry(input.before), modelRegistry(input.next)),
+    ).toThrow('another window')
+    expect(current).toEqual(modelRegistry(input.current))
+  },
+)
+
+it.each(
+  registryCases.filter(
+    (example): example is RegistryCase & { merged: RegistryModel } => example.merged !== null,
+  ),
+)('matches the Lean registry model for $input.name', ({ input, merged }) => {
+  const current = modelRegistry(input.current)
+  const before = modelRegistry(input.before)
+  const next = modelRegistry(input.next)
+
+  const expected = modelRegistry(merged)
+  // Profile order is a separate UI concern. Compare the complete saved records by ID.
+  const sorted = (registry: RuntimeRegistry) => ({
+    ...registry,
+    profiles: [...registry.profiles].sort((a, b) => a.id.localeCompare(b.id)),
+  })
+  const committed = mergeRuntimeRegistry(current, before, next)
+  expect(sorted(committed)).toEqual(sorted(expected))
+  expect(mergeRuntimeRegistry(committed, before, next)).toEqual(committed)
+})
+
 it('preserves unchanged computers and connections across registry decoding and selection', () => {
   const before = decodeRuntimeRegistry(null, JSON.stringify(connection))
   expect(retainRuntimeRegistry(before, structuredClone(before))).toBe(before)

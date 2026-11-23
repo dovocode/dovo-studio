@@ -50,6 +50,7 @@ function App(){
  const snapshot={permissionPolicySupported:true,persistentTurnModelsSupported:persistent,fullTurnSettingsSupported:true,smartModelSelectionEnabled:true,revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
+ window.typeDraft=draft=>setTask(old=>({...old,draft}));
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
  const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,attachmentUploads:()=>[],refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference'){const preferences=window.modelPreferences[host]??={};const before=preferences[input.key]??{favorite:false,disabled:false};preferences[input.key]={favorite:input.favorite??before.favorite,disabled:input.disabled??before.disabled};const result={modelPreferences:{...preferences}};return window.deferPreference?new Promise(resolve=>{window.finishPreference=()=>resolve(result)}):Promise.resolve(result)}if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
  return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} turn={turn!==undefined?{value:turn,onChange:setTurn}:undefined} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
@@ -154,8 +155,24 @@ try {
     .waitFor({ state: 'attached' })
   if ((await page.evaluate(() => window.requests.length)) !== 3)
     throw new Error('Returning to a cached harness rediscovered its models')
+  const useNormalTimers = await page.evaluateHandle(() => {
+    const original = window.setTimeout
+    window.setTimeout = (callback, delay, ...args) =>
+      original(callback, delay === 200 ? 30_000 : delay, ...args)
+    return () => {
+      window.setTimeout = original
+    }
+  })
   await page.getByRole('button', { name: 'Refresh models', exact: true }).click()
-  await waitRequests(4)
+  await page.getByText('Loading provider models…', { exact: true }).waitFor()
+  await page.evaluate(() => window.online(false))
+  await page
+    .getByText('Connect to discover models and reasoning levels.', { exact: true })
+    .waitFor()
+  await useNormalTimers.evaluate((restore) => restore())
+  await useNormalTimers.dispose()
+  await page.evaluate(() => window.online(true))
+  await page.waitForFunction(() => window.requests.length === 4, undefined, { timeout: 3500 })
   if (!(await page.evaluate(() => window.requests[3].input.refresh)))
     throw new Error('Refresh did not bypass the host cache')
   await finish(
@@ -427,6 +444,8 @@ try {
       'Task model/reasoning selection was not saved after failed availability discovery',
     )
   await page.waitForFunction(() => window.visibleTask?.harness?.model === 'task-model')
+  await page.evaluate(() => window.typeDraft('Typed while saving the model'))
+  await page.waitForFunction(() => window.rawTask?.draft === 'Typed while saving the model')
   await page.evaluate(() => window.finishSave(false))
   await page
     .getByRole('button', { name: 'Save agent & model', exact: true })
@@ -449,6 +468,7 @@ try {
       window.rawTask?.harness?.model === 'task-model' &&
       window.visibleTask?.harness?.model === 'task-model',
   )
+  assert.equal(await page.evaluate(() => window.visibleTask.draft), 'Typed while saving the model')
   await page.evaluate(() => window.openTask())
   await page.getByRole('button', { name: 'Back to models', exact: true }).click()
   await page.getByLabel('Selected on one: Codex, Task Model', { exact: true }).waitFor()
@@ -475,9 +495,15 @@ try {
   await page.waitForFunction(() => window.visibleTask?.harness?.model === 'rejected-model')
   // A custom ID outside the catalogue is named by its ID rather than a stale catalogue name.
   await page.getByLabel('Selected on one: Codex, rejected-model', { exact: true }).waitFor()
+  await page.evaluate(() => window.typeDraft('Typed before the model save failed'))
+  await page.waitForFunction(() => window.rawTask?.draft === 'Typed before the model save failed')
   await page.evaluate(() => window.finishSave(true))
   await page.getByText('Model save rejected', { exact: true }).waitFor()
   await page.waitForFunction(() => window.visibleTask?.harness?.model === 'task-model')
+  assert.equal(
+    await page.evaluate(() => window.visibleTask.draft),
+    'Typed before the model save failed',
+  )
   if (
     (await page.getByRole('textbox', { name: 'Custom model ID', exact: true }).inputValue()) !==
     'rejected-model'

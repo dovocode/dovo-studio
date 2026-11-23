@@ -21,6 +21,7 @@ import { claimLaunchRoute } from '../shell/launch-route'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
 const serverPreferenceKey = 'dovo.push-notifications.disabled-servers'
+const pendingClearsKey = 'dovo.push-notifications.pending-clears'
 const Context = createContext({
   enabled: false,
   supported: false,
@@ -106,6 +107,9 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
     preferences.catch(() => {})
     const initialize = async () => {
       const Notifications = await import('expo-notifications')
+      const pendingClears: unknown = await AsyncStorage.getItem(pendingClearsKey)
+        .then((saved) => (saved ? JSON.parse(saved) : undefined))
+        .catch(() => undefined)
       if (disposed) return
       await Notifications.setNotificationCategoryAsync('dovo-question', [
         {
@@ -133,6 +137,12 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       })
       subscriptions.push({ remove: () => Notifications.setNotificationHandler(null) })
       const consumer = createNotificationResponseConsumer({
+        pendingClears: Array.isArray(pendingClears)
+          ? pendingClears.filter((key): key is string => typeof key === 'string')
+          : undefined,
+        savePendingClears: (keys) => {
+          void AsyncStorage.setItem(pendingClearsKey, JSON.stringify(keys)).catch(() => {})
+        },
         ready: () => latest.current.ready && navigationReady.current,
         open: (target) => {
           claimLaunchRoute()
@@ -146,6 +156,11 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         },
         last: () => Notifications.getLastNotificationResponse(),
         clear: () => Notifications.clearLastNotificationResponse(),
+        onClearRecovered: () => {
+          setResponseError((current) =>
+            current === 'Could not clear the opened notification' ? '' : current,
+          )
+        },
         onError: (operation) => {
           const message =
             operation === 'open'
@@ -411,6 +426,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         AppState.addEventListener('change', (state) => {
           schedule()
           if (state === 'active') {
+            consumer.flush()
             registered.clear()
             refresh()
           }

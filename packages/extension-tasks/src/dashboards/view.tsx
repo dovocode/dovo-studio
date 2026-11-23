@@ -39,6 +39,7 @@ import {
   newDashboardTile,
   useDashboardTile,
   useDashboards,
+  useMarketplaceSources,
   useSettingsDraft,
   useConfirmSettingsNavigation,
   extensionTileOptions,
@@ -586,7 +587,13 @@ function TileEditor({
   last: boolean
   remove: () => void
 }) {
-  const { workspace, snapshot } = useWorkspace()
+  const { workspace, snapshot, request, connected } = useWorkspace()
+  const appSources = useMarketplaceSources(
+    request,
+    tile.kind === 'app' ? tile.taskId : undefined,
+    connected && snapshot?.studioExtensionMarketplaceSupported === true,
+  )
+  const apps = appSources?.data?.apps ?? []
   return (
     <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
       <label className="grid gap-1 text-sm">
@@ -638,7 +645,14 @@ function TileEditor({
                 className={field}
                 aria-label={label}
                 value={value}
-                onChange={(event) => change({ ...tile, [key]: event.target.value })}
+                onChange={(event) => {
+                  const value = event.target.value
+                  change(
+                    tile.kind === 'app' && key === 'taskId'
+                      ? { ...tile, taskId: value, appId: '' }
+                      : { ...tile, [key]: value },
+                  )
+                }}
               >
                 <option value="">
                   {key === 'repositoryId' && tile.kind === 'tui'
@@ -677,6 +691,41 @@ function TileEditor({
             )}
           </label>
         ))}
+      {tile.kind === 'app' && (
+        <div className="grid gap-2 text-sm">
+          {!!apps.length && (
+            <label className="grid gap-1">
+              Saved app or A2UI card
+              <select
+                className={field}
+                value={tile.appId}
+                onChange={(event) => change({ ...tile, appId: event.target.value })}
+              >
+                <option value="">Choose a saved app</option>
+                {tile.appId && !apps.some(({ id }) => id === tile.appId) && (
+                  <option value={tile.appId}>{tile.appId}</option>
+                )}
+                {apps.map(({ id, title }) => (
+                  <option key={id} value={id}>
+                    {title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <details open={apps.length ? undefined : true}>
+            <summary className="cursor-pointer">Enter app ID</summary>
+            <label className="grid gap-1">
+              MCP App ID
+              <input
+                className={field}
+                value={tile.appId}
+                onChange={(event) => change({ ...tile, appId: event.target.value })}
+              />
+            </label>
+          </details>
+        </div>
+      )}
       {isStudioDataSource(tile) && snapshot?.studioDataSourcesSupported && (
         <label className="grid gap-1 text-sm">
           Refresh interval in seconds

@@ -1,5 +1,5 @@
 import { readPullPage } from '@dovo/studio-core/pull-reads'
-import { pullPageReadSchema } from '@dovo/protocol'
+import { mergePullPages, pullPageReadSchema } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
@@ -339,11 +339,7 @@ export function usePulls(state: string, repositoryId = '', visibility = defaultV
             firstPageIds: previous.firstPageIds,
             stale: previous.stale || next.stale,
             refreshError: previous.refreshError || next.refreshError,
-            pulls: [
-              ...new Map(
-                [...previous.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
-              ).values(),
-            ],
+            pulls: mergePullPages(previous.pulls, next.pulls),
           }
           update(source, page, page.refreshError)
           yield* save(source, page)

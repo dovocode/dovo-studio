@@ -12,7 +12,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { resourceCsp, csp } from './security'
 import sandbox from './sandbox.json'
-import type { McpApp } from '@dovo/protocol'
+import { isA2uiApp, type McpApp } from '@dovo/protocol'
 import { runtimeRequestTimeout } from '@dovo/protocol/request-timeout'
 const rootElement = document.getElementById('root')!
 const appCalls = new Map<string, AbortController>()
@@ -139,7 +139,8 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   const resource = record(app.resource)
   const meta = record(resource._meta)
   const ui = record(meta.ui)
-  const policy = resourceCsp(ui.csp)
+  const builtInA2ui = isA2uiApp(app)
+  const policy = resourceCsp(builtInA2ui ? {} : ui.csp)
   let html =
     typeof resource.text === 'string'
       ? resource.text
@@ -150,7 +151,7 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
         : ''
   const hostPolicy = document.createElement('meta')
   hostPolicy.httpEquiv = 'Content-Security-Policy'
-  hostPolicy.content = csp(policy)
+  hostPolicy.content = csp(policy, builtInA2ui)
     .replace("script-src 'unsafe-inline'", "script-src 'unsafe-inline' 'unsafe-eval'")
     .replace(/frame-src [^;]*;/, `frame-src about: data: blob: ${policy.frameDomains.join(' ')};`)
   document.head.append(hostPolicy)
@@ -280,7 +281,8 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
       sandbox: 'allow-scripts allow-forms',
     })
   }
-  proxyURL = URL.createObjectURL(new Blob([sandbox], { type: 'text/html' }))
+  const proxy = builtInA2ui ? sandbox.replace('<html>', '<html data-dovo-a2ui>') : sandbox
+  proxyURL = URL.createObjectURL(new Blob([proxy], { type: 'text/html' }))
   frame = document.createElement('iframe')
   frame.setAttribute('sandbox', 'allow-scripts')
   frame.style.cssText = 'border:0;width:100%;height:100%;min-height:160px;display:block'

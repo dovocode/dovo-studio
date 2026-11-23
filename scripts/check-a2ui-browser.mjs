@@ -7,6 +7,31 @@ import { fixture } from '../packages/runtime/dist/testing/fixture.js'
 const host = JSON.parse(await readFile('packages/studio-ui/mcp-apps/host.json', 'utf8'))
 const example = JSON.parse(await readFile('examples/a2ui/issue-picker.json', 'utf8'))
 const workbench = JSON.parse(await readFile('examples/a2ui/change-review-workbench.json', 'utf8'))
+const media = JSON.parse(await readFile('examples/a2ui/media-and-configuration.json', 'utf8'))
+const imageUrl = 'https://media.example.org/preview.png'
+const pixel = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=',
+  'base64',
+)
+const video = await readFile(new URL('./fixtures/browser-pip.webm', import.meta.url))
+const wav = Buffer.alloc(8044, 128)
+wav.write('RIFF')
+wav.writeUInt32LE(wav.length - 8, 4)
+wav.write('WAVEfmt ', 8)
+wav.writeUInt32LE(16, 16)
+wav.writeUInt16LE(1, 20)
+wav.writeUInt16LE(1, 22)
+wav.writeUInt32LE(8000, 24)
+wav.writeUInt32LE(8000, 28)
+wav.writeUInt16LE(1, 32)
+wav.writeUInt16LE(8, 34)
+wav.write('data', 36)
+wav.writeUInt32LE(wav.length - 44, 40)
+const mediaFixtures = new Map([
+  [imageUrl, { contentType: 'image/png', body: pixel }],
+  ['https://media.example.org/preview.webm', { contentType: 'video/webm', body: video }],
+  ['https://media.example.org/preview.wav', { contentType: 'audio/wav', body: wav }],
+])
 await mkdir('work/a2ui-workbench', { recursive: true })
 const f = await fixture()
 const owner = 'a2ui-browser-test-owner-token-at-least-32-characters'
@@ -42,8 +67,14 @@ async function open(id, mobile, heading = 'Choose the next work') {
     if (message.type() === 'error') console.error(message.text().slice(0, 1500))
   })
   page.on('request', (request) => {
-    if (/^https?:/.test(request.url())) externalRequests.push(request.url())
+    if (/^https?:/.test(request.url()) && !mediaFixtures.has(request.url()))
+      externalRequests.push(request.url())
   })
+  for (const [url, fixture] of mediaFixtures) {
+    await page.route(url, (route) =>
+      route.fulfill({ ...fixture, headers: { 'access-control-allow-origin': '*' } }),
+    )
+  }
   await page.exposeFunction('a2uiHostMessage', async (message) => {
     if (
       message.type === 'height' &&
@@ -146,6 +177,49 @@ async function pendingApproval() {
 }
 try {
   for (const mobile of [false, true]) {
+    const configuration = s.mcpApps.a2uiCommand(task.id, 'a2ui-browser-run', {
+      ...media,
+      key: `media-${mobile}`,
+    })
+    const playback = await open(configuration.id, mobile, 'Configure playback')
+    const { page: mediaPage, ui: mediaUi } = playback
+    const trigger = mediaUi.getByRole('button', { name: 'Open details' })
+    const modal = mediaUi.getByRole('dialog', { name: 'Playback details' })
+    const requests = playback.operations.length
+    await trigger.click()
+    await modal.getByText('Choose a volume and local start time.').waitFor()
+    await modal.getByRole('button', { name: 'Close' }).press('Escape')
+    await modal.waitFor({ state: 'hidden' })
+    assert.equal(await trigger.evaluate((button) => button === document.activeElement), true)
+    assert.equal(playback.operations.length, requests)
+    assert.equal(await mediaUi.locator('img, audio, video').count(), 0)
+    const requestedImage = mediaPage.waitForRequest(imageUrl)
+    await mediaUi.getByRole('button', { name: 'Load Playback preview' }).click()
+    await requestedImage
+    const image = mediaUi.getByRole('img', { name: 'Playback preview' })
+    await image.waitFor()
+    assert.equal(await image.evaluate((img) => img.decode().then(() => img.naturalWidth)), 1)
+    for (const kind of ['video', 'audio']) {
+      await mediaUi.getByRole('button', { name: `Load Playback ${kind}` }).click()
+      const player = mediaUi.locator(`${kind}[controls]`)
+      await player.evaluate((element) => {
+        if (element.readyState >= HTMLMediaElement.HAVE_METADATA) return
+        return new Promise((resolve, reject) => {
+          element.addEventListener('loadedmetadata', resolve, { once: true })
+          element.addEventListener('error', () => reject(element.error?.message), { once: true })
+        })
+      })
+    }
+    await mediaUi.getByRole('slider', { name: /Volume/ }).press('ArrowRight')
+    await saved(mediaUi)
+    await mediaUi.getByLabel('Start time').fill('2028-02-29T16:30')
+    await saved(mediaUi)
+    await mediaPage.close()
+    const reopened = await open(configuration.id, mobile, 'Configure playback')
+    assert.equal(await reopened.ui.getByRole('slider', { name: /Volume/ }).inputValue(), '0.6')
+    assert.equal(await reopened.ui.getByLabel('Start time').inputValue(), '2028-02-29T16:30')
+    await reopened.page.close()
+
     const published = s.mcpApps.a2uiCommand(task.id, 'a2ui-browser-run', {
       ...example,
       key: `issues-${mobile}`,
@@ -254,7 +328,41 @@ try {
     ).length
     await ui.getByText('Proposed verification commands', { exact: true }).click()
     await ui.locator('pre').waitFor()
+    const history = ui.getByRole('region', { name: 'Example review history' })
+    assert.deepEqual(await history.getByRole('listitem').locator('strong').allTextContents(), [
+      'Plan drafted',
+      'Verification',
+    ])
+    assert.equal(await history.locator('time').getAttribute('datetime'), '2026-11-23T12:00:00Z')
+    await ui.getByRole('tab', { name: 'Evidence', exact: true }).click()
+    const evidence = ui.getByRole('table', { name: 'Evidence sources' })
+    assert.equal(await evidence.getByRole('columnheader', { name: 'Select' }).count(), 0)
+    const sample = evidence.getByRole('button', { name: 'Details for Sample change set' })
+    await sample.press('Enter')
+    await evidence.getByText(/This sample comes from the example card/).waitFor()
+    assert.equal(await sample.getAttribute('aria-expanded'), 'true')
+    await sample.press('Space')
+    assert.equal(await sample.getAttribute('aria-expanded'), 'false')
     await ui.getByRole('tab', { name: 'Changes', exact: true }).click()
+    const diffToggle = ui.getByRole('button', { name: 'Details for packages/runtime/reviews.ts' })
+    await diffToggle.click()
+    const diff = ui.getByRole('region', { name: 'Sample diff for packages/runtime/reviews.ts' })
+    assert.deepEqual(await diff.locator('tr[data-change="add"] > td').allTextContents(), [
+      '',
+      '15',
+      '+Added',
+      "return review.findings.filter((finding) => finding.status === 'open')",
+    ])
+    assert.equal(await diff.locator('tr[data-change="delete"] > td').first().textContent(), '15')
+    assert.equal(
+      await diff.evaluate(
+        (node) =>
+          node.getBoundingClientRect().right <=
+          node.closest('.table-scroll').getBoundingClientRect().right,
+      ),
+      true,
+    )
+    await diffToggle.click()
     await ui.getByRole('searchbox', { name: 'Filter Changed files' }).fill('protocol')
     assert.equal(await ui.getByRole('row').count(), 2)
     await ui.getByRole('button', { name: 'Sort by Lines' }).click()
@@ -401,7 +509,7 @@ try {
   assert.deepEqual(pageErrors, [])
   assert.deepEqual(externalRequests, [])
   console.log(
-    'A2UI browser checks passed: desktop/mobile host, workbench tables, numeric validation, keyboard tabs, local exploration, draft restore, live revisions, conflicts, approval and response receipts.',
+    'A2UI browser checks passed: desktop/mobile host, media, modal focus, slider and date drafts, workbench tables, keyboard tabs, live revisions, conflicts, approval and response receipts.',
   )
 } finally {
   await browser.close()

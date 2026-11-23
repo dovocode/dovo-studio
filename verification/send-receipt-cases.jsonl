@@ -1,0 +1,8 @@
+{"savedAfterFirstRemoval":false,"input":{"loseReply":false,"loseCompaction":false,"failRemoval":false},"finalReceipt":"retired","admissions":1,"acceptedBeforeRestart":true}
+{"savedAfterFirstRemoval":false,"input":{"loseReply":false,"loseCompaction":true,"failRemoval":false},"finalReceipt":"full","admissions":1,"acceptedBeforeRestart":true}
+{"savedAfterFirstRemoval":true,"input":{"loseReply":false,"loseCompaction":false,"failRemoval":true},"finalReceipt":"retired","admissions":1,"acceptedBeforeRestart":true}
+{"savedAfterFirstRemoval":true,"input":{"loseReply":false,"loseCompaction":true,"failRemoval":true},"finalReceipt":"full","admissions":1,"acceptedBeforeRestart":true}
+{"savedAfterFirstRemoval":false,"input":{"loseReply":true,"loseCompaction":false,"failRemoval":false},"finalReceipt":"retired","admissions":1,"acceptedBeforeRestart":false}
+{"savedAfterFirstRemoval":false,"input":{"loseReply":true,"loseCompaction":true,"failRemoval":false},"finalReceipt":"full","admissions":1,"acceptedBeforeRestart":false}
+{"savedAfterFirstRemoval":true,"input":{"loseReply":true,"loseCompaction":false,"failRemoval":true},"finalReceipt":"retired","admissions":1,"acceptedBeforeRestart":false}
+{"savedAfterFirstRemoval":true,"input":{"loseReply":true,"loseCompaction":true,"failRemoval":true},"finalReceipt":"full","admissions":1,"acceptedBeforeRestart":false}

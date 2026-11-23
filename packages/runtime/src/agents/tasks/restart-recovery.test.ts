@@ -1,6 +1,9 @@
 import { runtimeIntegration, waitForRuntime as waitForRecovery } from '../../testing/integration'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
+import { chromium } from 'playwright'
 import { startRuntime } from '../../index'
 import { createServices } from '../../services'
 import { openDatabase } from '../../storage/database'
@@ -768,6 +771,115 @@ it('holds an unconfirmed provider action for manual review even when automatic r
   expect(runtime.services.store.task(id).error).toContain('not confirmed')
   expect(runtime.services.store.task(id).activeRunId).toBeUndefined()
 })
+
+it.skipIf(process.platform === 'win32')(
+  'retains a steer without replaying it when the runtime dies inside the provider dispatch',
+  async () => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const options = {
+      databasePath: join(f.directory, '.git', 'steer-crash.sqlite'),
+      ownerToken: 'synthetic-owner-token-for-restart-test',
+      port: 0,
+    }
+    const initial = await startRuntime(options)
+    let id: string
+    try {
+      initial.services.store.update(() => f.workspace)
+      initial.services.preferences.save({ autoContinueAfterRestart: true })
+      id = initial.services.tasks.create({
+        title: 'Steer crash',
+        repositoryId: 'repo',
+        agentId: 'agent',
+        objective: 'Original request',
+      }).id
+    } finally {
+      await initial.close()
+    }
+
+    await expect(
+      promisify(execFile)(
+        process.execPath,
+        [
+          '--import',
+          new URL('../../../node_modules/tsx/dist/loader.mjs', import.meta.url).href,
+          '--conditions=development',
+          '--input-type=module',
+          '--eval',
+          `
+          import assert from 'node:assert/strict';
+          import { startRuntime } from ${JSON.stringify(new URL('../../index.ts', import.meta.url).href)};
+          const [taskId, rawOptions] = process.argv.slice(1);
+          const options = JSON.parse(rawOptions);
+          const runtime = await startRuntime(options);
+          const { agents, store, tasks } = runtime.services;
+          let ready;
+          const steeringRegistered = new Promise(resolve => { ready = resolve; });
+          agents.get = async () => ({
+            probe: async () => {},
+            run: async (input) => {
+              input.onSession('steering-session');
+              input.onPromptAccepted();
+              input.onSteer(async (message) => {
+                assert.equal(message.id, 'in-flight-steer');
+                assert.equal(message.prompt, 'Keep this instruction');
+                assert.equal(store.providerActions.list(taskId).find(action => action.kind === 'steer')?.state, 'dispatched');
+                process.stdout.write('steer dispatched\\n', () => process.kill(process.pid, 'SIGKILL'));
+                await new Promise(() => {});
+              });
+              ready();
+              await new Promise(() => {});
+            }
+          });
+          await tasks.start(taskId);
+          await steeringRegistered;
+          const response = await fetch('http://127.0.0.1:' + runtime.port + '/api/tasks/steer', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + options.ownerToken, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              id: taskId, messageId: 'in-flight-steer', text: 'Keep this instruction',
+              runId: store.task(taskId).activeRunId,
+            }),
+          });
+          throw new Error('Unexpected steer response: ' + response.status + ' ' + await response.text());
+          `,
+          id,
+          JSON.stringify(options),
+        ],
+        {
+          cwd: f.directory,
+          env: {
+            PATH: process.env.PATH,
+            HOME: f.directory,
+            DOVO_BROWSER_EXECUTABLE: chromium.executablePath(),
+            XDG_CONFIG_HOME: join(f.directory, 'config'),
+            XDG_DATA_HOME: join(f.directory, 'data'),
+            XDG_STATE_HOME: join(f.directory, 'state'),
+          },
+          timeout: 20_000,
+        },
+      ),
+    ).rejects.toMatchObject({
+      signal: 'SIGKILL',
+      stdout: expect.stringContaining('steer dispatched\n'),
+    })
+
+    const run = vi.fn<AgentAdapter['run']>(async () => {})
+    adapter(run)
+    const recovered = await startRuntime(options)
+    cleanups.push(recovered.close)
+    const { store } = recovered.services
+    await waitForRecovery(() => expect(store.task(id).restartRecovery?.automatic).toBe(false))
+    expect(store.providerActions.list(id)).toContainEqual(
+      expect.objectContaining({ kind: 'steer', state: 'uncertain' }),
+    )
+    expect(store.task(id)).toMatchObject({
+      queuePaused: true,
+      queue: [expect.objectContaining({ id: 'in-flight-steer', text: 'Keep this instruction' })],
+    })
+    expect(run).not.toHaveBeenCalled()
+  },
+)
 
 it('recovers a durable child completion exactly once and holds it for manual continuation', async () => {
   const f = await fixture()

@@ -17,6 +17,23 @@ export function registerConnectionStorage(
   let writes: Promise<unknown> = Promise.resolve()
   const readers = new Set<Electron.WebContents>()
   const appReaders = new Set<Electron.WebContents>()
+  const notifyReaders = (
+    subscribers: Set<Electron.WebContents>,
+    sender: Electron.WebContents,
+    channel: string,
+  ) => {
+    for (const reader of subscribers) {
+      if (reader.isDestroyed()) subscribers.delete(reader)
+      else if (reader !== sender) {
+        // The renderer can close or reload between the check and Electron sending the event.
+        try {
+          reader.send(channel)
+        } catch {
+          subscribers.delete(reader)
+        }
+      }
+    }
+  }
   const read = async () => {
     try {
       return safeStorage.decryptString(await readFile(path()))
@@ -84,10 +101,7 @@ export function registerConnectionStorage(
         throw new Error('Invalid app settings')
       writeLocalSettingsSection('app', () => value)
       onAppSettingsSaved(value)
-      for (const reader of appReaders) {
-        if (reader.isDestroyed()) appReaders.delete(reader)
-        else if (reader !== event.sender) reader.send('app:settings-changed')
-      }
+      notifyReaders(appReaders, event.sender, 'app:settings-changed')
       event.returnValue = { ok: true }
     } catch (error) {
       event.returnValue = { error: String(error) }
@@ -122,10 +136,7 @@ export function registerConnectionStorage(
       } finally {
         await rm(temporary, { force: true })
       }
-      for (const reader of readers) {
-        if (reader.isDestroyed()) readers.delete(reader)
-        else if (reader !== event.sender) reader.send('runtime:registry-changed')
-      }
+      notifyReaders(readers, event.sender, 'runtime:registry-changed')
       return committed
     })
     // A rejected save must not poison subsequent reads or writes.

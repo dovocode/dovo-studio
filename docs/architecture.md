@@ -168,6 +168,11 @@ Mobile caches the latest 500 loaded messages for offline reopening. Budget total
 bookmarks, copy and checkpoint review retain access to older history. Legacy clients receive full
 history until they opt in.
 
+Mobile keeps the last committed cache entry until its replacement publishes. If a file move fails or
+the app closes during the replacement, offline reopening can read the committed backup. Desktop
+connection and settings writes acknowledge the saved data even if another window closes during the
+change notification.
+
 Auditing and history persistence skip unchanged task and message objects. Replaceable tool progress
 is coalesced for 50 ms with bounded buffering; terminal and boundary events flush it. Raw transport
 replay tests exercise Codex JSON-RPC and OpenCode SSE through real task ownership, queues, SQLite,

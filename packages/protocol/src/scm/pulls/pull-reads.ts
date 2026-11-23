@@ -5,7 +5,18 @@ import {
   pullPageSchema,
   type PullDetail,
   type PullDetailSection,
+  type PullSummary,
 } from './pulls.js'
+
+export function mergePullPages(...pages: ReadonlyArray<readonly PullSummary[]>): PullSummary[] {
+  const pulls = new Map<number, PullSummary>()
+  for (const page of pages) {
+    for (const pull of page) {
+      if (!pulls.has(pull.number)) pulls.set(pull.number, pull)
+    }
+  }
+  return [...pulls.values()]
+}
 
 export const pullReadVersionSchema = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const unchanged = mutableStruct({

@@ -11,6 +11,32 @@ const css = readdirSync(assets)
   .map((file) => readFileSync(assets + file, 'utf8'))
   .join('\n')
 const fromView = root + 'packages/extension-tasks/src/dashboards/view.tsx'
+const review = JSON.parse(readFileSync(root + 'examples/a2ui/change-review-workbench.json', 'utf8'))
+const renderer = JSON.parse(
+  readFileSync(root + 'packages/runtime/src/mcp-apps/a2ui-renderer.json', 'utf8'),
+)
+const reviewCard = {
+  id: 'review-card',
+  taskId: 'thread',
+  title: review.title,
+  server: 'dovo_task',
+  tool: 'a2ui',
+  input: {},
+  format: 'apps',
+  connected: false,
+  result: {
+    content: [],
+    structuredContent: {
+      revision: 1,
+      draftVersion: 0,
+      messages: review.messages,
+      values: {},
+      submitted: false,
+      readOnly: true,
+    },
+  },
+  resource: { uri: 'ui://dovo/a2ui/v1', mimeType: 'text/html;profile=mcp-app', text: renderer },
+}
 const marketplace = JSON.parse(
   readFileSync(root + 'packages/runtime/src/studio-extensions/marketplace-catalog.json', 'utf8'),
 ).map((release) => ({
@@ -94,6 +120,7 @@ const bundle = await bundleBrowser(
         let loseRunResponse = true
         async function request(path, input) {
           window.calls.push({ path, input })
+          if (path === '/api/mcp-apps/read') return { app: { ...${JSON.stringify(reviewCard)}, id: input.id, taskId: input.taskId } }
           if (path === '/api/studio/source-policy') {
             const key = JSON.stringify([input.owner, input.id, input.sourceId, input.expectedRevision])
             if (input.policy) permissions.set(key, input.policy)
@@ -108,7 +135,10 @@ const bundle = await bundleBrowser(
                 ...(installedMarketplace?.digest === digest && { installed: installedMarketplace }),
                 ...(stagedMarketplace?.digest === digest && { draft: stagedMarketplace }),
               })) }
-              if (command.action === 'sources') return { servers: ['health'], apps: [] }
+              if (command.action === 'sources') return {
+                servers: ['health'],
+                apps: command.taskId === 'thread' ? [{ id: 'review-card', title: 'Change review plan' }] : [],
+              }
               const entry = marketplace.find(({ package: pkg, digest }) => pkg.manifest.id === command.id && digest === command.digest)
               if (!entry) throw Error('Package unavailable')
               if (command.action === 'read') return entry
@@ -238,6 +268,8 @@ const bundle = await bundleBrowser(
         }
         export const useWorkspace = () => useContext(Workspace)
         export const WorkspaceScope = ({ children }) => children
+        const confirm = async () => true
+        export const useConfirmation = () => confirm
       `,
     },
     {
@@ -250,11 +282,6 @@ const bundle = await bundleBrowser(
       path: '../browser/browser-pane',
       importer: fromView,
       contents: 'export const BrowserPane = () => null',
-    },
-    {
-      path: '../chat/mcp-app',
-      importer: root + 'packages/extension-tasks/src/',
-      contents: 'export const McpAppView = () => null',
     },
     {
       path: '@dovo/extension-runtime/remote-desktop-viewer',
@@ -735,12 +762,17 @@ try {
     ),
     3,
   )
-  await page.evaluate(() => window.showExtensions(true))
   const delivery = page
     .locator('details')
     .filter({ has: page.locator('summary').getByText('Delivery overview', { exact: true }) })
   const sourceReads = () =>
     page.evaluate(() => window.calls.filter(({ input }) => input.action === 'read-data').length)
+  const readsBeforeReopen = await sourceReads()
+  await page.evaluate(() => window.showExtensions(true))
+  await page.waitForFunction(
+    (count) => window.calls.filter(({ input }) => input.action === 'read-data').length >= count,
+    readsBeforeReopen + 2,
+  )
   await page.clock.install()
   const readsBeforeStart = await sourceReads()
   await delivery.getByRole('button', { name: 'Start auto refresh (30s)' }).click()
@@ -976,9 +1008,38 @@ try {
   await cliTile.getByRole('button', { name: 'Load on open', exact: true }).waitFor()
   await page.clock.fastForward(31_000)
   assert.equal(await readCount(), beforeAuto + 3)
+  await page.getByRole('button', { name: 'New dashboard' }).click()
+  await page.getByLabel('Dashboard title').fill('Review workspace')
+  await addTile('MCP App / A2UI card')
+  await page.getByLabel('Tile title', { exact: true }).fill('Review card')
+  await page.getByLabel('Source thread', { exact: true }).selectOption('thread')
+  const savedApps = page.getByLabel('Saved app or A2UI card')
+  await savedApps.selectOption({ label: 'Change review plan' })
+  await page.getByLabel('Source thread', { exact: true }).selectOption('')
+  assert.equal(await page.getByLabel('MCP App ID', { exact: true }).inputValue(), '')
+  await page.getByLabel('Source thread', { exact: true }).selectOption('thread')
+  await savedApps.selectOption({ label: 'Change review plan' })
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await page.getByRole('button', { name: 'Open MCP App', exact: true }).click()
+  const card = page
+    .frameLocator('iframe[title="Review card"]')
+    .frameLocator('iframe')
+    .frameLocator('iframe')
+  await card.getByRole('heading', { name: 'Example review history' }).waitFor()
+  await card.getByRole('tab', { name: 'Changes', exact: true }).click()
+  await card.getByRole('button', { name: 'Details for packages/runtime/reviews.ts' }).click()
+  await card.getByRole('region', { name: 'Sample diff for packages/runtime/reviews.ts' }).waitFor()
+  assert.ok(
+    await page.evaluate(() =>
+      window.calls.some(
+        ({ path, input }) =>
+          path === '/api/mcp-apps/read' && input.taskId === 'thread' && input.id === 'review-card',
+      ),
+    ),
+  )
   assert.deepEqual(errors, [])
   console.log(
-    'Dashboard editor, offline draft, chart, run recovery, template export, timed CLI data and reconnect, compound data cards, and Studio extension pages and sidebar pins passed.',
+    'Dashboard editor, offline draft, chart, run recovery, template export, timed CLI data and reconnect, compound data cards, extension pages, and saved A2UI card tiles passed.',
   )
 } finally {
   await browser.close()

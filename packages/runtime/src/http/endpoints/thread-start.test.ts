@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -27,6 +27,24 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 const token = 'thread-start-owner-token-at-least-32-characters'
+const receiptCases = (
+  await readFile(
+    new URL('../../../../../verification/send-receipt-cases.jsonl', import.meta.url),
+    'utf8',
+  )
+)
+  .trim()
+  .split('\n')
+  .map(
+    (line) =>
+      JSON.parse(line) as {
+        input: { loseReply: boolean; failRemoval: boolean; loseCompaction: boolean }
+        acceptedBeforeRestart: boolean
+        savedAfterFirstRemoval: boolean
+        finalReceipt: 'full' | 'retired'
+        admissions: number
+      },
+  )
 
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'dovo-thread-start-'))
@@ -144,6 +162,120 @@ it('retries a lost response, a receipt replay and a restart without duplicates',
   expect((await f.startThread(task, 'first')).status).toBe(200)
   expect(f.tasks().filter((item) => item.id === task.id)).toHaveLength(1)
   expect(f.sent(task.id)).toHaveLength(1)
+})
+
+it.each(receiptCases)(
+  'follows the Lean send receipt case $input',
+  async ({ input, acceptedBeforeRestart, savedAfterFirstRemoval, finalReceipt, admissions }) => {
+    const f = await setup()
+    const task = f.draft('Keep this first message')
+    const actionId = 'receipt-conformance'
+    const message = threadStartMessage({ id: task.id, messageId: 'first', text: task.draft }, task)
+    const connection = { address: `http://127.0.0.1:${f.runtime.port}`, token }
+    let saved: MutationOutbox = []
+    let failRemoval = false
+    const client = () =>
+      new RuntimeMutations({
+        id: () => actionId,
+        read: async () => structuredClone(saved),
+        clear: async () => {
+          saved = []
+        },
+        update: async (_, change) => {
+          const next = change(structuredClone(saved))
+          if (failRemoval && !next.length) throw new Error('Local journal unavailable')
+          saved = next
+          return saved
+        },
+      })
+    let dropReply = input.loseReply
+    let compactions = 0
+    const fetchRuntime = globalThis.fetch
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (resource, init) => {
+      const url = new URL(resource instanceof Request ? resource.url : resource)
+      if (url.pathname === '/api/mutations/acknowledge') {
+        compactions++
+        if (input.loseCompaction) throw new TypeError('Compaction request lost')
+      }
+      // The disposable runtime can obtain a different loopback port on restart.
+      url.port = String(f.runtime.port)
+      const response = await fetchRuntime(url, init)
+      if (dropReply && url.pathname === '/api/tasks/message' && response.ok) {
+        await response.body?.cancel()
+        throw new TypeError('Send reply lost')
+      }
+      return response
+    })
+
+    const initial = client()
+    await Effect.runPromise(
+      initial.enqueueEffect(connection, '/api/tasks/message', message, responses.ok),
+    )
+    const reply = await Effect.runPromise(Effect.result(initial.recoverEffect(connection)))
+    expect(reply._tag === 'Success').toBe(acceptedBeforeRestart)
+    expect(saved).toHaveLength(1)
+    expect(f.runtime.services.mutations.status('owner', actionId).status).toBe('succeeded')
+    await waitForRuntime(() => {
+      expect(f.runtime.run).toHaveBeenCalledTimes(admissions)
+      expect(f.runtime.services.store.task(task.id).activeRunId).toBeUndefined()
+    })
+
+    await f.restart()
+    dropReply = false
+    const recovered = client()
+    await Effect.runPromise(recovered.recoverEffect(connection))
+    expect(saved).toHaveLength(1)
+    expect(compactions).toBe(0)
+    failRemoval = input.failRemoval
+    const cached = [f.runtime.services.store.task(task.id)]
+    const result = await Effect.runPromise(
+      Effect.result(recovered.taskCreationsCachedEffect(connection, cached)),
+    )
+    expect(result._tag === 'Failure').toBe(savedAfterFirstRemoval)
+    expect(saved.length > 0).toBe(savedAfterFirstRemoval)
+    if (savedAfterFirstRemoval) {
+      expect(compactions).toBe(0)
+      expect(f.runtime.services.mutations.status('owner', actionId).status).toBe('succeeded')
+      failRemoval = false
+      await Effect.runPromise(recovered.taskCreationsCachedEffect(connection, cached))
+    }
+    expect(saved).toEqual([])
+    await waitForRuntime(() => {
+      expect(compactions).toBe(1)
+      expect(f.runtime.services.mutations.status('owner', actionId).status).toBe(
+        finalReceipt === 'retired' ? 'uncertain' : 'succeeded',
+      )
+    })
+    const replay = await f.request('/api/tasks/message', message, 'POST', actionId)
+    expect(replay.status).toBe(finalReceipt === 'retired' ? 409 : 200)
+    if (finalReceipt === 'retired')
+      expect(await replay.json()).toMatchObject({ mutationRetired: true })
+    expect(f.sent(task.id)).toHaveLength(admissions)
+    expect(f.runtime.run).not.toHaveBeenCalled()
+  },
+)
+
+it('preserves the follow-up identity after dequeue and restart', async () => {
+  const f = await setup()
+  const task = f.draft()
+  expect((await f.startThread(task, 'first')).status).toBe(200)
+  await waitForRuntime(() => expect(f.runtime.run).toHaveBeenCalledTimes(1))
+  const followUp = { id: task.id, messageId: 'follow-up', text: 'Keep going' }
+  expect((await f.request('/api/tasks/message', followUp)).status).toBe(200)
+  await waitForRuntime(() => {
+    const started = f.runtime.services.store.task(task.id)
+    expect(started.messages).toContainEqual(expect.objectContaining({ id: followUp.messageId }))
+    expect(started.activeRunId).toBeUndefined()
+  })
+  const accepted = f.sent(task.id)
+
+  await f.restart()
+  expect((await f.request('/api/tasks/message', followUp)).status).toBe(200)
+  expect(
+    (await f.request('/api/tasks/message', { ...followUp, text: 'Changed input' })).status,
+  ).toBe(409)
+  expect(f.sent(task.id)).toEqual(accepted)
+  expect(f.runtime.run).not.toHaveBeenCalled()
 })
 
 it('preserves an existing thread instead of overwriting it', async () => {

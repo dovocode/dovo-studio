@@ -127,7 +127,8 @@ start work on that computer.
 
 ## Implemented toolkit
 
-The catalog now has twenty components. Existing definitions remain valid.
+The November 16 implementation expanded the catalog to twenty components. See the
+[current catalog](a2ui.md) for later additions.
 
 | Need      | Components and behavior                                                     |
 | --------- | --------------------------------------------------------------------------- |

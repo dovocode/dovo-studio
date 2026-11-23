@@ -78,6 +78,9 @@ the destination already committed the thread, Dovo finishes the handoff. If the 
 offline, the source stays saved and blocked until the result can be checked. Do not remove its
 transfer record to bypass this check.
 
+Retry is available once cancellation finishes. While cancellation checks the destination, the source
+stays blocked and a second cancellation waits for the same result.
+
 If you delete the hidden staged destination before activation, Dovo keeps a durable discard receipt.
 Retry or cancel the move on the source to restore source input. Start a new move to try again.
 Deleting an activated destination does not restore execution on the source. Dovo retains the

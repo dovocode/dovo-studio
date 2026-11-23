@@ -30,7 +30,7 @@ export const dashboardTileLabels = {
   iframe: 'Iframe',
   browser: 'Studio Browser',
   gui: 'Remote desktop',
-  app: 'MCP App',
+  app: 'MCP App / A2UI card',
   extension: 'Studio extension',
   pipelines: 'Pipelines',
   threads: 'Threads',
@@ -124,10 +124,7 @@ export function dashboardTileFields(
     case 'browser':
       return [['url', 'URL', tile.url]]
     case 'app':
-      return [
-        ['taskId', 'Source thread', tile.taskId],
-        ['appId', 'MCP App ID', tile.appId],
-      ]
+      return [['taskId', 'Source thread', tile.taskId]]
     case 'extension':
       return [
         ['extensionId', 'Extension ID', tile.extensionId],

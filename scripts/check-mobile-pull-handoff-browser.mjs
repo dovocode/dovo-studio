@@ -97,7 +97,7 @@ if(path.endsWith('/detail')){
  if(input.section==='changes') { if(window.changesWarning)value.warnings=['Incomplete patch']; value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
  return value;
 }
-if(path.endsWith('/overview')&&window.pagedNumbers){if(input.page===2&&window.failLaterPage)throw Error('Older PR page unavailable');const numbers=window.pagedNumbers[input.page-1]??[];return decode(schema,{destination:'destination-'+id,pulls:numbers.map(number=>({...detail(id).pull,number,url:'https://github.com/team/project/pull/'+number})),page:input.page,hasMore:input.page<window.pagedNumbers.length,stale:input.page===2&&window.staleLaterPage});}
+if(path.endsWith('/overview')&&window.pagedNumbers){if(input.page===2&&window.failLaterPage)throw Error('Older PR page unavailable');const numbers=window.pagedNumbers[input.page-1]??[];return decode(schema,{destination:'destination-'+id,pulls:numbers.map(number=>({...detail(id).pull,number,...(number===7?{title:input.page===1?'Current PR 7':'Saved PR 7'}:{}),url:'https://github.com/team/project/pull/'+number})),page:input.page,hasMore:input.page<window.pagedNumbers.length,stale:input.page===2&&window.staleLaterPage});}
 if(path.endsWith('/overview')&&window.simulatedPages?.[id])return decode(schema,{destination:'destination-'+id,pulls:[{...detail(id).pull,number:window.simulatedPages[id].number}],page:1,hasMore:false,cachedAt:window.simulatedPages[id].cachedAt,stale:window.simulatedPages[id].stale});if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
 throw Error('Unexpected request '+path);
 },catch:error=>error});
@@ -520,16 +520,21 @@ try {
   await moving.clock.install()
   await moving.setContent('<div id="app"></div>')
   await moving.addScriptTag({
-    content: 'window.initialListOnly=true;window.pagedNumbers=[[7,6],[5,4],[3,2]]',
+    content: 'window.initialListOnly=true;window.pagedNumbers=[[7,6],[7,5,4],[3,2]]',
   })
   await moving.addScriptTag({ content: built.outputFiles[0].text })
   await moving.waitForFunction(() => window.list?.pages[0]?.pulls.length === 2)
   await moving.getByRole('button', { name: 'More PRs', exact: true }).click()
   await moving.waitForFunction(() => window.list.pages[0]?.page === 2)
+  assert.equal(
+    await moving.evaluate(() => window.list.pages[0].pulls[0].title),
+    'Current PR 7',
+    'Loading more keeps the first copy of the PR',
+  )
   await moving.evaluate(() => {
     window.pagedNumbers = [
       [8, 7],
-      [6, 5],
+      [7, 6, 5],
       [4, 3],
     ]
   })
@@ -539,6 +544,11 @@ try {
     await moving.evaluate(() => window.list.pages[0].pulls.map((pull) => pull.number)),
     [8, 7, 6, 5],
     'A PR moving from page one into page two must remain visible',
+  )
+  assert.equal(
+    await moving.evaluate(() => window.list.pages[0].pulls[1].title),
+    'Current PR 7',
+    'Refreshing open pages keeps the first copy of the PR',
   )
   await moving.evaluate(() => {
     window.pagedNumbers = [

@@ -249,7 +249,7 @@ export function ResourceEditor({
               }}
             >
               {
-                'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing starts the server and lists its tools.'
+                'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing lists tools and any advertised MCP Events.'
               }
             </InterfaceText>
           </Text>
@@ -266,7 +266,15 @@ export function ResourceEditor({
                     parseServer(),
                     mcpTestResultSchema,
                   )
-                  setResult(`Connected to ${result.server} · ${result.tools.length} tools`)
+                  const eventList = result.events?.map(
+                    ({ name, delivery }) => `${name} (${delivery.join(', ')})`,
+                  )
+                  setResult(
+                    `Connected to ${result.server} · ${result.tools.length} tools` +
+                      (eventList
+                        ? ` · MCP Events: ${eventList.join(', ') || 'none advertised'}`
+                        : ''),
+                  )
                 }),
               )
             }

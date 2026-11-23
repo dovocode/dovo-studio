@@ -6,6 +6,8 @@ const fs = vi.hoisted(() => ({
   directories: new Set<string>(),
   writing: false,
   failWrite: false,
+  failPublish: false,
+  failedDestination: undefined as string | undefined,
   writeGate: undefined as Promise<void> | undefined,
 }))
 vi.mock('expo-file-system', () => {
@@ -34,9 +36,18 @@ vi.mock('expo-file-system', () => {
     async text() {
       const text = fs.files.get(this.uri)
       if (text === undefined) throw new Error('Missing file')
+      if (text === 'incomplete-utf8') throw new Error('Invalid file encoding')
       return text
     }
-    async move(target: File) {
+    async move(target: File, options: { overwrite?: boolean } = {}) {
+      if (target.exists) {
+        if (!options.overwrite) throw new Error('Destination exists')
+        fs.files.delete(target.uri)
+      }
+      if (fs.failPublish && this.name.endsWith('.tmp')) {
+        if (fs.failedDestination !== undefined) fs.files.set(target.uri, fs.failedDestination)
+        throw new Error('Move interrupted')
+      }
       fs.files.set(target.uri, await this.text())
       fs.files.delete(this.uri)
       this.uri = target.uri
@@ -73,6 +84,8 @@ beforeEach(() => {
   fs.directories.clear()
   fs.writing = false
   fs.failWrite = false
+  fs.failPublish = false
+  fs.failedDestination = undefined
   fs.writeGate = undefined
 })
 it('keeps the committed value readable until the asynchronous replacement completes', async () => {
@@ -101,6 +114,33 @@ it('preserves committed data on failure, reports the storage error and recovers'
   expect((await cache.read('snapshot', Schema.String))?.value).toBe('recovered')
   await cache.close()
 })
+it.each([undefined, '{"version":1', 'incomplete-utf8'])(
+  'recovers the last offline snapshot after a failed publication leaves %s',
+  async (failedDestination) => {
+    const cache = mobileReadCache(connection)
+    await cache.write('snapshot', 'committed')
+    fs.failPublish = true
+    fs.failedDestination = failedDestination
+    await expect(cache.write('snapshot', 'replacement')).rejects.toThrow('Move interrupted')
+    await cache.close()
+
+    const relaunched = mobileReadCache(connection)
+    expect((await relaunched.read('snapshot', Schema.String))?.value).toBe('committed')
+    await expect(relaunched.write('snapshot', 'still interrupted')).rejects.toThrow(
+      'Move interrupted',
+    )
+    expect((await relaunched.read('snapshot', Schema.String))?.value).toBe('committed')
+    fs.failPublish = false
+    await relaunched.write('snapshot', 'new snapshot')
+    expect((await relaunched.read('snapshot', Schema.String))?.value).toBe('new snapshot')
+    expect([...fs.files.keys()].every((key) => key.endsWith('.json'))).toBe(true)
+    fs.failPublish = true
+    await expect(relaunched.write('snapshot', 'lost')).rejects.toThrow('Move interrupted')
+    expect([...fs.files.keys()].some((key) => key.endsWith('.backup'))).toBe(true)
+    await relaunched.clear()
+    expect(fs.files.size).toBe(0)
+  },
+)
 it('isolates credentials and clears every credential for only the forgotten computer', async () => {
   const cache = mobileReadCache(connection)
   const replaced = mobileReadCache({ ...connection, token: 'replaced' })

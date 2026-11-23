@@ -1,5 +1,5 @@
 import { readPullPage } from '@dovo/studio-core/pull-reads'
-import { pullPageReadSchema } from '@dovo/protocol'
+import { mergePullPages, pullPageReadSchema } from '@dovo/protocol'
 import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import { Effect, Schema, Semaphore } from 'effect'
@@ -360,11 +360,7 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
                   cachedAt: response.cachedAt,
                   stale: response.stale,
                   refreshError: response.refreshError,
-                  pulls: [
-                    ...new Map(
-                      [...combined.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
-                    ).values(),
-                  ],
+                  pulls: mergePullPages(combined.pulls, next.pulls),
                 }
               }
             const page: Page = unchanged
@@ -444,11 +440,7 @@ export function usePulls(repositoryId: string, state: string, visibility = defau
             ...next,
             stale: previous.stale || next.stale,
             error: next.refreshError || previous.error,
-            pulls: [
-              ...new Map(
-                [...previous.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
-              ).values(),
-            ],
+            pulls: mergePullPages(previous.pulls, next.pulls),
           }
           update(id, page)
           yield* save(entry, page)

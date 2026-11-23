@@ -12,7 +12,10 @@ export async function acpMcpHttp(
   headers: Record<string, string>,
   context: Pick<McpOperationContext, 'signal' | 'requestId' | 'method' | 'params' | 'notify'>,
 ): Promise<McpOutcome> {
-  const signal = AbortSignal.any([context.signal, AbortSignal.timeout(10 * 60_000)])
+  const signal =
+    context.method === 'events/stream'
+      ? context.signal
+      : AbortSignal.any([context.signal, AbortSignal.timeout(10 * 60_000)])
   signal.throwIfAborted()
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     ...mcpHttpOptions(headers),

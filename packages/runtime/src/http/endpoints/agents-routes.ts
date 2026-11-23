@@ -1646,20 +1646,37 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         return yield* serviceResult(s.tasks.removeFeedback(input.id, input.messageId))
       }
       if (method === 'POST' && (path === '/api/tasks/run' || path === '/api/tasks/retry-failed')) {
-        const { id } = decode(
+        const { id, saveOnly } = decode(
           mutableStruct({
             id: idSchema,
+            saveOnly: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
+        const task = s.store.taskSummary(id)
+        const saving = task.runPhase === 'finalizing'
+        if (saveOnly && !saving) return yield* serviceResult({ ok: true })
         // Run and Retry from a paired human are consent, like a message: they reset unattended
         // spend and start this thread now. An agent's request still waits at the limit.
-        if (owner) s.tasks.resetSpendLimit(id, undefined, true)
-        const task = s.store.taskSummary(id)
+        if (owner && !saving) s.tasks.resetSpendLimit(id, undefined, true)
         const retryFailed =
           path === '/api/tasks/retry-failed' ||
           (task.status === 'failed' && !!task.preparation?.failed)
-        yield* s.tasks.startEffect(id, false, undefined, undefined, retryFailed)
+        yield* s.tasks.startEffect(
+          id,
+          saving,
+          saving
+            ? () => {
+                const current = s.store.taskSummary(id)
+                return (
+                  current.runPhase === 'finalizing' &&
+                  current.history.latestTurn?.id === task.history.latestTurn?.id
+                )
+              }
+            : undefined,
+          undefined,
+          retryFailed,
+        )
         return yield* serviceResult({
           ok: true,
         })

@@ -147,7 +147,7 @@ it('persists typed workbench drafts and rejects updates that remove selected row
           version: '1.0',
           updateComponents: {
             surfaceId: 'review',
-            components: [{ ...table, rows: [{ id: 'browser', cells: { file: 'browser.mjs' } }] }],
+            components: [{ ...table, rows: table.rows?.filter((row) => row.id !== 'protocol') }],
           },
         },
       ],
@@ -255,6 +255,30 @@ it('rejects draft conflicts and permission changes during approval', async () =>
   expect(send).not.toHaveBeenCalled()
 })
 
+it('rejects an old approval after a new revision is published', async () => {
+  const { s, action, command, input, send, state } = await setup()
+  const approval = action('old-revision', 'a2ui_submit', input).catch((error: unknown) => error)
+  await waitForRuntime(() => expect(s.approvals.list()).toHaveLength(1))
+  command({
+    action: 'publish',
+    key: example.key,
+    title: example.title,
+    expectedRevision: 1,
+    messages: [
+      {
+        version: '1.0',
+        updateDataModel: { surfaceId: 'issues', path: '/instructions', value: 'Updated card' },
+      },
+    ],
+  })
+  const updated = state()
+  expect(updated).toMatchObject({ revision: 2, draftVersion: 0, submitted: false })
+  s.approvals.respond(s.approvals.list()[0].id, true)
+  expect(await approval).toMatchObject({ status: 409 })
+  expect(state()).toEqual(updated)
+  expect(send).not.toHaveBeenCalled()
+})
+
 it('allows read-only publication and cancels pending responses when permission changes', async () => {
   const { s, task, id, action, command, send, input } = await setup()
   const pending = action('permission-change', 'a2ui_submit', input)
@@ -324,12 +348,29 @@ it('allows only one concurrent submission and cancels pending approval on Stop',
   expect(send).toHaveBeenCalledTimes(1)
 })
 
-it('locks uncertain deliveries and never automatically repeats them', async () => {
-  const { s, action, send, input, state } = await setup()
+it('keeps an uncertain delivery locked across restart and rejects retries', async () => {
+  const { s, action, send, input, state, runtime, options, task, id } = await setup(true)
   vi.spyOn(s.approvals, 'request').mockResolvedValue('approve')
   send.mockRejectedValueOnce(new Error('Delivery acknowledgement was lost'))
   await expect(action('lost', 'a2ui_submit', input)).rejects.toThrow('acknowledgement')
   expect(state()).toMatchObject({ submitted: true, delivery: 'uncertain' })
   await expect(action('new-attempt', 'a2ui_submit', input)).rejects.toThrow('already recorded')
   expect(send).toHaveBeenCalledTimes(1)
+
+  await runtime.close()
+  cleanups.pop()
+  const reopened = await startRuntime(options)
+  cleanups.push(() => reopened.close())
+  const apps = reopened.services.mcpApps
+  const replay = vi.fn<() => Promise<unknown>>(async () => ({}))
+  apps.setSendMessage(replay)
+  expect(object(apps.read(task.id, id).result).structuredContent).toMatchObject({
+    submitted: true,
+    delivery: 'uncertain',
+  })
+  const retry = (requestId: string) =>
+    apps.action(task.id, id, requestId, 'tools/call', { name: 'a2ui_submit', arguments: input })
+  await expect(retry('lost')).rejects.toThrow('interrupted')
+  await expect(retry('after-restart')).rejects.toThrow('already recorded')
+  expect(replay).not.toHaveBeenCalled()
 })

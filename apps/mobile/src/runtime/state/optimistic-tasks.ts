@@ -24,6 +24,15 @@ export type OptimisticTask = {
   acknowledged?: WorkspacePatchResult
 }
 
+function canPreviewOnInstance(pending: OptimisticTask, runtimeInstanceId?: string) {
+  return (
+    !runtimeInstanceId ||
+    !pending.runtimeInstanceId ||
+    pending.runtimeInstanceId === runtimeInstanceId ||
+    pending.acknowledged?.runtimeInstanceId === runtimeInstanceId
+  )
+}
+
 export function optimisticTaskConfirmed(
   pending: OptimisticTask,
   entry: RuntimeOverview,
@@ -38,6 +47,7 @@ export function optimisticTaskConfirmed(
       .some(
         (older) =>
           !older.acknowledged &&
+          canPreviewOnInstance(older, snapshot.runtimeInstanceId) &&
           older.taskId === pending.taskId &&
           older.connection.address === pending.connection.address &&
           older.connection.token === pending.connection.token &&
@@ -65,7 +75,8 @@ export function previewTasks(
   for (const item of pending) {
     if (
       item.connection.address !== connection.address ||
-      item.connection.token !== connection.token
+      item.connection.token !== connection.token ||
+      !canPreviewOnInstance(item, entry.snapshot.runtimeInstanceId)
     )
       continue
     byTask.set(item.taskId, { ...byTask.get(item.taskId), ...item.changes })

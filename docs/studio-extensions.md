@@ -95,6 +95,40 @@ refresh controls above the components that use the source. Use the other UI SDK 
 settings, tabs, dialogs, buttons, menus, and custom fallbacks. An agent can create and stage these
 pages. Paired users control pins and start source reads.
 
+## Embed an A2UI card
+
+Publish a card with [`dovo_task a2ui`](a2ui.md). Use the thread ID and the saved app ID from the
+publication in an App contribution. Place the saved card inside an extension page, settings view, or
+dashboard tile with `appView`.
+
+```ts
+import { appView, defineExtension, page } from '@dovo/protocol/studio-extension-sdk'
+
+export default defineExtension({
+  id: 'example.playback',
+  name: 'Playback',
+  contributions: [
+    {
+      kind: 'app',
+      id: 'playback-card',
+      title: 'Open playback card',
+      taskId: 'THREAD_ID',
+      appId: 'APP_ID',
+    },
+    page({
+      id: 'playback',
+      title: 'Playback settings',
+      root: appView('card', 'playback-card'),
+    }),
+  ],
+})
+```
+
+For JSON manifests, the component is `{ "id": "card", "kind": "app", "source": "playback-card" }`.
+The card uses its source thread's revision and draft. Extension App grants still apply to its tools.
+Sending a card response still uses the source thread's approval flow. App views require a current
+Studio client and paired runtime. Older clients can open the standalone App contribution.
+
 ## Add HTTP or CLI data
 
 Add an `api` or `cli` contribution to the manifest. An API source takes `url` and reads it with GET.
@@ -408,6 +442,10 @@ previous version** reinstalls the last manifest and its settings. This works eve
 tool server is unreachable. Opening a saved MCP App from its conversation uses that conversation's
 approval flow. Opening it from an extension uses the extension contribution's grant.
 
+Saved MCP Apps can generate secure UUIDs when Studio opens over plain HTTP on a LAN or VPN. The
+sandbox supplies `crypto.randomUUID()` if the browser omits it, using Web Crypto's secure random
+bytes.
+
 ## Verify
 
 ```sh
@@ -415,6 +453,7 @@ pnpm --filter @dovo/runtime... -r build
 pnpm exec vp test packages/protocol/src/studio-extension-sdk.test.ts packages/protocol/src/runtime/studio-extension-views.test.ts packages/runtime/src/http/endpoints/studio-extensions.test.ts packages/runtime/src/agent-tools/dashboards-tool.test.ts packages/runtime/src/agent-tools/context-budget.test.ts
 pnpm exec playwright install chromium
 pnpm test:dashboards:browser
+pnpm test:mcp-apps:browser
 ```
 
 The runtime integration check stalls an extension's MCP call and verifies that the paired client can

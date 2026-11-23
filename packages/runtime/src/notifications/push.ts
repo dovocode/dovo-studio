@@ -158,6 +158,11 @@ export class PushNotifications {
   }
   status(deviceId: string) {
     const registration = this.registration(deviceId)
+    const unreadable = this.db
+      .prepare(
+        'SELECT 1 FROM push_outbox WHERE device_id=? AND attempt=0 AND next=expires AND expires>? LIMIT 1',
+      )
+      .get(deviceId, Date.now())
     // Another device's success clears the shared error; this device's own retry still shows.
     const waiting = this.db
       .prepare('SELECT 1 FROM push_outbox WHERE device_id=? AND attempt>0 LIMIT 1')
@@ -166,6 +171,9 @@ export class PushNotifications {
       configured: !!this.relay.send || !!registration?.managedToken,
       registered: !!registration,
       error:
+        (unreadable
+          ? 'A queued notification is unreadable. Its record was preserved until expiry.'
+          : null) ??
         this.error ??
         (waiting
           ? 'Push delivery failed. Check the relay connection and provider credentials.'
@@ -304,13 +312,18 @@ export class PushNotifications {
         const current = this.state(task)
         const completed = completions.get(task.id) === current.turn
         const raw = this.db.prepare('SELECT value FROM push_states WHERE task_id=?').get(task.id)
-        const before = raw
-          ? decode(
+        let before: State | undefined
+        if (raw) {
+          try {
+            before = decode(
               stateSchema,
               JSON.parse(decode(mutableStruct({ value: Schema.String }), raw).value),
             )
-          : undefined
-        if (!completed && raw && JSON.stringify(current) === JSON.stringify(before)) continue
+          } catch {
+            // Rebuild this projection. The completion record still carries a real transition.
+          }
+        }
+        if (!completed && before && JSON.stringify(current) === JSON.stringify(before)) continue
         this.db
           .prepare('INSERT OR REPLACE INTO push_states VALUES (?,?)')
           .run(task.id, JSON.stringify(current))
@@ -465,7 +478,14 @@ export class PushNotifications {
         this.remove(entry.deviceId)
         continue
       }
-      const value = decode(relayNotificationSchema, JSON.parse(entry.value))
+      let value: RelayNotification
+      try {
+        value = decode(relayNotificationSchema, JSON.parse(entry.value))
+      } catch {
+        // Keep the record until its normal expiry without imposing backoff on this device.
+        this.db.prepare('UPDATE push_outbox SET attempt=0,next=expires WHERE id=?').run(entry.id)
+        continue
+      }
       const task = this.store.get().tasks.find((task) => task.id === value.data.taskId)
       const latest = task?.history.latestTurn
       const staleTurn = value.data.turnId && latest?.id !== value.data.turnId

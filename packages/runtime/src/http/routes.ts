@@ -230,7 +230,9 @@ export function route(
                   ? ARTIFACT_MAX_BYTES * 6 + 128 * 1024
                   : ['/api/agent/code-tools', '/api/agent/vision'].includes(path)
                     ? 9 * 1024 * 1024
-                    : undefined,
+                    : path === '/api/agent/mcp-events'
+                      ? 64 * 1024
+                      : undefined,
               ),
             ),
           )
@@ -530,6 +532,29 @@ export function route(
           yield* serviceResult(body(request, 256 * 1024)),
         )
         return yield* serviceResult(s.mcpApps.a2uiCommand(run.taskId, run.runId, input.command))
+      }
+      if (method === 'POST' && path === '/api/agent/mcp-events') {
+        if (!run) throw new HttpError(403, 'MCP Events require an active agent run')
+        const input = yield* serviceResult(body(request, 64 * 1024))
+        const command = decode(Schema.Struct({ command: Schema.Unknown }), input).command
+        return yield* runtimeOperation(async () => {
+          const controller = new AbortController()
+          const abort = () => controller.abort()
+          request.socket.once('close', abort)
+          try {
+            return await s.mcpApps.eventCommand(
+              run,
+              command,
+              AbortSignal.any([run.signal, controller.signal, AbortSignal.timeout(20000)]),
+              run.signal,
+              () => {
+                authorizeRunRoute(s, token, method, path, input)
+              },
+            )
+          } finally {
+            request.socket.removeListener('close', abort)
+          }
+        })
       }
       if (method === 'POST' && ['/api/agent/code-tools', '/api/agent/vision'].includes(path)) {
         if (!run) throw new HttpError(403, 'Code tools require an active agent run')

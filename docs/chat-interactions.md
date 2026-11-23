@@ -74,6 +74,11 @@ devices. A later completion shows Done again; opening a list, keeping the app in
 viewing a different mobile task pane does not clear it. This does not settle the task. Failed tasks
 show a failure indicator, and a branch icon identifies task worktrees.
 
+If the reply finished but saving changes failed, **Retry saving changes** finishes the same turn.
+The reply and its outcome stay in that conversation. Queued follow-ups stay paused until you resume
+them. A read-only child can finish this retry even if its turn has no Git checkpoint. Finish saving
+before switching the thread's harness or moving the thread to another computer.
+
 Right-click a desktop task (or press Shift+F10 on its row) for task actions, including rename,
 pinning, snooze, settle/reopen, read/unread, project filtering and copying task details. Marking the
 open chat unread closes its conversation so it stays unread until you open it again. Task actions

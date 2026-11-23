@@ -20,6 +20,7 @@ const mutationResult = Schema.Union([responses.ok, studioExtensionResultSchema])
 export function extensionComponentVersion(
   snapshot?: RuntimeSnapshot | null,
 ): StudioExtensionComponentVersion | undefined {
+  if (snapshot?.studioExtensionAppViewsSupported) return 4
   if (snapshot?.studioDataSourcesSupported || snapshot?.studioExtensionPinnedPages) return 3
   return snapshot?.studioExtensionCustomPropsSupported
     ? 2

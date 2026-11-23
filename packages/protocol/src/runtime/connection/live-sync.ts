@@ -1,4 +1,5 @@
 import { createRuntimeClient } from '../../shared/runtime-client.js'
+import { randomUUID } from '../../random-uuid.js'
 import { recordClientAction } from '../../shared/client-diagnostics.js'
 import { desktopRuntimeSyncBridge } from './desktop-sync.js'
 import { failRuntimeStreamingRoute, invalidateRuntimeRoute } from './routes.js'
@@ -229,7 +230,7 @@ export function startRuntimeSync(
   const value = registration(connection)
   const bridge = desktopRuntimeSyncBridge()
   if (bridge) {
-    const id = crypto.randomUUID()
+    const id = randomUUID()
     let stopped = false,
       online = false
     let status: RuntimeSyncStatus = 'connecting'

@@ -108,6 +108,7 @@ export const extensionViewComponents = {
   }),
   disclosure: strictStruct({ ...id, kind: Schema.Literal('disclosure'), ...title, child: key }),
   dialog: strictStruct({ ...id, kind: Schema.Literal('dialog'), ...title, child: key }),
+  app: strictStruct({ ...id, kind: Schema.Literal('app'), source: key }),
   'data-grid': strictStruct({
     ...id,
     kind: Schema.Literal('data-grid'),
@@ -144,6 +145,10 @@ export const extensionViewSchema = strictStruct({
 export type ExtensionView = typeof extensionViewSchema.Type
 export type ExtensionViewNode = typeof node.Type
 export type ExtensionViewValue = typeof value.Type
+
+export function extensionViewHasApp(view: ExtensionView) {
+  return view.nodes.some((node) => node.kind === 'app')
+}
 
 export function extensionViewChildren(node: ExtensionViewNode): string[] {
   switch (node.kind) {
@@ -203,6 +208,7 @@ export function extensionViewIssue(
   settings: ReadonlyMap<string, string | boolean>,
   tools: ReadonlySet<string>,
   results: ReadonlySet<string> = tools,
+  apps: ReadonlySet<string> = new Set(),
 ): string | undefined {
   const nodes = new Map(view.nodes.map((node) => [node.id, node]))
   if (nodes.size !== view.nodes.length) return 'Component IDs must be unique.'
@@ -225,6 +231,7 @@ export function extensionViewIssue(
   if (visited.size !== nodes.size) return 'All components must belong to the view tree.'
   const sourceControls = new Set<string>()
   for (const node of view.nodes) {
+    if (node.kind === 'app' && !apps.has(node.source)) return `Unknown MCP App: ${node.source}`
     if (node.kind === 'data-source') {
       if (!results.has(node.source) || tools.has(node.source))
         return `Unknown data source: ${node.source}`

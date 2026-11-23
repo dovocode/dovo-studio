@@ -18,6 +18,7 @@ import {
   type SaveExtensionSettings,
 } from '@dovo/studio-core'
 import { useRuntime } from '../runtime/connection/provider'
+import { ExtensionAction } from './studio-extension-action'
 import { EmptyState } from '../ui/content/empty-state'
 import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
@@ -182,6 +183,10 @@ function Node({ id, state }: { id: string; state: ExtensionViewState }) {
     </Text>
   )
   switch (node.kind) {
+    case 'app': {
+      const app = state.apps.find(({ id }) => id === node.source)
+      return app ? <ExtensionAction entry={state.entry} contribution={app} /> : null
+    }
     case 'stack':
       return <View style={stack}>{node.children.map(child)}</View>
     case 'row':

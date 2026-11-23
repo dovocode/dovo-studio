@@ -28,7 +28,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {RegistryProvider} from '@effect/atom-react';
 import {decode,botResourcesSchema,resourceSettingsSchema} from '@dovo/protocol';import {BotResources} from './apps/mobile/src/bots/bot-resources';
 window.failSave=false;window.saves=[];
-const initial=decode(botResourcesSchema,{mcpServers:[{name:'existing',enabled:true,transport:'stdio',command:'node',envValues:{API_TOKEN:'dovo-stored-secret:opaque'}}],skills:[],disabledMcpServers:[],disabledSkills:[]});
+const initial=decode(botResourcesSchema,{mcpServers:[{name:'existing',enabled:true,transport:'stdio',command:'node',envValues:{API_TOKEN:'dovo-stored-secret:opaque'}},{name:'event-source',enabled:true,transport:'http',url:'http://fixture.lan/mcp',acpTransport:true}],skills:[],disabledMcpServers:[],disabledSkills:[]});
 const inherited=decode(resourceSettingsSchema,{mcpServers:[{name:'shared-mcp',enabled:true,transport:'stdio',command:'node'}],skills:[{name:'shared-skill',enabled:true,description:'Shared skill',content:'Shared content'}]});
 function App(){const [value,setValue]=useState(initial);window.resources=value;return <BotResources inherited={inherited} value={value} disabled={false} onClose={()=>{}} save={async update=>{if(window.failSave)throw Error('Resource revision conflict');const next=update(value);window.saves.push(next);setValue(next)}}/>};
 createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);
@@ -58,7 +58,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     {
       path: '../runtime/connection/provider',
       importer: mobile + 'resources/',
-      contents: 'export const useRuntime=()=>({connected:true});',
+      contents: `import {Effect} from 'effect';import {decode} from '@dovo/protocol';export const useRuntime=()=>({connected:true,callEffect:(path,_,schema)=>Effect.sync(()=>{if(path!=='/api/agents/mcp/test')throw Error('Unexpected runtime request: '+path);return decode(schema,{server:'Fixture MCP',tools:['details'],events:[{name:'incident.created',delivery:['poll','push']}]});})});`,
     },
     {
       path: '../ui/content/open-link',
@@ -95,6 +95,10 @@ try {
     .click()
   assert.deepEqual(await page.evaluate(() => window.resources.disabledSkills), ['shared-skill'])
   await page.getByRole('button', { name: 'Restore inherited mcp shared-mcp', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit MCP event-source', exact: true }).click()
+  await page.getByRole('button', { name: 'Test connection', exact: true }).click()
+  await page.getByText('MCP Events: incident.created (poll, push)', { exact: false }).waitFor()
+  await page.getByRole('button', { name: 'Close resource editor', exact: true }).click()
   await page.getByRole('button', { name: 'Edit MCP existing', exact: true }).click()
   await page.getByText('Configured · value hidden', { exact: true }).waitFor()
   assert.equal(await page.getByLabel('Value for API_TOKEN', { exact: true }).count(), 0)
@@ -107,7 +111,11 @@ try {
   await page.getByRole('button', { name: 'Save server', exact: true }).click()
   await page.getByRole('dialog', { name: 'MCP server', exact: true }).waitFor({ state: 'detached' })
   assert.equal(
-    await page.evaluate(() => window.resources.mcpServers[0].envValues.API_TOKEN),
+    await page.evaluate(
+      () =>
+        window.resources.mcpServers.find((server) => server.name === 'existing').envValues
+          .API_TOKEN,
+    ),
     'dovo-stored-secret:opaque',
   )
   assert.equal(await page.evaluate(() => window.resources.disabledMcpServers.length), 0)
@@ -119,7 +127,12 @@ try {
   await page.getByRole('button', { name: 'Edit skill release-check', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Disable skill release-check', exact: true }).click()
   await page.getByRole('button', { name: 'Enable skill release-check', exact: true }).waitFor()
-  assert.equal(await page.evaluate(() => window.resources.mcpServers[0].command), 'new-command')
+  assert.equal(
+    await page.evaluate(
+      () => window.resources.mcpServers.find((server) => server.name === 'existing').command,
+    ),
+    'new-command',
+  )
   assert.equal(await page.evaluate(() => window.resources.disabledMcpServers.length), 0)
   await page.getByRole('button', { name: 'Add skill', exact: true }).click()
   await page.getByLabel('Skill name', { exact: true }).fill('shared-skill')

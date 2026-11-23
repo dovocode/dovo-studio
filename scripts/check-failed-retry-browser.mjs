@@ -133,6 +133,24 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
       await page.getByRole('alert').filter({ hasText: 'Retry connection failed' }).count(),
       0,
     )
+    if (!mobile) {
+      await page.evaluate(() =>
+        window.update({
+          task: {
+            status: 'review',
+            error: undefined,
+            runPhase: 'finalizing',
+            restartRecovery: { kind: 'turn', automatic: false },
+          },
+        }),
+      )
+      await page.getByRole('button', { name: 'Retry saving changes' }).click()
+      assert.deepEqual(await page.evaluate(() => window.requests.at(-1)), {
+        path: '/api/tasks/run',
+        input: { id: 'task', saveOnly: true },
+      })
+      await page.evaluate(() => window.resolveRequest({ ok: true }))
+    }
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} failed retry: 429/general failures, explicit requests, pending/offline states, errors and draft/queue preservation passed.`,

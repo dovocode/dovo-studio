@@ -55,6 +55,7 @@ import type { Activity } from '../storage/activity.js'
 import type { Approvals } from '../agents/execution/approvals.js'
 import type { RunPolicy } from '../auth/run-credentials.js'
 import { HttpError } from '../errors.js'
+import { mcpEventsCommand, McpEventSubscriptions } from '../mcp-events/subscriptions.js'
 import {
   object,
   appUri,
@@ -98,6 +99,7 @@ const fingerprint = (server: McpServer) =>
 /** Owns upstream MCP connections; provider proxies never receive their credentials. */
 export class McpApps {
   private a2ui: A2uiApps
+  private events: McpEventSubscriptions
   private views = new AppToolViews()
   private sessions = new Map<string, Reservation>()
   private resolved = new Map<string, Session>()
@@ -142,6 +144,7 @@ export class McpApps {
       'CREATE TABLE IF NOT EXISTS mcp_apps (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS mcp_apps_task ON mcp_apps(task_id); CREATE TABLE IF NOT EXISTS mcp_app_actions (id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, result TEXT)',
     )
     this.a2ui = new A2uiApps(db, store, activity, approvals)
+    this.events = new McpEventSubscriptions(db)
   }
   a2uiCommand(taskId: string, runId: string, input: unknown) {
     return this.a2ui.command(taskId, runId, input)
@@ -471,6 +474,70 @@ export class McpApps {
           ]),
       ).values(),
     ]
+  }
+  eventCommand(
+    grant: RunPolicy,
+    input: unknown,
+    signal: AbortSignal,
+    runSignal: AbortSignal,
+    authorize: () => void,
+  ) {
+    const command = mcpEventsCommand.safeParse(input)
+    if (!command.success) throw new HttpError(400, 'Invalid MCP Events command')
+    const bindings = grant.codeDirectories?.mcp ?? []
+    const source = (name: string) => {
+      authorize()
+      const binding = bindings.find((entry) => entry.name === name)
+      if (!binding) throw new HttpError(403, 'MCP server is outside this run snapshot')
+      const agent = resolveTaskAgent(this.store.taskSummary(grant.taskId), this.store.get().agents)
+      if (!agent || !samePermissionPolicy(grant.permissions, agent))
+        throw new HttpError(403, 'Agent access changed. Start a new turn.')
+      const current = this.current(grant.taskId, name)
+      const identity = fingerprint(current.server)
+      if (identity !== binding.fingerprint)
+        throw new HttpError(409, 'MCP configuration changed. Start a new turn.')
+      if (current.server.transport === 'http' && !current.server.acpTransport)
+        throw new HttpError(409, 'Enable native MCP 2026-07-28 HTTP for this event source')
+      const cwd = grant.codeDirectories?.cwd ?? current.cwd
+      const credentials =
+        current.server.transport === 'http'
+          ? mcpHeaders(current.server)
+          : mcpServerEnvironment(current.server)
+      return {
+        server: current.server,
+        cwd,
+        fingerprint: createHash('sha256')
+          .update(
+            JSON.stringify([
+              identity,
+              cwd,
+              Object.entries(credentials).sort(([a], [b]) => a.localeCompare(b)),
+            ]),
+          )
+          .digest('hex'),
+      }
+    }
+    const servers = [...this.scopes.values()].flatMap((scope) =>
+      scope.taskId === grant.taskId &&
+      (scope.server.transport === 'stdio' || scope.server.acpTransport) &&
+      bindings.some(
+        (binding) =>
+          binding.name === scope.server.name && binding.fingerprint === fingerprint(scope.server),
+      )
+        ? [scope.server.name]
+        : [],
+    )
+    return this.events.command(
+      {
+        taskId: grant.taskId,
+        servers: [...new Set(servers)],
+        source,
+        signal: AbortSignal.any([signal, this.controller.signal]),
+        streamSignal: AbortSignal.any([runSignal, this.controller.signal]),
+        authorize,
+      },
+      command.data,
+    )
   }
   async codeTools(
     grant: RunPolicy,
@@ -1407,7 +1474,7 @@ export class McpApps {
       if (this.protects(session, task)) session.lastUsed = now
       else if (now - session.lastUsed >= MCP_SESSION_IDLE_MS) closing.push(this.retire(session))
     }
-    await Promise.all(closing)
+    await Promise.all([...closing, this.events.reconcile(new Set(tasks.keys()))])
     for (const row of this.db.prepare('SELECT DISTINCT task_id FROM mcp_apps').all()) {
       const id = object(row).task_id
       if (typeof id !== 'string' || tasks.has(id)) continue
@@ -1417,6 +1484,7 @@ export class McpApps {
     }
   }
   cancelTask(taskId: string) {
+    this.events.pauseTask(taskId)
     this.views.cancelTask(taskId)
     for (const action of this.actions.values())
       if (action.taskId === taskId) action.controller.abort()
@@ -1426,6 +1494,7 @@ export class McpApps {
     this.stopped = true
     this.controller.abort()
     await this.polling?.stop()
+    await this.events.dispose()
     // Opening errors belong to their callers; disposal only needs them settled.
     await Promise.allSettled([...this.sessions.values()].map(({ opening }) => opening))
     for (const session of [...this.resolved.values()]) void this.retire(session)

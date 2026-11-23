@@ -1,5 +1,5 @@
 import type { PullPage } from '@dovo/studio-core'
-import { retainNewerPullSnapshot } from '@dovo/protocol'
+import { mergePullPages, retainNewerPullSnapshot } from '@dovo/protocol'
 
 export type CachedPullPage = PullPage & { firstPageIds?: string[] }
 
@@ -27,10 +27,6 @@ export function refreshPullPage(
     hasMore: last.hasMore,
     paginationNotice: last.paginationNotice,
     firstPageIds,
-    pulls: [
-      ...new Map(
-        [incoming, ...laterPages].flatMap((page) => page.pulls).map((pull) => [pull.number, pull]),
-      ).values(),
-    ],
+    pulls: mergePullPages(incoming.pulls, ...laterPages.map((page) => page.pulls)),
   }
 }

@@ -18,6 +18,13 @@ const built = await build({
       window.readRegistry = async () => { window.registry = await readRuntimeRegistry(); return window.registry; };
       window.addComputer = async address => { window.registry = await writeRuntimeRegistry(upsertRuntime(window.registry, runtimeProfile({address,token:'registry-test-token-at-least-32-characters'}))); };
       window.clearSelection = async () => { window.registry = await writeRuntimeRegistry({...window.registry,activeId:null}); };
+      window.renameComputers = async names => {
+        window.registry = await writeRuntimeRegistry({
+          ...window.registry,
+          profiles: window.registry.profiles.map(profile => names[profile.id]
+            ? {...profile,name:names[profile.id]} : profile),
+        });
+      };
       import { WorkspaceSynchronization } from './packages/studio-core/src/runtime/synchronization.ts';
       import { createTask } from './packages/studio-core/src/workspace/actions.ts';
       window.Schema=Schema;
@@ -208,6 +215,28 @@ try {
   const savedRegistry = await first.evaluate(() => window.readRegistry())
   assert.equal(savedRegistry.profiles.length, 2, 'A stale tab must preserve another tab pairing')
   assert.equal(savedRegistry.activeId, null)
+  await second.evaluate(() => window.readRegistry())
+  await first.evaluate(() =>
+    window.renameComputers({ 'http://new-runtime.lan:8787': 'Saved by tab A' }),
+  )
+  const beforeConflict = await first.evaluate(() => window.readRegistry())
+  const conflict = await second.evaluate(() =>
+    window
+      .renameComputers({
+        'http://first-runtime.lan:8787': 'An otherwise valid edit',
+        'http://new-runtime.lan:8787': 'Conflicts with tab A',
+      })
+      .then(
+        () => null,
+        (error) => error.message,
+      ),
+  )
+  assert.match(conflict, /changed in another window/)
+  assert.deepEqual(
+    await second.evaluate(() => window.readRegistry()),
+    beforeConflict,
+    'A rejected batch must leave the complete saved registry intact',
+  )
   assert.equal(await first.evaluate(() => window.isSecureContext), false)
   assert.equal(await first.evaluate(() => typeof crypto.randomUUID), 'undefined')
   const task = await first.evaluate(() => window.createTask())

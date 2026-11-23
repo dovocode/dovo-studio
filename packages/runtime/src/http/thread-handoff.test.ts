@@ -117,6 +117,39 @@ it('changes the current harness while keeping history, checklist, files and old 
   expect(calls[0].prompt).toContain('Finish the work')
   expect(s.store.task(task.id).turns?.at(-1)?.provider).toBe('claude')
 })
+it('keeps completed turn recovery on its original harness until saving finishes', async () => {
+  const { s, task, post } = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (provider) => provider.onText('Saved answer'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const snapshot = s.git.snapshot.bind(s.git)
+  vi.spyOn(s.git, 'snapshot')
+    .mockImplementationOnce(snapshot)
+    .mockRejectedValueOnce(new Error('Change storage unavailable'))
+    .mockImplementation(snapshot)
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const held = s.store.task(task.id)
+  expect(held).toMatchObject({ status: 'review', runPhase: 'finalizing' })
+  const input = {
+    id: task.id,
+    requestId: randomUUID(),
+    harness: defaultTaskHarness('claude'),
+    stop: false,
+  }
+  const blocked = await post('/api/tasks/continue-harness', input)
+  expect(blocked.status).toBe(409)
+  expect(await blocked.text()).toContain('Finish saving changes')
+  expect(s.store.task(task.id)).toEqual(held)
+
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect((await post('/api/tasks/continue-harness', input)).status).toBe(200)
+  expect(s.store.task(task.id).messages).toEqual(held.messages)
+  expect(run).toHaveBeenCalledOnce()
+})
+
 it('rejects queued input and computer fences, including forged client handoff fields', async () => {
   const { s, task, post } = await setup()
   const input = {

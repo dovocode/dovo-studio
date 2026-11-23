@@ -36,6 +36,7 @@ import {
   newDashboardTile,
   useDashboardTile,
   useDashboards,
+  useMarketplaceSources,
   extensionTileOptions,
   useStudioExtensions,
   extensionComponentVersion,
@@ -545,9 +546,16 @@ function TileEditor({
   disabled: boolean
 }) {
   const uiText = useInterfaceText()
-  const { snapshot } = useRuntime()
+  const { snapshot, read, connected } = useRuntime()
   const workspace = snapshot?.workspace
   const { colors } = useTheme()
+  const appSources = useMarketplaceSources(
+    read,
+    tile.kind === 'app' ? tile.taskId : undefined,
+    connected && snapshot?.studioExtensionMarketplaceSupported === true,
+  )
+  const apps = appSources?.data?.apps ?? []
+  const [editAppId, setEditAppId] = useState(false)
   return (
     <View style={{ borderColor: colors.border, borderTopWidth: 1, padding: 12, gap: 8 }}>
       <Field
@@ -597,7 +605,12 @@ function TileEditor({
                 : key === 'taskId'
                   ? workspace?.tasks.map((item) => ({ id: item.id, name: item.title }))
                   : undefined
-          const update = (next: string) => change({ ...tile, [key]: next })
+          const update = (next: string) =>
+            change(
+              tile.kind === 'app' && key === 'taskId' && tile.taskId !== next
+                ? { ...tile, taskId: next, appId: '' }
+                : { ...tile, [key]: next },
+            )
           return items ? (
             <Choice
               key={key}
@@ -620,6 +633,39 @@ function TileEditor({
             />
           )
         })}
+      {tile.kind === 'app' && (
+        <>
+          {!!apps.length && (
+            <>
+              <Choice
+                label={uiText('Saved app or A2UI card')}
+                items={apps.map(({ id, title }) => ({ id, name: title }))}
+                value={tile.appId}
+                selectedLabel={
+                  apps.find(({ id }) => id === tile.appId)?.title ?? (tile.appId || undefined)
+                }
+                disabled={disabled}
+                onChange={(appId) => change({ ...tile, appId })}
+              />
+              <Action
+                secondary
+                label={uiText(editAppId ? 'Hide app ID' : 'Enter app ID')}
+                onPress={() => setEditAppId(!editAppId)}
+              />
+            </>
+          )}
+          {(!apps.length || editAppId) && (
+            <Field
+              label={uiText('MCP App ID')}
+              value={tile.appId}
+              editable={!disabled}
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={(appId) => change({ ...tile, appId })}
+            />
+          )}
+        </>
+      )}
       {isStudioDataSource(tile) && snapshot?.studioDataSourcesSupported && (
         <Field
           label={uiText('Refresh interval in seconds')}

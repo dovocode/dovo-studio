@@ -162,6 +162,17 @@ If the save reply is lost, the client confirms the edit from fresh queue data wi
 The ordinary draft stays intact. These checks do not verify native storage latency or a physical iOS
 or Android keyboard.
 
+## Mobile model settings on reconnect
+
+A pending model edit appears on snapshots from the runtime instance that was active when the user
+saved it. If that runtime restarts, the mobile app shows the new instance's saved settings. An
+acknowledgement from the new instance can show the edit again while the confirming snapshot loads.
+Unresolved edits from the previous instance do not delay confirmation of a newer edit.
+
+If the app goes offline or enters the background before a requested model refresh starts, the picker
+keeps the request. The same picker runs it when it is active and connected again. Each request
+belongs to the computer and harness catalog that the user selected.
+
 ## Terminal clipboard
 
 On desktop, select terminal output, then use **Copy** in the context menu, **Cmd+C**, or

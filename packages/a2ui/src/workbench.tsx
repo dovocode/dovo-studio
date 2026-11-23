@@ -1,11 +1,13 @@
-import { createContext, useContext, useId, useState } from 'react'
+import { Fragment, createContext, useContext, useId, useState } from 'react'
 import { createComponentImplementation } from '@a2ui/react'
 import { a2uiApis } from '@dovo/protocol/a2ui'
+import { evidenceComponents } from './evidence-components'
 
 export const disabledContext = createContext(false)
 
 // Navigation, filtering and sorting stay local. Only declared input bindings become drafts.
 export const workbenchComponents = [
+  ...evidenceComponents,
   createComponentImplementation(a2uiApis.Badge, ({ props }) => (
     <span className="badge" data-tone={props.tone ?? 'neutral'}>
       {props.text}
@@ -150,10 +152,13 @@ export const workbenchComponents = [
       </label>
     )
   }),
-  createComponentImplementation(a2uiApis.DataTable, ({ props }) => {
+  createComponentImplementation(a2uiApis.DataTable, ({ props, buildChild }) => {
     const disabled = useContext(disabledContext)
+    const tableId = useId()
     const [query, setQuery] = useState('')
     const [sort, setSort] = useState<{ key: string; descending: boolean }>()
+    const [openRow, setOpenRow] = useState<string>()
+    const selectable = props.value !== undefined
     const multiple = props.multiple !== false
     const selected = props.value ?? []
     const rows = props.rows.filter((row) =>
@@ -181,7 +186,8 @@ export const workbenchComponents = [
             {props.required ? ' *' : ''}
           </strong>
           <span className="caption">
-            {selected.length} selected · {rows.length} of {props.rows.length} rows
+            {selectable && `${selected.length} selected · `}
+            {rows.length} of {props.rows.length} rows
           </span>
           {props.searchable && (
             <input
@@ -199,10 +205,18 @@ export const workbenchComponents = [
           role="region"
           aria-label={`${props.label} table`}
         >
-          <table aria-label={props.label}>
+          <table
+            className="table-grid"
+            aria-label={props.label}
+            data-compact={props.columns.length < 4}
+          >
             <thead>
               <tr>
-                <th scope="col">Select</th>
+                {selectable && (
+                  <th scope="col" className="table-selection">
+                    Select
+                  </th>
+                )}
                 {props.columns.map((column) => (
                   <th
                     key={column.key}
@@ -234,30 +248,66 @@ export const workbenchComponents = [
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} data-selected={selected.includes(row.id)}>
-                  <td>
-                    <input
-                      type={multiple ? 'checkbox' : 'radio'}
-                      aria-label={`Select ${String(row.cells[props.columns[0].key] ?? row.id)}`}
-                      checked={selected.includes(row.id)}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        props.setValue(
-                          multiple
-                            ? event.target.checked
-                              ? [...selected, row.id]
-                              : selected.filter((id) => id !== row.id)
-                            : [row.id],
-                        )
-                      }
-                    />
-                  </td>
-                  {props.columns.map((column) => (
-                    <td key={column.key}>{String(row.cells[column.key] ?? '')}</td>
-                  ))}
-                </tr>
-              ))}
+              {rows.map((row, index) => {
+                const label = String(row.cells[props.columns[0].key] ?? row.id)
+                const expanded = openRow === row.id
+                const detailId = `${tableId}-row-${index}`
+                return (
+                  <Fragment key={row.id}>
+                    <tr data-selected={selected.includes(row.id)}>
+                      {selectable && (
+                        <td className="table-selection">
+                          <input
+                            type={multiple ? 'checkbox' : 'radio'}
+                            name={multiple ? undefined : tableId}
+                            aria-label={`Select ${label}`}
+                            checked={selected.includes(row.id)}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              props.setValue(
+                                multiple
+                                  ? event.target.checked
+                                    ? [...selected, row.id]
+                                    : selected.filter((id) => id !== row.id)
+                                  : [row.id],
+                              )
+                            }
+                          />
+                        </td>
+                      )}
+                      {props.columns.map((column, columnIndex) => (
+                        <td key={column.key}>
+                          {columnIndex === 0 && row.detail ? (
+                            <button
+                              className="row-detail-toggle"
+                              type="button"
+                              aria-label={`Details for ${label || row.id}`}
+                              aria-expanded={expanded}
+                              aria-controls={expanded ? detailId : undefined}
+                              onClick={() => setOpenRow(expanded ? undefined : row.id)}
+                            >
+                              <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                              {label || row.id}
+                            </button>
+                          ) : (
+                            String(row.cells[column.key] ?? '')
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                    {expanded && row.detail && (
+                      <tr>
+                        <td
+                          className="table-detail"
+                          colSpan={props.columns.length + Number(selectable)}
+                        >
+                          <div id={detailId}>{buildChild(row.detail)}</div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
             </tbody>
           </table>
           {!rows.length && <p className="empty-state">No rows match this filter.</p>}

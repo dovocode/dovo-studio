@@ -80,13 +80,17 @@
               {
                 "title": "Configure",
                 "child": "configure"
+              },
+              {
+                "title": "Evidence",
+                "child": "sources"
               }
             ]
           },
           {
             "id": "overview",
             "component": "Column",
-            "children": ["progress", "chart", "details"]
+            "children": ["progress", "chart", "details", "history"]
           },
           {
             "id": "progress",
@@ -165,7 +169,8 @@
                   "area": "Runtime",
                   "lines": 42,
                   "risk": "High"
-                }
+                },
+                "detail": "runtimeDiff"
               },
               {
                 "id": "protocol",
@@ -244,6 +249,91 @@
                 }
               }
             }
+          },
+          {
+            "id": "runtimeDiff",
+            "component": "Diff",
+            "label": "Sample diff for packages/runtime/reviews.ts",
+            "hunks": [
+              {
+                "oldStart": 14,
+                "newStart": 14,
+                "lines": [
+                  {
+                    "kind": "context",
+                    "text": "const review = await readReview(id)"
+                  },
+                  {
+                    "kind": "delete",
+                    "text": "return review.findings"
+                  },
+                  {
+                    "kind": "add",
+                    "text": "return review.findings.filter((finding) => finding.status === 'open')"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "sources",
+            "component": "DataTable",
+            "label": "Evidence sources",
+            "searchable": true,
+            "columns": [
+              {
+                "key": "name",
+                "label": "Source"
+              },
+              {
+                "key": "status",
+                "label": "Availability"
+              }
+            ],
+            "rows": [
+              {
+                "id": "sample",
+                "cells": {
+                  "name": "Sample change set",
+                  "status": "Illustrative"
+                },
+                "detail": "sourceNote"
+              },
+              {
+                "id": "checks",
+                "cells": {
+                  "name": "Verification checks",
+                  "status": "Pending"
+                }
+              }
+            ]
+          },
+          {
+            "id": "sourceNote",
+            "component": "Text",
+            "text": "This sample comes from the example card. Open the real review for current evidence."
+          },
+          {
+            "id": "history",
+            "component": "Timeline",
+            "label": "Example review history",
+            "items": [
+              {
+                "id": "drafted",
+                "title": "Plan drafted",
+                "time": "2026-11-23T12:00:00Z",
+                "detail": "Example change set attached.",
+                "status": "Ready",
+                "tone": "success"
+              },
+              {
+                "id": "verification",
+                "title": "Verification",
+                "status": "Pending",
+                "tone": "warning",
+                "detail": "The selected checks need a separate run."
+              }
+            ]
           }
         ],
         "dataModel": {

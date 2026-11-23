@@ -36,11 +36,14 @@ contain `version: "1.0"` and exactly one supported operation:
 - `updateDataModel`
 - `deleteSurface`
 
-The catalog includes these twenty components:
+The Dovo catalog includes these 29 components:
 
-- Layout: `Column`, `Row`, `List`, `Card`, `Divider`, `Tabs` and `Disclosure`.
-- Information: `Text`, `Badge`, `Callout`, `Metric`, `Progress`, `CodeBlock` and `BarChart`.
-- Input: `TextField`, `NumberField`, `CheckBox`, `ChoicePicker` and `DataTable`.
+- Layout: `Column`, `Row`, `List`, `Card`, `Divider`, `Tabs`, `Disclosure` and `Modal`.
+- Media: `Image`, `Icon`, `Video` and `AudioPlayer`.
+- Information: `Text`, `Badge`, `Callout`, `Metric`, `Progress`, `CodeBlock`, `BarChart`, `Diff` and
+  `Timeline`.
+- Input and browsing: `TextField`, `NumberField`, `CheckBox`, `ChoicePicker`, `DataTable`, `Slider`
+  and `DateTimeInput`.
 - Response: `Button`.
 
 Child lists are static arrays of component IDs. Editable values use absolute JSON Pointer bindings,
@@ -49,10 +52,45 @@ inputs. Button actions use `event.name` and optional `event.context`. Context va
 or data bindings.
 
 The renderer supports A2UI v1.0 with the Dovo catalog. It does not claim support for every A2UI
-catalog or optional feature. It rejects functions, arbitrary components, dynamic list templates,
-HTML and fetched URLs. `CodeBlock` displays literal code without executing it. Use HTML artifacts
-for custom documents and applications. Use native question tools for simple questions. Use secure
-input for secrets. A2UI drafts and responses are stored as ordinary thread data.
+catalog or optional feature. It rejects functions, arbitrary components, dynamic list templates and
+HTML. `CodeBlock` displays literal code without executing it. Use HTML artifacts for custom
+documents and applications. Use native question tools for simple questions. Use secure input for
+secrets. A2UI drafts and responses are stored as ordinary thread data.
+
+## Media, dialogs and configuration
+
+The [media and configuration example](../examples/a2ui/media-and-configuration.json) shows all seven
+components together. Its sample remote URLs are placeholders.
+
+- `Image`, `Video` and `AudioPlayer` accept HTTP and HTTPS URLs and base64 data URLs for supported
+  raster image, audio and video formats. `Video.posterUrl` uses the image URL rules. Give media a
+  `description` for accessibility. Remote media requires the user to select **Load**. The media
+  server must allow anonymous cross-origin requests, and browser rules for mixed content still
+  apply. Video and audio have playback controls.
+- `Icon` uses the named icons from the A2UI Basic Catalog, such as `check`, `info` and `warning`.
+- `Modal` takes the IDs of a `Button` trigger and a separate content component. The trigger opens
+  the dialog locally. Use a separate button in the content to send a response if needed.
+- `Slider` saves a number. Set `max`, and optionally set `min` (defaults to zero) and `steps` (the
+  number of equal divisions in the range).
+- `DateTimeInput` saves a local ISO string or an empty string. Use `enableTime` for a time,
+  `enableDate` and `enableTime` together for a date and time, or omit both for a date. Set `min` and
+  `max` in the same format as the value. Date and time values carry no time zone.
+
+Studio extensions can embed saved cards via
+[an App contribution and an App view](studio-extensions.md#embed-an-a2ui-card).
+
+## Change details and history
+
+Use `Diff` with a `label` and `hunks`. Each hunk has `oldStart`, `newStart`, and `lines`. Each line
+has a `kind` (`context`, `add`, or `delete`) and literal `text`. Use zero as the starting line for
+an empty side. The renderer calculates line numbers and shows the supplied excerpt. Use the PR or
+file review view in Studio for the current repository diff.
+
+Use `Timeline` with a `label` and ordered `items`. Each item has an `id` and `title`, plus optional
+`time`, `detail`, `status`, and `tone`. Use an ISO 8601 timestamp with a UTC offset or `Z` for
+`time`. The renderer shows items in the supplied order. The
+[review example](../examples/a2ui/change-review-workbench.json) shows both components and a
+browse-only table.
 
 ## Drafts and responses
 
@@ -61,16 +99,17 @@ vertical scrolling. Tables can still scroll horizontally. Expanding details or c
 the inline height. The renderer uses a transparent background and follows the client's light or dark
 theme. Theme changes preserve the open workspace, local navigation and input.
 
-Tabs, disclosure, table sorting and table filtering run locally. They do not invoke tools or start a
-model turn. They remain usable after submission and in view-only cards. Their view state resets when
-the card is reopened or its renderer model is replaced. Table row selections and input values use
-saved draft bindings.
+Tabs, disclosure, row details, table sorting and table filtering run locally. They do not invoke
+tools or start a model turn. They remain usable after submission and in view-only cards. Their view
+state resets when the card is reopened or its renderer model is replaced. Table row selections and
+input values use saved draft bindings.
 
-`DataTable.value` is an array of declared row IDs. Set `multiple: false` for a single selection.
-Filtering preserves selected rows outside the visible result. `NumberField.value` is a finite number
-or `null` for an empty draft. Minimum, maximum and step constraints apply on the runtime. Invalid
-numeric edits stay visible locally until corrected. Required values are checked before an approval
-request.
+Omit `DataTable.value` for a browse-only table. For selection, bind it to an array of declared row
+IDs and set `multiple: false` for a single selection. Filtering preserves selected rows outside the
+visible result. Set a row's `detail` to a child component ID to open it from the first cell. One
+detail panel can be open per table. `NumberField.value` is a finite number or `null` for an empty
+draft. Minimum, maximum and step constraints apply on the runtime. Invalid numeric edits stay
+visible locally until corrected. Required values are checked before an approval request.
 
 Studio saves input on the runtime while the user edits it. Reopening a card restores the last
 confirmed draft. Unsaved edits during a connection failure stay visible in the open view. Refresh
@@ -110,10 +149,11 @@ Runtime restart restores cards and drafts without replaying actions.
 Each card supports at most four surfaces and 200 components. A child list supports at most 100
 entries. Input strings support at most 4,000 characters. A publication accepts at most 32 messages.
 UI state is limited to 256 KiB. The runtime stores compact snapshots instead of a growing message
-log. The generated renderer is bundled with the runtime. It loads no external assets or packages.
+log. The runtime bundles the renderer, its styles and its icons. Media comes from the component URL.
 
-A table supports 100 rows and 12 columns. Tabs support eight child panels. A bar chart supports 40
-items. These limits stay within the existing state and component budgets.
+A table supports 100 rows and 12 columns. Tabs support eight child panels. A bar chart and a
+timeline each support 40 items. A diff supports eight hunks and 200 lines in total. These limits
+stay within the existing state and component budgets.
 
 The upstream core and React renderer are pinned to `0.15.0`. Their protocol version is `1.0`. The
 renderer package uses Zod 3. The MCP Apps SDK uses the host's Zod 4 context through
@@ -126,6 +166,9 @@ upstream advisory. Replace the patch when A2UI supports a fixed upstream version
 [Zod advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
 
 ## Verification
+
+The [Lean state model](a2ui-verification.md) checks the draft and response rules. The runtime tests
+exercise the corresponding behavior against SQLite.
 
 Run from the repository root:
 

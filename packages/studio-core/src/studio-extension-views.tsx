@@ -178,6 +178,8 @@ export function useExtensionView(
   )
   const { dirty, values } = draft
   return {
+    entry,
+    apps: entry.installed?.contributions.filter((item) => item.kind === 'app') ?? [],
     extensionId: entry.id,
     extensionRevision: entry.revision,
     resultScope: manifest,

@@ -191,6 +191,26 @@ it('rejects conflicting pairing changes without discarding the committed proof',
   await expect(save(source, pending('second'), before)).rejects.toThrow('Pairing changed')
   expect(await invoke('read', source)).toBe(committed)
 })
+it('acknowledges committed writes when a renderer closes during the change broadcast', async () => {
+  const main = event()
+  const closed = event()
+  const remaining = event()
+  const closedDuringSend = () => {
+    throw new Error('Render frame was disposed')
+  }
+  for (const reader of [closed, remaining]) {
+    await invoke('read', reader)
+    f.listeners.get('app:settings-read')?.(reader)
+  }
+  closed.send.mockImplementation(closedDuringSend)
+  const committed = JSON.stringify(initial())
+  await expect(save(main)).resolves.toBe(committed)
+  expect(await invoke('read', remaining)).toBe(committed)
+  expect(remaining.send).toHaveBeenCalledWith('runtime:registry-changed')
+  f.listeners.get('app:settings-write')?.(main, '{"theme":"dark"}')
+  expect(main.returnValue).toEqual({ ok: true })
+  expect(remaining.send).toHaveBeenCalledWith('app:settings-changed')
+})
 it('serializes delayed saves, acknowledges each committed payload and uses separate temp files', async () => {
   const source = event(),
     before = initial()

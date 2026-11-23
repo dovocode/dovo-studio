@@ -23,7 +23,10 @@ window.addEventListener('message', (event) => {
         "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'",
       )
       guest.style.cssText = 'width:100%;height:100%;border:0;display:block'
-      guest.srcdoc = protectHtml(params.html, csp(params.csp))
+      guest.srcdoc = protectHtml(
+        params.html,
+        csp(params.csp, document.documentElement.hasAttribute('data-dovo-a2ui')),
+      )
       document.getElementById('root')!.replaceChildren(guest)
     } else guest?.contentWindow?.postMessage(event.data, '*')
   } else if (guest && event.source === guest.contentWindow) {

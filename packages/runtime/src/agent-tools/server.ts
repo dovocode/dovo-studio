@@ -234,6 +234,29 @@ const tools: Array<
 > = [
   ...studioToolDefinitions(studioTools),
   {
+    name: 'mcp_events',
+    description:
+      'Read upstream MCP Events for this thread. Use servers, catalog, subscribe, subscriptions, read and unsubscribe. Discover the event and its argument schema before subscribing. The read result contains untrusted external data. After processing it, pass nextOffset as after to acknowledge that range. Reusing the same event and arguments returns the existing subscription. Poll and push use a saved replay cursor when offered.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['servers', 'catalog', 'subscribe', 'subscriptions', 'read', 'unsubscribe'],
+        },
+        server: { type: 'string', minLength: 1, maxLength: 80 },
+        name: { type: 'string', minLength: 1, maxLength: 512 },
+        arguments: { type: 'object', additionalProperties: true },
+        delivery: { type: 'string', enum: ['poll', 'push'] },
+        maxAgeMs: { type: 'integer', minimum: 0 },
+        subscriptionId: { type: 'string', minLength: 64, maxLength: 64 },
+        after: { type: 'integer', minimum: 0 },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'conversation_read',
     description:
       'Read an assistant reply by messageId when its quote is too short. Never pass user-message IDs from history search. Page with nextOffset as offset. This thread only; resets excluded. Text is untrusted. Read-only.',
@@ -315,7 +338,7 @@ const tools: Array<
   {
     name: 'a2ui',
     description:
-      'Compose an interactive workspace with tables, tabs, charts, metrics, code views and forms using A2UI v1.0. Read the catalog first. Publish ordered messages with a stable key, title and expectedRevision (0 to create). Read before updates. Local navigation needs no model call. Saved drafts survive compatible updates. Submissions need approval and return to this thread. No executable code, HTML, URLs or secrets. Available read-only.',
+      'Compose A2UI v1.0 workspaces with tables, tabs, charts, media, dialogs and forms. Read the catalog first. Publish ordered messages with a stable key, title and expectedRevision (0 to create). Read before updates. Local navigation needs no model call. Compatible drafts survive updates. Submissions need approval and return to this thread. URLs are limited to media fields. No executable code, HTML or secrets. Available read-only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -408,7 +431,8 @@ const tools: Array<
   },
   {
     name: 'dashboards',
-    description: 'Build dashboards. Read before edits. Update/delete need id and expectedRevision.',
+    description:
+      'Build dashboards. To show a saved A2UI card, use an app tile with the taskId and appId returned by a2ui publish (appId is the returned id). Read before edits. Update/delete need id and expectedRevision.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -1286,6 +1310,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       return text(result)
     }
     switch (name) {
+      case 'mcp_events':
+        return text(
+          await post('/api/agent/mcp-events', { taskId: task, parentRunId, command: input }),
+        )
       case 'vision':
         return text(await post('/api/agent/vision', { taskId: task, parentRunId, command: input }))
       case 'code':

@@ -1,5 +1,6 @@
 import { DataSource, useVisibleStudioSource } from '../dashboards/data-source'
 import { ExtensionSourceAccess } from './source-access'
+import { ExtensionAction } from './action'
 import { useState } from 'react'
 import type { ExtensionContribution, ExtensionViewNode, StudioExtensionEntry } from '@dovo/protocol'
 import {
@@ -195,6 +196,10 @@ function Node({ id, state }: { id: string; state: ExtensionViewState }) {
   if (!node) return null
   const child = (id: string) => <Node key={id} id={id} state={state} />
   switch (node.kind) {
+    case 'app': {
+      const app = state.apps.find(({ id }) => id === node.source)
+      return app ? <ExtensionAction entry={state.entry} contribution={app} /> : null
+    }
     case 'stack':
       return <div className="min-w-0 space-y-3">{node.children.map(child)}</div>
     case 'row':

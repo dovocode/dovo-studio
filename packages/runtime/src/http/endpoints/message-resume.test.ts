@@ -4,7 +4,7 @@ import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
-import type { AgentAdapter, AgentSteer } from '../../agents/execution/types'
+import type { AgentAdapter, AgentRun, AgentSteer } from '../../agents/execution/types'
 import type { Task } from '@dovo/protocol'
 import { ModelSelection } from '../../agents/tasks/model-selection'
 
@@ -33,7 +33,7 @@ async function setup() {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: task.id, messageId, text, attachmentIds }),
     })
-  const post = (path: 'message' | 'steer' | 'queue', input: Record<string, unknown>) =>
+  const post = (path: 'message' | 'steer' | 'queue' | 'run', input: Record<string, unknown>) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/tasks/${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -43,6 +43,69 @@ async function setup() {
     post('message', { id, messageId, text, queueOnly: true, ...input })
   return { ...runtime.services, task, send, post, stage }
 }
+
+it('retrying change capture leaves the next message paused until the queue is resumed', async () => {
+  const s = await setup()
+  let firstProvider: AgentRun | undefined
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    if (firstProvider) {
+      firstProvider.onText('Late reply from the first turn')
+      input.onText('Follow-up answer')
+    } else {
+      firstProvider = input
+      input.onText('First answer')
+    }
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const snapshot = s.git.snapshot.bind(s.git)
+  vi.spyOn(s.git, 'snapshot')
+    .mockImplementationOnce(snapshot)
+    .mockRejectedValueOnce(new Error('Change storage unavailable'))
+    .mockImplementation(snapshot)
+  await (
+    await s.tasks.start(s.task.id)
+  ).done
+  const first = s.store.task(s.task.id).turns?.at(-1)
+  expect(first).toMatchObject({ status: 'completed' })
+  expect(s.store.task(s.task.id)).toMatchObject({ status: 'review', runPhase: 'finalizing' })
+  expect((await s.stage(s.task.id, 'next', 'Keep this queued')).status).toBe(200)
+
+  expect((await s.post('run', { id: s.task.id })).status).toBe(200)
+  await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(s.task.id)).toMatchObject({
+    status: 'review',
+    queuePaused: true,
+    queue: [expect.objectContaining({ id: 'next' })],
+    turns: [expect.objectContaining({ id: first?.id, finishedAt: first?.finishedAt })],
+  })
+  expect(s.store.task(s.task.id).runPhase).toBeUndefined()
+
+  expect((await s.post('run', { id: s.task.id, saveOnly: true })).status).toBe(200)
+  expect(s.store.task(s.task.id).queue?.map((message) => message.id)).toEqual(['next'])
+  expect(s.store.task(s.task.id).activeRunId).toBeUndefined()
+  expect(run).toHaveBeenCalledOnce()
+
+  expect((await s.post('queue', { id: s.task.id, action: 'resume' })).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(s.store.task(s.task.id)).toMatchObject({
+      status: 'review',
+      activeRunId: undefined,
+      queue: [],
+      turns: [
+        expect.objectContaining({ id: first?.id }),
+        expect.objectContaining({ status: 'completed' }),
+      ],
+    }),
+  )
+  expect(run).toHaveBeenCalledTimes(2)
+  const finished = s.store.task(s.task.id)
+  expect(finished.messages.filter((message) => message.role === 'assistant')).toMatchObject([
+    { text: 'First answer', turnId: first?.id },
+    { text: 'Follow-up answer', turnId: finished.turns?.[1]?.id },
+  ])
+})
+
 it.each([
   { status: 'completed', hidden: true },
   { status: 'in-progress', hidden: false },

@@ -12,7 +12,7 @@ app.ontoolresult = (result) => { document.querySelector('#result').textContent =
 document.querySelector('button').onclick = async () => {
   const controller = new AbortController(); window.cancelFixtureTool = () => controller.abort();
   try {
-    const result = await app.callServerTool({ name: 'refresh', arguments: {} }, { signal: controller.signal, ...(window.fixtureRequestTimeout ? { timeout: window.fixtureRequestTimeout } : {}) });
+    const result = await app.callServerTool({ name: 'refresh', arguments: { id: crypto.randomUUID() } }, { signal: controller.signal, ...(window.fixtureRequestTimeout ? { timeout: window.fixtureRequestTimeout } : {}) });
     document.querySelector('#result').textContent = result.structuredContent.count;
   } catch (error) { document.querySelector('#result').textContent = 'Cancelled'; window.fixtureError = String(error); }
 };
@@ -46,12 +46,18 @@ const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 650 } })
   page.on('pageerror', (e) => console.log('error:', e.stack))
-  await page.setContent(
-    host.replace(
-      '<script>',
-      '<script>window.reports=[];window.ReactNativeWebView={postMessage:(text)=>window.reports.push(JSON.parse(text))};',
-    ),
+  await page.route('http://studio.test/', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: host.replace(
+        '<script>',
+        '<script>window.reports=[];window.ReactNativeWebView={postMessage:(text)=>window.reports.push(JSON.parse(text))};',
+      ),
+    }),
   )
+  await page.goto('http://studio.test/')
+  if (await page.evaluate(() => isSecureContext || typeof crypto.randomUUID === 'function'))
+    throw new Error('Expected a non-secure HTTP context without the native UUID method')
   await page.evaluate((app) => window.dovoMcpLoad(app, 'test-nonce', 'dark'), app)
   const result = page.frameLocator('iframe').frameLocator('iframe').locator('#result')
   await result.waitFor({ timeout: 3000 })
@@ -67,6 +73,9 @@ try {
   const request = await page.evaluate(() => window.reports.find((r) => r.type === 'request'))
   if (request.method !== 'tools/call' || request.nonce !== 'test-nonce')
     throw new Error('Missing scoped action')
+  const uuidV4 = /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/
+  if (!uuidV4.test(request.params?.arguments?.id))
+    throw new Error('Sandbox tool call did not receive a v4 UUID over HTTP')
   await page.evaluate(
     (request) =>
       window.dovoMcpReply({
@@ -125,6 +134,11 @@ try {
       ),
     firstRequestId,
   )
+  if (
+    !uuidV4.test(slowRequest.params?.arguments?.id) ||
+    slowRequest.params.arguments.id === request.params.arguments.id
+  )
+    throw new Error('Repeated sandbox tool call did not receive a fresh v4 UUID')
   if (await page.evaluate(() => window.appDeadlines.at(-1) !== 750000))
     throw new Error('MCP App host deadline does not include approval and tool execution')
   // An approval just before ten minutes still leaves time for the tool to complete.

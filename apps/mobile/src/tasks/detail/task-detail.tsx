@@ -1537,7 +1537,14 @@ function TaskDetailContent({
                           disabled={!connected || resume.busy}
                           onPress={() =>
                             resume.act(() =>
-                              callEffect('/api/tasks/run', { id: task.id }, responses.ok),
+                              callEffect(
+                                '/api/tasks/run',
+                                {
+                                  id: task.id,
+                                  ...(task.runPhase === 'finalizing' ? { saveOnly: true } : {}),
+                                },
+                                responses.ok,
+                              ),
                             )
                           }
                         />

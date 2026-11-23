@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { MCP_PROTOCOL_VERSION, withMcpRequestMeta } from '@agentclientprotocol/sdk/unstable'
-import { acpMcpHttp } from '../providers/acp/acp-mcp.js'
+import { MCP_PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
+import { McpEventsClient } from '../../mcp-events/client.js'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { open, realpath } from 'node:fs/promises'
@@ -129,25 +128,8 @@ export async function testMcpServer(input: unknown) {
 
 async function testNativeMcpServer(server: typeof mcpServerSchema.Type) {
   const signal = AbortSignal.timeout(15000)
-  const headers = mcpHeaders(server)
-  const request = async (method: string, params?: Record<string, unknown>) => {
-    const outcome = await acpMcpHttp(server.url, headers, {
-      method,
-      requestId: randomUUID(),
-      signal,
-      params: withMcpRequestMeta(params, { clientInfo: { name: 'dovo-studio', version: '0.1.0' } }),
-      notify: async () => {},
-    })
-    if ('error' in outcome) throw new Error(outcome.error.message)
-    return outcome.result
-  }
-  const discovery = z
-    .object({
-      supportedVersions: z.array(z.string()),
-      capabilities: z.object({ tools: z.unknown().optional() }),
-      _meta: z.record(z.string(), z.unknown()).optional(),
-    })
-    .parse(await request('server/discover'))
+  const client = new McpEventsClient(server)
+  const discovery = await client.discover(signal)
   if (!discovery.supportedVersions.includes(MCP_PROTOCOL_VERSION))
     throw new Error('This server does not support MCP 2026-07-28; use regular HTTP instead')
   const info = z
@@ -163,7 +145,9 @@ async function testNativeMcpServer(server: typeof mcpServerSchema.Type) {
           tools: z.array(z.object({ name: z.string() })),
           nextCursor: z.string().optional(),
         })
-        .parse(await request('tools/list', cursor ? { cursor } : undefined))
+        .parse(
+          await client.request('tools/list', cursor === undefined ? undefined : { cursor }, signal),
+        )
       tools.push(...page.tools.map((tool) => tool.name))
       cursor = page.nextCursor
       if (cursor !== undefined) {
@@ -172,5 +156,13 @@ async function testNativeMcpServer(server: typeof mcpServerSchema.Type) {
       }
     } while (cursor !== undefined)
   }
-  return decode(mcpTestResultSchema, { server: info.success ? info.data.name : server.name, tools })
+  const events = (await client.list(signal, discovery))?.map(({ name, delivery }) => ({
+    name,
+    delivery,
+  }))
+  return decode(mcpTestResultSchema, {
+    server: info.success ? info.data.name : server.name,
+    tools,
+    ...(events === undefined ? {} : { events }),
+  })
 }

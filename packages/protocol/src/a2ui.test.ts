@@ -2,6 +2,7 @@ import { expect, it } from 'vite-plus/test'
 import { z } from 'zod3'
 import example from '../../../examples/a2ui/issue-picker.json'
 import workbench from '../../../examples/a2ui/change-review-workbench.json'
+import mediaAndConfiguration from '../../../examples/a2ui/media-and-configuration.json'
 import {
   a2uiApplyValues,
   a2uiCatalog,
@@ -199,6 +200,23 @@ it('allows an unfinished numeric draft but validates it before submission', () =
   }
 })
 
+it('keeps browse-only tables out of draft and response inputs', () => {
+  const processor = a2uiProcessor(workbench.messages)
+  try {
+    expect(a2uiInputValues(processor).review).toEqual({
+      '/selected': [],
+      '/parallel': 2,
+      '/lint': true,
+      '/instructions': '',
+    })
+    expect(() => a2uiApplyValues(processor, { review: { '/sources': ['sample'] } })).toThrow(
+      'Unknown A2UI input binding',
+    )
+  } finally {
+    processor.dispose()
+  }
+})
+
 it('accepts decimal steps without rounding errors and enforces single-row selection', () => {
   const processor = a2uiProcessor([
     ...workbenchComponents('parallel', { min: 0, max: 3, step: 0.1 }),
@@ -244,6 +262,18 @@ it.each([
     },
   ],
   ['changes', { rows: [{ id: 'one', cells: { undeclared: 'value' } }] }],
+  ['sources', { required: true }],
+  ['sources', { rows: [{ id: 'one', cells: {}, detail: 'missing' }] }],
+  ['sources', { rows: [{ id: 'one', cells: {}, detail: 'root' }] }],
+  [
+    'runtimeDiff',
+    { hunks: [{ oldStart: 0, newStart: 1, lines: [{ kind: 'context', text: 'old' }] }] },
+  ],
+  [
+    'runtimeDiff',
+    { hunks: [{ oldStart: 0, newStart: 1, lines: [{ kind: 'add', text: 'two\nlines' }] }] },
+  ],
+  ['history', { items: [{ id: 'event', title: 'Started', time: 'yesterday' }] }],
   ['tabs', { tabs: [{ title: 'Recursive', child: 'tabs' }] }],
   [
     'tabs',
@@ -257,4 +287,53 @@ it.each([
   ['details', { child: 'missing-child' }],
 ])('rejects invalid workbench definitions for %s', (id, properties) => {
   expect(() => a2uiProcessor(workbenchComponents(id, properties))).toThrow(/A2UI|Expected string/)
+})
+
+it('validates media, local dialog triggers and saved configuration values', () => {
+  const processor = a2uiProcessor(mediaAndConfiguration.messages)
+  try {
+    const configuration = { '/volume': 0.8, '/when': '2028-02-29T16:30' }
+    a2uiApplyValues(processor, { configuration }, true)
+    expect(a2uiInputValues(processor)).toEqual({ configuration })
+    expect(() => a2uiEvent(processor, 'configuration', 'open')).toThrow('Unknown A2UI action')
+    expect(() =>
+      a2uiApplyValues(processor, { configuration: { ...configuration, '/volume': 0.83 } }),
+    ).toThrow('steps')
+    expect(() =>
+      a2uiApplyValues(processor, {
+        configuration: { ...configuration, '/when': '2027-02-29T16:30' },
+      }),
+    ).toThrow('ISO local')
+  } finally {
+    processor.dispose()
+  }
+})
+
+it.each([
+  'javascript:alert(1)',
+  'data:image/svg+xml;base64,PHN2Zz4=',
+  'https://user:password@example.org/media.png',
+  'file:///tmp/media.png',
+])('rejects unsupported media URLs at publication and through bindings (%s)', (url) => {
+  const message = {
+    version: '1.0',
+    createSurface: {
+      surfaceId: 'media',
+      catalogId: a2uiCatalog.id,
+      components: [{ id: 'root', component: 'Image', url: { '@path': '/preview' } }],
+      dataModel: { preview: url },
+    },
+  }
+  expect(() => a2uiProcessor([message])).toThrow(/supported image data URL/)
+  expect(() =>
+    a2uiProcessor([
+      {
+        ...message,
+        createSurface: {
+          ...message.createSurface,
+          components: [{ id: 'root', component: 'Image', url }],
+        },
+      },
+    ]),
+  ).toThrow(/Invalid A2UI messages/)
 })

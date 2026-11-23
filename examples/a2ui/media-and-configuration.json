@@ -1,0 +1,91 @@
+{
+  "action": "publish",
+  "key": "media-and-configuration",
+  "title": "Media and configuration",
+  "expectedRevision": 0,
+  "messages": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "configuration",
+        "catalogId": "https://dovo.dev/a2ui/catalog/v1",
+        "components": [
+          {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              "heading",
+              "icon",
+              "image",
+              "video",
+              "audio",
+              "details",
+              "volume",
+              "when",
+              "send"
+            ]
+          },
+          {
+            "id": "heading",
+            "component": "Text",
+            "variant": "heading",
+            "text": "Configure playback"
+          },
+          { "id": "icon", "component": "Icon", "name": "play" },
+          {
+            "id": "image",
+            "component": "Image",
+            "url": "https://media.example.org/preview.png",
+            "description": "Playback preview",
+            "fit": "contain"
+          },
+          {
+            "id": "video",
+            "component": "Video",
+            "url": "https://media.example.org/preview.webm",
+            "description": "Playback video"
+          },
+          {
+            "id": "audio",
+            "component": "AudioPlayer",
+            "url": "https://media.example.org/preview.wav",
+            "description": "Playback audio"
+          },
+          {
+            "id": "details",
+            "component": "Modal",
+            "trigger": "open",
+            "content": "help",
+            "title": "Playback details"
+          },
+          { "id": "open", "component": "Button", "label": "Open details" },
+          { "id": "help", "component": "Text", "text": "Choose a volume and local start time." },
+          {
+            "id": "volume",
+            "component": "Slider",
+            "label": "Volume",
+            "max": 1,
+            "steps": 10,
+            "value": { "@path": "/volume" }
+          },
+          {
+            "id": "when",
+            "component": "DateTimeInput",
+            "label": "Start time",
+            "enableDate": true,
+            "enableTime": true,
+            "required": true,
+            "value": { "@path": "/when" }
+          },
+          {
+            "id": "send",
+            "component": "Button",
+            "label": "Send configuration",
+            "action": { "event": { "name": "configurePlayback" } }
+          }
+        ],
+        "dataModel": { "volume": 0.5, "when": "" }
+      }
+    }
+  ]
+}

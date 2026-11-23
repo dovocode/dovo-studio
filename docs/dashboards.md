@@ -47,10 +47,19 @@ available offline. Data and command actions need a connection to the owning comp
   computer. Its tab uses the paired computer's browser service.
 - **Remote desktop** opens the existing Remote Desktop view. Enable the feature on the computer
   first. The view shows the primary display. Enable control explicitly to send input.
-- **MCP App** opens a saved app. Enter its source thread and app ID. Studio uses the existing
-  isolated app host and requires its normal permissions for tool calls.
+- **MCP App / A2UI card** opens a saved app or an interactive card published in a thread. Choose the
+  source thread, then pick the saved app or card by name. Use **Enter app ID** to bind one manually.
+  Studio uses the isolated app host and requires its normal permissions for tool calls.
 - **Pipelines** lists runs for the selected project on **Refresh pipelines**. Select a run to open
   its details. **Threads** and **Automations** show entries from the owning computer.
+
+## Show an A2UI card
+
+To show an A2UI table with expandable rows, a diff, or a timeline on a dashboard, publish a card
+with [`dovo_task a2ui`](a2ui.md), then add a **MCP App / A2UI card** tile. Choose the card's thread
+and title and save the dashboard. Open the tile with **Open MCP App**. The tile shares the card's
+saved draft and sends approved replies to the source thread. A Studio extension tile can also show a
+card embedded in an [extension view](studio-extensions.md#embed-an-a2ui-card).
 
 ## Show more than one display
 
@@ -137,6 +146,9 @@ limits and tile settings.
 Use the `dovo_task` tool named `dashboards`. Ask the agent to build a dashboard on the computer that
 owns the work. The tool can list and read definitions. A writable agent run can also create, update
 and delete definitions. Open **Dashboards** and select **Reload** to see its work.
+
+To add a published A2UI card, use a tile with `kind: "app"`, `taskId` from the publication, and
+`appId` set to the publication's `id`. The same tile can open a saved MCP App.
 
 For example, these arguments create a dashboard with an HTTP line graph and a thread tile.
 

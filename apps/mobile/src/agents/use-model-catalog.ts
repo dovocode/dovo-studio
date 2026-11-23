@@ -81,8 +81,9 @@ export function useModelCatalog(agent: AgentDiscovery | undefined, active = true
   const scope = agent && profile ? mobileModelCatalogScope(profile, agent, snapshot) : null
   const key = scope?.key ?? ''
   const [state, setState] = useApplicationState({ key: '', loading: false, error: '' })
-  const [refresh, setRefresh] = useApplicationState(0)
+  const [refresh, setRefresh] = useApplicationState({ key: '', sequence: 0 })
   const lastRefresh = useRef(0)
+  const requestedRefresh = refresh.key === key ? refresh.sequence : 0
   const canDiscover =
     !!agent &&
     !!profile &&
@@ -92,18 +93,18 @@ export function useModelCatalog(agent: AgentDiscovery | undefined, active = true
     (agent.provider !== 'acp' ||
       !!agent.acpInstallationId ||
       !!agent.endpoint.trim() ||
-      refresh > 0)
+      requestedRefresh > 0)
   useEffect(() => {
     if (!canDiscover || !agent || !profile || !scope) return
     let stopped = false
-    const force = refresh !== lastRefresh.current
-    lastRefresh.current = refresh
+    const force = requestedRefresh > lastRefresh.current
     if (!force && cache.isFresh(scope)) {
       setState({ key, loading: false, error: '' })
       return
     }
     setState({ key, loading: true, error: '' })
     const timer = setTimeout(() => {
+      if (force) lastRefresh.current = requestedRefresh
       void loadMobileModelCatalog(
         profile,
         agent,
@@ -129,13 +130,13 @@ export function useModelCatalog(agent: AgentDiscovery | undefined, active = true
       stopped = true
       clearTimeout(timer)
     }
-  }, [key, canDiscover, readRuntime, refresh])
+  }, [key, canDiscover, readRuntime, requestedRefresh])
   return {
     catalog,
     modelName,
     canDiscover,
     loading: canDiscover && state.key === key && state.loading,
     error: state.key === key ? state.error : '',
-    refresh: () => setRefresh((value) => value + 1),
+    refresh: () => setRefresh(({ sequence }) => ({ key, sequence: sequence + 1 })),
   }
 }

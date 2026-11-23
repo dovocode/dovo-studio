@@ -1,5 +1,6 @@
 import { useContext, useId } from 'react'
 import { disabledContext, workbenchComponents } from './workbench'
+import { basicComponents, modalTriggerContext } from './basic-components'
 import { createRoot } from 'react-dom/client'
 import { App } from '@dovo/studio-ui/mcp-app-sdk'
 import { A2uiSurface, createComponentImplementation, type ReactCatalogComponent } from '@a2ui/react'
@@ -22,6 +23,7 @@ import {
 
 const app = new App({ name: 'Dovo A2UI', version: '1.0.0' }, {})
 const implementations = [
+  ...basicComponents,
   ...workbenchComponents,
   createComponentImplementation(a2uiApis.Text, ({ props }) =>
     props.variant === 'heading' ? (
@@ -124,11 +126,15 @@ const implementations = [
   }),
   createComponentImplementation(a2uiApis.Button, ({ props }) => {
     const disabled = useContext(disabledContext)
+    const openModal = useContext(modalTriggerContext)
     return (
       <button
-        disabled={disabled}
+        type="button"
+        aria-haspopup={openModal ? 'dialog' : undefined}
+        disabled={disabled && !openModal}
         onClick={() => {
-          void props.action().catch(fail)
+          if (openModal) openModal()
+          else void props.action?.().catch(fail)
         }}
       >
         {props.label}

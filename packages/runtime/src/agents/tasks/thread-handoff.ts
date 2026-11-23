@@ -62,6 +62,8 @@ export async function withThreadCheckpoint<T>(
         : await s.checkouts.fileDirectory(id)
     return await s.tasks.withCheckoutMutation(cwd, async () => {
       s.tasks.requireIdle(id, reservation)
+      if (s.store.taskSummary(id).runPhase === 'finalizing')
+        throw new HttpError(409, 'Finish saving changes for this turn before continuing elsewhere.')
       requireHandoffInputIdle(s, id, queuedInput)
       const checkpoint = (await s.git.isRepository(cwd))
         ? await s.git.snapshot(cwd, `refs/dovo/handoffs/${requestId}`)

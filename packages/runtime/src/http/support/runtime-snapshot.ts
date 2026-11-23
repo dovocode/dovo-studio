@@ -342,6 +342,7 @@ export function runtimeSnapshot(
       studioSourcePoliciesSupported: true,
       dashboardsSupported: true,
       studioExtensionCustomPropsSupported: true,
+      studioExtensionAppViewsSupported: true,
       studioExtensionComponentVersion: 1,
       studioExtensionPinnedPages: s.studioExtensions.pinnedPages(),
       studioExtensionMarketplaceSupported: true,

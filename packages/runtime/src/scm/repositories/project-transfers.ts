@@ -105,7 +105,10 @@ const rowsSchema = Schema.Array(mutableStruct({ value: Schema.String }))
 export class ProjectTransfers {
   revision = 0
   private jobs = new Map<string, typeof savedSchema.Type>()
-  private outgoing = new Map<string, { controller: AbortController; pending: Promise<void> }>()
+  private outgoing = new Map<
+    string,
+    { controller: AbortController; pending: Promise<void>; cancelling?: true }
+  >()
   private incoming = new Map<string, Incoming>()
   private results = new Map<string, typeof savedIncomingSchema.Type>()
   private ready: Promise<void>
@@ -472,9 +475,12 @@ export class ProjectTransfers {
     const saved = this.jobs.get(id)
     if (!saved) throw new HttpError(404, 'Project copy not found')
     const active = this.outgoing.get(id)
-    active?.controller.abort()
+    if (active && !active.cancelling) active.controller.abort()
     if (active) await active.pending
     else if (saved.input.handoff && saved.job.state !== 'completed') {
+      if (this.closed) throw new HttpError(503, 'This computer is shutting down')
+      if (this.starting)
+        throw new HttpError(409, 'Wait for the current project copy to finish preparing')
       const peer = this.services()
         .retrievalPeers.list(false, saved.device)
         .find((peer) => peer.connection.runtimeId === saved.input.targetId)
@@ -484,7 +490,8 @@ export class ProjectTransfers {
           'Reconnect the destination to confirm cancellation. The source remains saved and blocked.',
         )
       const controller = new AbortController()
-      const terminal = await this.send(
+      // A retry must wait until cancellation has settled destination cleanup and ownership.
+      const pending = this.send(
         saved.input,
         peer.connection,
         controller.signal,
@@ -492,7 +499,10 @@ export class ProjectTransfers {
         authorize,
         true,
       )
-      this.update(id, terminal)
+        .then((terminal) => this.update(id, terminal))
+        .finally(() => this.outgoing.delete(id))
+      this.outgoing.set(id, { controller, pending, cancelling: true })
+      await pending
     }
     if (
       saved.input.handoff &&

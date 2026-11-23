@@ -4,9 +4,19 @@ import { Schema } from 'effect'
 import {
   createRuntimeReadCache,
   READ_CACHE_MAX_BYTES,
+  ReadCacheError,
   readCacheBytes,
   type CacheStorage,
 } from './read-cache.js'
+
+it('keeps cache storage errors readable when native code rejects with a plain record', () => {
+  const native: unknown = Object.assign(Object.create(null), { message: 'Invalid file encoding' })
+  expect(new ReadCacheError({ cause: native }).message).toBe('Invalid file encoding')
+  expect(new ReadCacheError({ cause: Object.create(null) }).message).toBe(
+    'Offline cache storage failed',
+  )
+})
+
 function fixture() {
   const values = new Map<string, string>()
   const storage: CacheStorage = {
@@ -181,6 +191,66 @@ it('waits for interrupted native writes before forgetting a computer', async () 
   expect(values.size).toBe(0)
   await client.write('late', 'data')
   expect(values.size).toBe(0)
+})
+
+it('ignores late removal and forget requests from an earlier pairing with the same credential', async () => {
+  const { cache } = fixture()
+  const old = cache('http://first')
+  await old.write('snapshot', 'before forgetting')
+  await old.clear()
+  const pairedAgain = cache('http://first')
+  await pairedAgain.write('snapshot', 'after pairing again')
+  await old.remove('snapshot')
+  expect((await pairedAgain.read('snapshot', Schema.String))?.value).toBe('after pairing again')
+  await old.clear()
+  expect((await pairedAgain.read('snapshot', Schema.String))?.value).toBe('after pairing again')
+})
+
+it('publishes a new pairing after the old asynchronous cache removal finishes', async () => {
+  const values = new Map<string, string>()
+  let start = () => {}
+  let finish = () => {}
+  const clearing = new Promise<void>((resolve) => {
+    start = resolve
+  })
+  const release = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const storage: CacheStorage = {
+    getItem: async (key) => values.get(key) ?? null,
+    setItem: async (key, value) => {
+      values.set(key, value)
+    },
+    removeItem: async (key) => {
+      values.delete(key)
+    },
+    removePrefix: async () => {
+      start()
+      await release
+      values.clear()
+    },
+  }
+  const create = () =>
+    createRuntimeReadCache(
+      { address: 'http://first', token: 'same-token' },
+      storage,
+      async (value) => value,
+    )
+  const old = create()
+  await old.write('snapshot', 'old')
+  const forgetting = old.clear()
+  await clearing
+  const pairedAgain = create()
+  const writing = pairedAgain.write('snapshot', 'new')
+  // Give the waiting writer a chance to run before the native delete resolves.
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect([...values.values()].join()).not.toContain('"new"')
+  } finally {
+    finish()
+    await Promise.all([forgetting, writing])
+  }
+  expect((await pairedAgain.read('snapshot', Schema.String))?.value).toBe('new')
 })
 
 it('recovers after the first namespace initialization is interrupted', async () => {

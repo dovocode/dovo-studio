@@ -106,8 +106,11 @@ export function McpEditor({
         throw new Error('Replace the __CONFIGURE_…__ placeholders before saving or testing.')
       if (test) {
         const response = await request('/api/agents/mcp/test', server, mcpTestResultSchema)
+        const events = response.events
+        const eventList = events?.map(({ name, delivery }) => `${name} (${delivery.join(', ')})`)
         setResult(
-          `Connected to ${response.server} · ${response.tools.length} tools${response.tools.length ? `: ${response.tools.join(', ')}` : ''}`,
+          `Connected to ${response.server} · ${response.tools.length} tools${response.tools.length ? `: ${response.tools.join(', ')}` : ''}` +
+            (eventList ? ` · MCP Events: ${eventList.join(', ') || 'none advertised'}` : ''),
         )
       } else await onSave(server)
     } catch (error) {
@@ -292,8 +295,8 @@ export function McpEditor({
               </FormField>
             </Disclosure>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Test connection starts the server on the connected computer and lists its tools
-              without calling any of them.
+              Test connection lists tools and any advertised MCP Events. It makes no tool calls or
+              event subscriptions.
             </p>
             {error && (
               <p role="alert" className="text-xs text-destructive whitespace-pre-wrap">

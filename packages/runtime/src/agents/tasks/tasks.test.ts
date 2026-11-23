@@ -592,7 +592,10 @@ it('holds a queued follow-up when another thread in the checkout has not stopped
   const [first, second] = ['First', 'Second'].map((title) =>
     s.tasks.create({ title, repositoryId: 'repo', agentId: 'agent', objective: 'Work' }),
   )
-  const { promise: confirmed, resolve: confirmShutdown } = Promise.withResolvers<void>()
+  let confirmShutdown!: () => void
+  const confirmed = new Promise<void>((resolve) => {
+    confirmShutdown = resolve
+  })
   const run = vi.fn<AgentAdapter['run']>(async (active) => {
     await active.approve('Wait', 'Hold this turn')
     if (active.taskId === first.id)
@@ -2177,6 +2180,63 @@ it('keeps provider success when finalization storage fails and retries capture w
   expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.after).toBeTruthy()
   expect(s.store.task(task.id).runPhase).toBeUndefined()
   expect(s.store.task(task.id).error).toBeUndefined()
+})
+
+it('finishes saving a completed read-only child in Git without capturing changes or repeating its prompt', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Child answer'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Coordinate',
+  })
+  const child = s.tasks.create({
+    title: 'Read-only child',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Inspect',
+  })
+  s.store.updateTask(child.id, (task) => ({
+    ...task,
+    agentOverrides: { permission: 'read-only' },
+    delegation: {
+      parentTaskId: parent.id,
+      parentRunId: 'previous-parent-attempt',
+      key: 'inspect',
+      completion: 'read',
+    },
+  }))
+  const update = s.store.updateTaskHistory.bind(s.store)
+  let fail = true
+  vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((id, change, receipt, action) => {
+    if (fail && id === child.id && change(s.store.task(id)).status === 'review') {
+      fail = false
+      throw new Error('SQLite finalization failure')
+    }
+    return update(id, change, receipt, action)
+  })
+  const snapshot = vi.spyOn(s.git, 'snapshot')
+  await (
+    await s.tasks.start(child.id)
+  ).done
+  const completed = s.store.task(child.id).turns?.at(-1)
+  expect(completed).toMatchObject({ status: 'completed' })
+  expect(completed?.checkpoint).toBeUndefined()
+  expect(s.store.task(child.id)).toMatchObject({ status: 'review', runPhase: 'finalizing' })
+
+  await (
+    await s.tasks.start(child.id)
+  ).done
+
+  expect(run).toHaveBeenCalledOnce()
+  expect(snapshot).not.toHaveBeenCalled()
+  expect(s.store.task(child.id)).toMatchObject({ status: 'review', turns: [completed] })
+  expect(s.store.task(child.id).runPhase).toBeUndefined()
+  expect(s.store.task(child.id).restartRecovery).toBeUndefined()
+  expect(s.store.task(child.id).messages.at(-1)?.text).toBe('Child answer')
+  expect(s.store.task(parent.id).messages.every(({ text }) => text !== 'Child answer')).toBe(true)
 })
 
 it('durably admits each queued turn before inspecting its checkout', async () => {

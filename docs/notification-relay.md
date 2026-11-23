@@ -118,9 +118,12 @@ phone's notification waits for its retry, that phone's other notifications wait 
 devices still receive theirs. Invalid device tokens are removed and the phone registers a
 replacement on its next connection. Each pending request carries its own identity. Pending input
 notifications are discarded if the exact request has already been answered or replaced.
-Notifications for archived threads and superseded runs are also discarded before delivery.
-Notification delivery is best effort: provider outages, OS settings, and relay restarts can affect
-timing. The relay's retry cache is in memory; runtime records are durable.
+Notifications for archived threads and superseded runs are also discarded before delivery. An
+unreadable queued notification is held until expiry while other notifications continue, including
+notifications for the same device. The device's status shows the problem. The runtime rebuilds
+unreadable notification state from the current task and any saved completion. Notification delivery
+is best effort: provider outages, OS settings, and relay restarts can affect timing. The relay's
+retry cache is in memory; runtime records are durable.
 
 ## Build and enable the mobile app
 

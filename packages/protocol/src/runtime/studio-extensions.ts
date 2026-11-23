@@ -72,9 +72,12 @@ export const studioExtensionManifestSchema = strictStruct({
         ...tools,
         ...manifest.contributions.filter(isStudioDataSource).map((item) => item.id),
       ])
+      const apps = new Set(
+        manifest.contributions.filter((item) => item.kind === 'app').map((item) => item.id),
+      )
       for (const contribution of manifest.contributions) {
         if (contribution.kind !== 'view') continue
-        const issue = extensionViewIssue(contribution.view, settings, tools, results)
+        const issue = extensionViewIssue(contribution.view, settings, tools, results, apps)
         if (issue) return { path: ['contributions', contribution.id, 'view'], issue }
       }
       return true
@@ -113,7 +116,7 @@ export const studioExtensionOpenResultSchema = strictStruct({
 })
 export const studioExtensionCallResultSchema = strictStruct({ data: Schema.Unknown })
 
-const componentVersion = Schema.Literals([1, 2, 3])
+const componentVersion = Schema.Literals([1, 2, 3, 4])
 export type StudioExtensionComponentVersion = typeof componentVersion.Type
 
 export const marketplaceDigestSchema = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))

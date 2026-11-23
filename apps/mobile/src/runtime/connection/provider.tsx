@@ -357,6 +357,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     let entry = caches.current.get(profile.id)
     if (
       !entry ||
+      entry.cache.closed ||
       entry.token !== profile.connection.token ||
       entry.address !== profile.connection.address
     ) {

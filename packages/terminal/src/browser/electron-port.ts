@@ -1,3 +1,5 @@
+import { randomUUID } from '@dovo/protocol'
+
 /** A preload-created MessagePort transfers binary terminal output straight into the worker. */
 export function openElectronTerminalPort(
   url: string,
@@ -12,7 +14,7 @@ export function openElectronTerminalPort(
   )
     return Promise.resolve(undefined)
   return new Promise((resolve, reject) => {
-    const id = crypto.randomUUID()
+    const id = randomUUID()
     const cleanup = () => {
       clearTimeout(timeout)
       window.removeEventListener('message', receive)

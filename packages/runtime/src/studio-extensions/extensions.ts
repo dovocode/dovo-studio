@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import {
   decode,
+  extensionViewHasApp,
   extensionViewResultIds,
   isStudioDataSource,
   studioDataSourceIssue,
@@ -80,6 +81,10 @@ function requiredComponentVersion(
   manifest?: StudioExtensionManifest,
 ): 0 | StudioExtensionComponentVersion {
   if (
+    manifest?.contributions.some((item) => item.kind === 'view' && extensionViewHasApp(item.view))
+  )
+    return 4
+  if (
     manifest?.contributions.some(
       (item) => isStudioDataSource(item) || (item.kind === 'view' && viewNeedsVersion3(item)),
     )
@@ -120,14 +125,17 @@ function projectEntry(
     if (requiredComponentVersion(manifest) <= version || !manifest) return manifest
     const sources = new Set(manifest.contributions.filter(isStudioDataSource).map(({ id }) => id))
     const contributions = manifest.contributions
-      .filter(
-        (item) =>
-          !isStudioDataSource(item) &&
-          (item.kind !== 'view' ||
-            (version > 0 &&
-              !viewNeedsVersion3(item) &&
-              ![...extensionViewResultIds(item.view)].some((id) => sources.has(id)))),
-      )
+      .filter((item) => {
+        if (isStudioDataSource(item)) return version >= 3
+        if (item.kind !== 'view') return true
+        if (version < 4 && extensionViewHasApp(item.view)) return false
+        if (version >= 3) return true
+        return (
+          version > 0 &&
+          !viewNeedsVersion3(item) &&
+          ![...extensionViewResultIds(item.view)].some((id) => sources.has(id))
+        )
+      })
       .map((item) => projectContribution(item, version))
     return { ...manifest, contributions }
   }
@@ -563,7 +571,7 @@ export class StudioExtensions {
           limits: extensionViewLimits,
           discovery: 'Call catalog with component set to a kind for its property schema.',
           bindings:
-            'Use {setting: id} or {result: contributionId, path: ["field", "0"]}. Buttons and menus call declared tool contributions on a click. Views that bind an API or CLI result show refresh controls. Use sourceControls to place refresh controls and dataGrid to show multiple displays from one result. Edit controls bind to settings. A custom component requires a Studio fallback. Custom type diagram renders bounded rect, circle and text shapes. Other types render the fallback.',
+            'Use {setting: id} or {result: contributionId, path: ["field", "0"]}. Buttons and menus call declared tool contributions on a click. Views that bind an API or CLI result show refresh controls. Use sourceControls to place refresh controls and dataGrid to show multiple displays from one result. Use appView to embed a declared app contribution, including a saved A2UI card. Edit controls bind to settings. A custom component requires a Studio fallback. Custom type diagram renders bounded rect, circle and text shapes. Other types render the fallback.',
         },
         example: {
           id: 'example.delivery',
@@ -698,6 +706,12 @@ export class StudioExtensions {
         throw new HttpError(404, 'This extension view is unavailable.')
       if (entry.revision !== input.expectedRevision)
         throw new HttpError(409, 'The extension changed. Reload it before opening the view.')
+      if (
+        contribution.kind === 'view' &&
+        (input.componentVersion ?? 0) < 4 &&
+        extensionViewHasApp(contribution.view)
+      )
+        throw new HttpError(409, 'Update Studio to open this extension view.')
       if (contribution.kind === 'view' && (input.componentVersion ?? 0) < 3) {
         const results = extensionViewResultIds(contribution.view)
         if (

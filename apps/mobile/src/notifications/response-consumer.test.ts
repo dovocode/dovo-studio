@@ -89,3 +89,80 @@ it('keeps a failed navigation pending and retries on a duplicate tap', () => {
   consumer.handle(tap)
   expect(open).toHaveBeenCalledTimes(2)
 })
+
+it('retries a failed clear on duplicate delivery or flush without reopening the thread', () => {
+  const tap = response('thread')
+  let last: ReturnType<typeof response> | null = tap
+  const open = vi.fn<ConsumerOptions['open']>()
+  const clear = vi
+    .fn<ConsumerOptions['clear']>(() => {
+      last = null
+    })
+    .mockImplementationOnce(() => {
+      throw new Error('Native clear failed')
+    })
+    .mockImplementationOnce(() => {
+      throw new Error('Native clear failed again')
+    })
+  const consumer = createNotificationResponseConsumer({
+    ready: () => true,
+    open,
+    last: () => last,
+    clear,
+    onError: vi.fn<ConsumerOptions['onError']>(),
+  })
+  consumer.handle(tap)
+  consumer.handle(tap)
+  consumer.flush()
+  expect(clear).toHaveBeenCalledTimes(3)
+  expect(last).toBeNull()
+  expect(open).toHaveBeenCalledOnce()
+})
+
+it('leaves a newer native tap intact when retrying a failed clear', () => {
+  const tap = response('first')
+  let last = tap
+  const clear = vi.fn<ConsumerOptions['clear']>().mockImplementationOnce(() => {
+    throw new Error('Native clear failed')
+  })
+  const consumer = createNotificationResponseConsumer({
+    ready: () => true,
+    open: vi.fn<ConsumerOptions['open']>(),
+    last: () => last,
+    clear,
+    onError: vi.fn<ConsumerOptions['onError']>(),
+  })
+  consumer.handle(tap)
+  last = response('newer')
+  consumer.flush()
+  consumer.handle(tap)
+  expect(clear).toHaveBeenCalledOnce()
+})
+
+it('clears a previously opened tap after relaunch using its saved pending clear', () => {
+  const tap = response('thread')
+  let pendingClears: string[] = []
+  const open = vi.fn<ConsumerOptions['open']>()
+  const clear = vi.fn<ConsumerOptions['clear']>().mockImplementationOnce(() => {
+    throw new Error('Native clear failed')
+  })
+  const options = {
+    ready: () => true,
+    open,
+    last: () => tap,
+    clear,
+    onError: vi.fn<ConsumerOptions['onError']>(),
+    savePendingClears: (keys: string[]) => {
+      pendingClears = keys
+    },
+  }
+  const first = createNotificationResponseConsumer(options)
+  first.handle(tap)
+  first.dispose()
+  expect(pendingClears).toHaveLength(1)
+  const relaunched = createNotificationResponseConsumer({ ...options, pendingClears })
+  relaunched.handle(tap)
+  expect(open).toHaveBeenCalledOnce()
+  expect(clear).toHaveBeenCalledTimes(2)
+  expect(pendingClears).toEqual([])
+})

@@ -102,7 +102,19 @@ export class ReadCacheError extends Data.TaggedError('ReadCacheError')<{
   readonly cause: unknown
 }> {
   get message() {
-    return this.cause instanceof Error ? this.cause.message : String(this.cause)
+    const cause = this.cause
+    try {
+      if (
+        cause &&
+        typeof cause === 'object' &&
+        'message' in cause &&
+        typeof cause.message === 'string'
+      )
+        return cause.message
+      return String(cause)
+    } catch {
+      return 'Offline cache storage failed'
+    }
   }
 }
 export interface RuntimeReadCache {
@@ -130,7 +142,7 @@ const instances = new WeakMap<
     string,
     Set<{
       generation?: ReadCacheGeneration
-      closeEffect: () => Effect.Effect<void, ReadCacheError>
+      invalidate: () => void
     }>
   >
 >()
@@ -204,14 +216,14 @@ export function createRuntimeReadCache(
   const sharedWriter = writer
   const lifecycle = {
     generation: captured,
+    invalidate: () => {
+      closed = true
+      clients.delete(lifecycle)
+    },
     closeEffect: (): Effect.Effect<void, ReadCacheError> =>
       Effect.suspend(() => {
-        closed = true
-        return sharedWriter.withPermits(1)(
-          Effect.sync(() => {
-            clients.delete(lifecycle)
-          }),
-        )
+        lifecycle.invalidate()
+        return sharedWriter.withPermits(1)(Effect.void)
       }).pipe(Effect.uninterruptible),
   }
   clients.add(lifecycle)
@@ -256,6 +268,7 @@ export function createRuntimeReadCache(
       yield* sharedWriter
         .withPermits(1)(
           Effect.gen(function* () {
+            if (isClosed()) return
             // A newer write may have replaced the corrupt value while this read was decoding.
             const current = yield* storageEffect(() => storage.getItem(prefix + key, generation))
             if (current === raw)
@@ -323,36 +336,34 @@ export function createRuntimeReadCache(
     sharedWriter
       .withPermits(1)(
         Effect.gen(function* () {
+          if (isClosed()) return
           const { prefix, generation } = yield* scope
           yield* storageEffect(() => storage.removeItem(prefix + key, generation))
         }),
       )
       .pipe(Effect.uninterruptible)
   const clearEffect = () =>
-    Effect.gen(function* () {
-      const { host, prefix, generation } = yield* scope
-      // Verify permission before propagating close locally: a newly constructed stale
-      // credential can capture the current generation, but is absent from its allowlist.
-      if (generation) {
-        yield* storageEffect(() => storage.getItem(prefix + '_index', generation))
-        if (!generation.valid) {
-          yield* lifecycle.closeEffect()
-          return
-        }
-      }
-      // A delayed clear from an old registry must not close handles made by a later pairing.
-      yield* Effect.forEach(
-        [...clients].filter(
-          (client) => !generation || client.generation?.generation === generation.generation,
-        ),
-        (client) => client.closeEffect(),
-        {
-          concurrency: 'unbounded',
-          discard: true,
-        },
+    sharedWriter
+      .withPermits(1)(
+        Effect.gen(function* () {
+          if (isClosed()) return
+          const { host, prefix, generation } = yield* scope
+          // A stale credential can capture a current marker without being on its allowlist.
+          if (generation) {
+            yield* storageEffect(() => storage.getItem(prefix + '_index', generation))
+            if (!generation.valid) {
+              lifecycle.invalidate()
+              return
+            }
+          }
+          const affected = [...clients].filter(
+            (client) => !generation || client.generation?.generation === generation.generation,
+          )
+          yield* storageEffect(() => storage.removePrefix(host, generation))
+          for (const client of affected) client.invalidate()
+        }),
       )
-      yield* storageEffect(() => storage.removePrefix(host, generation))
-    }).pipe(Effect.uninterruptible)
+      .pipe(Effect.uninterruptible)
   return {
     get closed() {
       return isClosed()

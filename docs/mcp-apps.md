@@ -59,6 +59,50 @@ warm sessions otherwise, with a maximum of 64 connections; capacity pressure rel
 idle connection and never evicts an active tool call. Runtime shutdown aborts outstanding work and
 closes all sessions.
 
+## Discover MCP Events
+
+In the MCP server editor, configure a native MCP 2026-07-28 HTTP server, enable **MCP-over-ACP**,
+and select **Test connection**. If the server advertises `io.modelcontextprotocol/events`, Dovo
+lists the event names and delivery modes on desktop, web, and mobile. This check runs on the
+selected computer and works without starting an agent. The result is a catalog of advertised events.
+It does not subscribe, poll, or start work. See the
+[MCP Events specification](https://modelcontextprotocol.io/extensions/events/overview).
+
+## Subscribe to MCP Events from a thread
+
+Use the `dovo_task` **mcp_events** tool from a harness that receives Dovo's task tools. The same
+interface works in Codex, Claude, OpenCode and ACP without relying on provider-specific event
+notifications. The runtime calls native MCP Events methods on the server configured for the thread.
+It supports MCP 2026-07-28 stdio servers and HTTP servers configured with **MCP-over-ACP**. The
+server must advertise `io.modelcontextprotocol/events`.
+
+1. Run `servers` to list configured candidates, then `catalog` with the server name to check support
+   and get event names, schemas and delivery modes.
+2. Run `subscribe` with the server, exact event name and arguments. Dovo starts from now, preferring
+   poll when offered. Set `delivery` to `push` to request a stream explicitly.
+3. Run `read` with the subscription ID. Process the returned `items`, then pass `nextOffset` as
+   `after` on the next read. Leave `after` unchanged when retrying a lost reply. Respect
+   `retryAfterMs`. Recover any authoritative state you need when an item reports a replay gap.
+4. Run `subscriptions` to find the thread's saved subscriptions and `unsubscribe` to remove one.
+
+Poll checks the server when the harness reads. Push streams reconnect from the saved cursor while
+the agent's run grant is active. A read in a later turn can reopen the stream. Dovo saves queued
+data and the cursor together. Servers without replay may miss events while disconnected. Unread
+events stay in the thread inbox until acknowledged. Dovo limits inbox size and pauses a filled
+stream until reads free space. Event payloads are external data and carry no tool authorization.
+
+Webhook-only sources require an HTTPS receiver or a relay that exposes poll or push. The thread tool
+uses poll and push and does not provision public callbacks. These subscriptions deliver data to the
+calling harness. They do not schedule a run when the thread is idle.
+
+### MCP Tasks
+
+[MCP Tasks](https://modelcontextprotocol.io/extensions/tasks/overview) is a separate capability for
+operations that a harness starts. A future Tasks client would persist the upstream task handle,
+resume status through `tasks/get`, present any input requests for review before `tasks/update`, and
+report the server's final result or cancellation status. The Events inbox tracks upstream
+occurrences and does not negotiate the Tasks capability.
+
 ## SDK compatibility boundaries
 
 Dovo task tools use the MCP SDK’s `McpServer` registrations and input validation. A call may contain

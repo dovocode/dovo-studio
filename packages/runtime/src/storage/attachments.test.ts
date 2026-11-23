@@ -247,6 +247,19 @@ it('guards detached draft commits and preserves replacement ownership across res
   expect(replay.attachment).toEqual(result.attachment)
   expect(replay.nextGuard).toBe(committed.nextGuard)
   expect(replay.nextGuard).not.toBe(runtime.services.attachments.draftUploadGuard(task.id))
+  expect(runtime.services.store.task(task.id).draftAttachments).toEqual([result.attachment])
+  runtime.services.store.updateTask(task.id, (current) => ({
+    ...current,
+    draft: 'Different draft without the uploaded image',
+    draftAttachments: [],
+  }))
+  expect(() =>
+    runtime.services.attachments.commitUploadToDraft('device', input.id, nextGuard),
+  ).toThrow('no longer in its destination')
+  expect(runtime.services.store.task(task.id)).toMatchObject({
+    draft: 'Different draft without the uploaded image',
+    draftAttachments: [],
+  })
 })
 
 it('allows a guarded upload while existing assistant history streams', async () => {

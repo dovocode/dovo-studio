@@ -689,3 +689,42 @@ it('backs off a failing device without delaying another device', async () => {
   expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
   expect(f.service.status(f.device).error).toBeNull()
 })
+
+it.each(['{broken', '{"data":{}}'])(
+  'isolates a malformed queued notification without blocking valid notifications',
+  async (broken) => {
+    const f = setup()
+    const healthy = f.devices.add('Tablet', 'tablet-token')
+    f.service.register(healthy, { ...f.registration, token: 'b'.repeat(64) })
+    f.db
+      .prepare('INSERT INTO push_outbox VALUES (?,?,?,?,0,0)')
+      .run('unreadable', f.device, broken, Date.now() + 60_000)
+    f.input({ id: 'permission', preview: 'Review this action' })
+
+    await f.service.flush()
+    expect(f.send.mock.calls.map(([notification]) => notification.token).sort()).toEqual([
+      f.registration.token,
+      'b'.repeat(64),
+    ])
+    expect(f.service.status(f.device).error).toContain('queued notification is unreadable')
+    expect(f.service.status(healthy).error).toBeNull()
+    expect(f.db.prepare('SELECT id, value FROM push_outbox').all()).toEqual([
+      { id: 'unreadable', value: broken },
+    ])
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(2)
+  },
+)
+
+it('rebuilds an unreadable notification state from durable task events', async () => {
+  const f = setup()
+  await f.service.flush()
+  f.db.prepare('UPDATE push_states SET value=? WHERE task_id=?').run('not-json', 'task')
+  f.store.updateTask('task', (task) => ({ ...task, status: 'review' }))
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ data: expect.objectContaining({ taskId: 'task', kind: 'done' }) }),
+  )
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledOnce()
+})

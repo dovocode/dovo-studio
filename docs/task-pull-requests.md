@@ -248,8 +248,10 @@ Running checks update every 10 seconds. Settled checks update every 30 seconds. 
 stack update every 60 seconds. Provider cache freshness can add to these intervals. The desktop
 panel reuses pipeline capabilities for its project and polls settled pipeline summaries every 30
 seconds. Running summaries keep a 10-second interval after the next completed poll. The overview
-keeps loaded pages in place and periodically checks older pages. A failed page refresh preserves the
-last complete list. Account or project changes require the existing source verification.
+keeps loaded pages in place and periodically checks older pages. If a PR appears on two pages for
+the same project, its earlier row supplies the title, checks and other details. A failed page
+refresh preserves the last complete list. Account or project changes require the existing source
+verification.
 
 See [PR performance verification](performance.md#pr-overview-and-panels-2026-11-11) for protocol
 behavior, test commands and measurement limits.

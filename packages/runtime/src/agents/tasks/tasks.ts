@@ -2002,11 +2002,10 @@ export class Tasks {
     directMessageId?: string,
     preparation: 'ready' | 'accepted' = 'ready',
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
+    const task = this.store.taskSummary(id)
+    const savingOnly = task.runPhase === 'finalizing' && pauseQueue && !directMessageId
     const before =
-      this.store.taskSummary(id).pendingHarness &&
-      !continuingRunId &&
-      !retryFailed &&
-      this.onBeforeStart
+      task.pendingHarness && !savingOnly && !continuingRunId && !retryFailed && this.onBeforeStart
     return (before ? runtimeOperation(() => before(id)) : Effect.void).pipe(
       Effect.flatMap(() =>
         this.startAdmittedEffect(
@@ -2047,6 +2046,7 @@ export class Tasks {
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
       const next = this.store.taskSummary(id)
+      const savingOnly = next.runPhase === 'finalizing' && pauseQueue && !directMessageId
       // Send now selects one accepted message without reordering or resuming held input.
       const firstMessage = directMessageId
         ? next.queue?.find((message) => message.id === directMessageId)
@@ -2093,9 +2093,10 @@ export class Tasks {
       )
         return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
       // Held, not failed: the input stays queued and the thread shows the spend pause.
-      if (!continuingRunId && this.holdForSpendLimit(id, firstMessage?.id))
+      if (!savingOnly && !continuingRunId && this.holdForSpendLimit(id, firstMessage?.id))
         return Effect.succeed({ completion: Effect.void })
       const selectModel = (signal?: AbortSignal) =>
+        savingOnly ||
         ((!retryFailed || preparationMessageId) && firstMessage?.turnSettings) ||
         (continuingRunId && next.runAttempt?.turnSettings)
           ? Effect.void

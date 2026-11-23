@@ -242,6 +242,45 @@ it('retains a custom-agent model switch through stale snapshots without changing
   ).toMatchObject({ snapshot: original.snapshot })
 })
 
+it('scopes an in-flight model preview to the runtime instance that receives the save', () => {
+  const previous = { ...entry, snapshot: { ...entry.snapshot!, runtimeInstanceId: 'before' } }
+  const restarted = {
+    ...entry,
+    snapshot: { ...entry.snapshot!, runtimeInstanceId: 'after', revision: 0 },
+  }
+  const pending: OptimisticTask = {
+    ...change(),
+    runtimeInstanceId: 'before',
+    changes: { harness: { ...defaultTaskHarness('codex'), model: 'selected' } },
+  }
+  expect(previewTasks(previous, [pending]).snapshot?.workspace.tasks[0]?.harness?.model).toBe(
+    'selected',
+  )
+  expect(previewTasks(restarted, [pending])).toBe(restarted)
+
+  const acceptedAfterRestart = {
+    ...pending,
+    acknowledged: { runtimeInstanceId: 'after', revision: 1 },
+  }
+  expect(
+    previewTasks(restarted, [acceptedAfterRestart]).snapshot?.workspace.tasks[0]?.harness?.model,
+  ).toBe('selected')
+  expect(optimisticTaskConfirmed(acceptedAfterRestart, restarted)).toBe(false)
+})
+
+it('settles a newer model edit even when an edit from the previous runtime is unresolved', () => {
+  const restarted = { ...entry, snapshot: { ...entry.snapshot!, runtimeInstanceId: 'after' } }
+  const changes = { harness: { ...defaultTaskHarness('codex'), model: 'selected' } }
+  const previous = { ...change(), runtimeInstanceId: 'before', changes }
+  const current = {
+    ...change(),
+    runtimeInstanceId: 'after',
+    changes,
+    acknowledged: { runtimeInstanceId: 'after', revision: 1 },
+  }
+  expect(optimisticTaskConfirmed(current, restarted, [previous, current])).toBe(true)
+})
+
 it('clears custom-agent overrides when optimistically switching to a built-in harness', () => {
   const original = {
     ...entry,

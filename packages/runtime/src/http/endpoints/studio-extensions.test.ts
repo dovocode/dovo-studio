@@ -6,6 +6,8 @@ import { createServer } from 'node:http'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { appView, defineExtension, page } from '@dovo/protocol/studio-extension-sdk'
+import a2uiCard from '../../../../../examples/a2ui/media-and-configuration.json'
 import {
   decode,
   mcpServerSchema,
@@ -712,4 +714,68 @@ it('pins installed pages for paired clients and removes the shortcut while disab
   expect(await getPins()).toHaveLength(1)
   expect((await person({ ...pin, expectedRevision: 4, pinned: false })).status).toBe(200)
   expect(await getPins()).toEqual([])
+})
+
+it('embeds a saved A2UI card in an extension page with existing app grants', async () => {
+  const { s, task, person, post } = await setup()
+  const { id: appId } = s.mcpApps.a2uiCommand(task.id, 'extension-author', a2uiCard) as {
+    id: string
+  }
+  const source = { id: 'setup', kind: 'app', title: 'Playback', taskId: task.id, appId } as const
+  const view = page({
+    id: 'playback',
+    title: 'Playback settings',
+    root: appView('card', source.id),
+  })
+  expect(() =>
+    defineExtension({ id: 'example.media', name: 'Media', contributions: [view] }),
+  ).toThrow(/Unknown MCP App/)
+  const manifest = defineExtension({
+    id: 'example.media',
+    name: 'Media',
+    contributions: [source, view],
+  })
+  const { id } = manifest
+  expect((await person({ action: 'stage', expectedRevision: 0, manifest })).status).toBe(200)
+  const install = { action: 'install', id, expectedRevision: 1 }
+  expect((await person({ ...install, componentVersion: 3 })).status).toBe(409)
+  expect((await person({ ...install, componentVersion: 4 })).status).toBe(200)
+  const legacy = decode(
+    studioExtensionsListSchema,
+    await (await person({ action: 'list', componentVersion: 3 })).json(),
+  )
+  expect(legacy.extensions[0].installed?.contributions).toEqual([source])
+  const open = { action: 'open', id, expectedRevision: 2, contributionId: view.id }
+  expect((await person({ ...open, componentVersion: 3 })).status).toBe(409)
+  expect(await (await person({ ...open, componentVersion: 4 })).json()).toEqual({
+    contribution: view,
+  })
+
+  const read = (requestId: string) =>
+    post('mcp-apps/rpc', {
+      requestId,
+      id: appId,
+      taskId: task.id,
+      method: 'tools/call',
+      params: { name: 'a2ui_read', arguments: {} },
+      extension: { id, contributionId: source.id },
+    })
+  expect((await read('before-grant')).status).toBe(403)
+  const policy = { owner: 'extension', id, sourceId: source.id, expectedRevision: 2 }
+  expect(
+    (
+      await post('studio/source-policy', {
+        ...policy,
+        policy: { access: 'session', autoLoad: false },
+      })
+    ).status,
+  ).toBe(200)
+  expect(await (await read('after-grant')).json()).toMatchObject({
+    result: { structuredContent: { revision: 1, messages: a2uiCard.messages } },
+  })
+  expect(
+    (await post('studio/source-policy', { ...policy, policy: { access: 'off', autoLoad: false } }))
+      .status,
+  ).toBe(200)
+  expect((await read('after-revoke')).status).toBe(403)
 })
