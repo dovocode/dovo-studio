@@ -86,6 +86,42 @@ export const deviceHostInstallSchema = mutableStruct({
   hostId: Schema.optional(fields.id),
   artifactPath: text(4096),
 })
+const deviceDeployId = text(80).pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]+$/)))
+export const deviceDeployTargetSchema = mutableStruct({
+  id: text(500),
+  revision: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
+  buildNumber: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 1, maximum: 2_100_000_000 })),
+  ),
+})
+const deviceDeployScope = { taskId: text(), requestId: deviceDeployId }
+export const deviceDeployCommandSchema = Schema.Union([
+  mutableStruct({
+    ...deviceDeployScope,
+    action: Schema.Literal('start'),
+    ...deviceDeployTargetSchema.fields,
+  }),
+  mutableStruct({
+    ...deviceDeployScope,
+    action: Schema.Literal('status'),
+    waitMs: Schema.optional(
+      Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isBetween({ minimum: 0, maximum: 30000 })),
+      ),
+    ),
+  }),
+  mutableStruct({ ...deviceDeployScope, action: Schema.Literal('cancel') }),
+])
+export const deviceDeployResultSchema = mutableStruct({
+  installed: Schema.Boolean,
+  launched: Schema.Boolean,
+  message: Schema.String,
+})
+export type DeviceDeployTarget = Schema.Schema.Type<typeof deviceDeployTargetSchema>
+export type DeviceDeployCommand = Schema.Schema.Type<typeof deviceDeployCommandSchema>
+export type DeviceDeployResult = Schema.Schema.Type<typeof deviceDeployResultSchema>
 export const deviceHostForwardSchema = mutableStruct({
   taskId: text(),
   hostId: fields.id,

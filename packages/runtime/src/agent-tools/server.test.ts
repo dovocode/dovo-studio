@@ -1750,6 +1750,7 @@ it('keeps device tools hidden while Device Hub is off', async () => {
       'devices',
       'device',
       'device_install',
+      'device_deploy',
       'device_forward',
       'simulator_tap',
       'simulator_swipe',

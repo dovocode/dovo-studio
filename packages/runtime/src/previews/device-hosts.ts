@@ -5,9 +5,11 @@ import {
   decode,
   mutableStruct,
   deviceHostSchema,
+  deviceDeployResultSchema,
   previewDevicesSchema,
   previewResultSchema,
   type DeviceHost,
+  type DeviceDeployCommand,
   type DeviceHostTestResult,
   type PreviewDevice,
   type previewActionSchema,
@@ -26,6 +28,8 @@ import { installNative } from './device-host-install.js'
 import { stageDeviceArtifact } from './device-artifact-staging.js'
 import { HttpError } from '../errors.js'
 import type { NativeSimulator } from './simulator-native.js'
+import { DeviceDeployJobs } from './device-deploy-jobs.js'
+import { iosDeployDevices, IosDeviceDeploy } from './ios-device-deploy.js'
 function remoteDeviceId(hostId: string, id: string) {
   return `remote:${hostId}:${id}`
 }
@@ -86,6 +90,8 @@ type Forward = {
 export class DeviceHosts {
   readonly settings: DeviceHostSettings
   readonly client = new DeviceHostClient()
+  readonly iosDeploy = new IosDeviceDeploy()
+  private deployments = new DeviceDeployJobs()
   private forwards = new Map<string, Forward>()
   private pendingForwards = new Map<string, PendingForward>()
   private installs = new Map<
@@ -131,6 +137,8 @@ export class DeviceHosts {
       this.epoch++
       for (const operation of this.installs.values()) operation.controller.abort()
       this.cancelIncomingInstalls()
+      this.deployments.cancel()
+      this.iosDeploy.cancel()
       await cleanupAll([
         this.closeAllSessions(),
         this.cancelPendingForwards(() => true),
@@ -161,7 +169,7 @@ export class DeviceHosts {
       : this.settings.get().hosts.filter((host) => !agent || host.agentAccess)
     const local = hostId
       ? Promise.resolve({ host: '', devices: [] as PreviewDevice[], diagnostics: [] as string[] })
-      : previewDevices(deviceId)
+      : previewDevices(deviceId).then(iosDeployDevices)
     const remoteDiscovery = Promise.all(
       hosts.map(async (host) => {
         try {
@@ -199,6 +207,66 @@ export class DeviceHosts {
     }
     if (hostId) result.host = this.host(hostId, agent).name
     return result
+  }
+  async deploy(
+    input: DeviceDeployCommand,
+    owner: string,
+    agent: boolean,
+    grant: AbortSignal | undefined,
+    authorize: () => void,
+  ) {
+    this.assertEnabled()
+    authorize()
+    if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
+    if (input.action !== 'start') return this.deployments.follow(input, owner)
+    const target = splitDeviceId(input.id)
+    if (!target.id.startsWith('physical-ios:'))
+      throw new HttpError(400, 'Choose a physical iPhone from Device Hub.')
+    const host = target.hostId ? this.host(target.hostId, agent) : undefined
+    return this.deployments.start(input, owner, grant, host?.id, async (value, cancellation) => {
+      const controller = new AbortController()
+      const signal = AbortSignal.any([cancellation, controller.signal])
+      const assertCurrent = () => {
+        signal.throwIfAborted()
+        authorize()
+        this.assertEnabled()
+        if (host && !sameHostAccess(this.host(host.id, agent), host))
+          throw new HttpError(409, 'Device host access changed during deployment.')
+      }
+      assertCurrent()
+      const { revision, buildNumber } = value
+      const selected = { id: target.id, revision, buildNumber, taskId: input.taskId }
+      const check = setInterval(() => {
+        try {
+          assertCurrent()
+        } catch {
+          controller.abort()
+        }
+      }, 1000)
+      check.unref()
+      try {
+        if (!host) return await this.iosDeploy.run(selected, signal, assertCurrent)
+        return decode(
+          deviceDeployResultSchema,
+          await this.client.request(
+            host,
+            '/api/device-host/deploy',
+            selected,
+            signal,
+            assertCurrent,
+          ),
+        )
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 404)
+          throw new HttpError(
+            409,
+            'Update the device host to build iPhone apps through Device Hub.',
+          )
+        throw error
+      } finally {
+        clearInterval(check)
+      }
+    })
   }
   async action(
     input: Schema.Schema.Type<typeof previewActionSchema>,
@@ -599,6 +667,7 @@ export class DeviceHosts {
     return { ok: true as const }
   }
   async closeTask(taskId: string) {
+    this.deployments.cancel((job) => job.input.taskId === taskId)
     for (const operation of this.installs.values())
       if (operation.taskId === taskId) operation.controller.abort()
     this.taskEpochs.set(taskId, (this.taskEpochs.get(taskId) ?? 0) + 1)
@@ -610,6 +679,7 @@ export class DeviceHosts {
     )
   }
   private async closeHost(id: string) {
+    this.deployments.cancel((job) => job.hostId === id)
     for (const operation of this.installs.values())
       if (operation.hostId === id) operation.controller.abort()
     this.hostEpochs.set(id, (this.hostEpochs.get(id) ?? 0) + 1)
@@ -624,10 +694,12 @@ export class DeviceHosts {
   }
   async dispose() {
     this.disposed = true
+    this.deployments.cancel()
     for (const operation of this.installs.values()) operation.controller.abort()
     this.epoch++
     this.cancelIncomingInstalls()
     await cleanupAll([
+      this.iosDeploy.dispose(),
       this.cancelPendingForwards(() => true),
       ...[...this.forwards].map(([id, entry]) => this.stopForward(id, entry.taskId)),
       this.closeAllSessions(),

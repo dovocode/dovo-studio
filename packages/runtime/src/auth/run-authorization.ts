@@ -50,6 +50,7 @@ const allowed = new Set([
   '/api/previews/simulator/open',
   '/api/previews/simulator/input',
   '/api/device-hosts/install',
+  '/api/device-hosts/deploy',
   '/api/device-hosts/forward',
   '/api/device-hosts/forward/stop',
   '/api/terminals/run',

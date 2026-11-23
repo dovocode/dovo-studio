@@ -97,6 +97,7 @@ export function runtimeRequestTimeout(path: string, input?: unknown) {
     return 180000 * Math.max(1, runs)
   }
   if (path === '/api/device-hosts/install') return 600000
+  if (path === '/api/device-hosts/deploy') return 45000
   if (path === '/api/device-hosts/test') return 150000
   if (path === '/api/device-hosts/forward') return 90000
   if (path === '/api/tasks/side-chat/ask' || path === '/api/tasks/aside') return 120000

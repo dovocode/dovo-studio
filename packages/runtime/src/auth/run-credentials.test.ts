@@ -229,6 +229,7 @@ it('allows read-only browser/device reads and cleanup but blocks mutations and t
     ['/api/previews/action', { id: 'ios:test', action: 'deep-link', url: 'example://test' }],
     ['/api/previews/simulator/open', { id: 'ios:test' }],
     ['/api/device-hosts/install', { id: 'ios:test', artifactPath: '/tmp/app' }],
+    ['/api/device-hosts/deploy', { action: 'status', requestId: 'deploy-1' }],
     ['/api/device-hosts/forward', {}],
     ['/api/device-hosts/forward/stop', {}],
     ['/api/artifacts/create', {}],
@@ -259,12 +260,66 @@ it('enforces feature flags and explicit native sandbox against raw HTTP', async 
     '/api/pull-request-watch',
     '/api/previews/devices',
     '/api/device-hosts/install',
+    '/api/device-hosts/deploy',
     '/api/terminals/run',
   ])
     expect(
       (await post(path, { taskId, parentRunId: runId, scope: 'system', newTerminal: true })).status,
     ).toBe(403)
 })
+
+it('runs an enabled deployment from the MCP tool and scopes its receipt to the thread', async () => {
+  const { s, runtime, taskId, otherId, runId, token, post } = await setup()
+  s.deviceHosts.settings.save({ enabled: true, hosts: [] })
+  const deploy = vi.spyOn(s.deviceHosts.iosDeploy, 'run').mockResolvedValue({
+    installed: true,
+    launched: true,
+    message: 'Installed and launched',
+  })
+  const input = {
+    action: 'start',
+    requestId: 'nightly-1058',
+    id: 'physical-ios:phone',
+    revision: 'a'.repeat(40),
+    buildNumber: 1058,
+  }
+  expect((await post('/api/device-hosts/deploy', { ...input, taskId: otherId })).status).toBe(403)
+  expect(deploy).not.toHaveBeenCalled()
+  const config = taskToolsServer(taskId, runtime.port, token, '127.0.0.1', false, false, runId)
+  const client = new Client({ name: 'device-deploy-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: config.args,
+    env: { ...config.envValues, DOVO_TASK_DEVICE_HUB_ENABLED: '1' },
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('device_deploy')
+    expect((await client.callTool({ name: 'device_deploy', arguments: input })).isError).not.toBe(
+      true,
+    )
+    const response = await client.callTool({
+      name: 'device_deploy',
+      arguments: { action: 'status', requestId: input.requestId, waitMs: 1000 },
+    })
+    expect(response.isError).not.toBe(true)
+    expect(JSON.parse((response.content as { text: string }[])[0].text)).toMatchObject({
+      status: 'succeeded',
+      requestId: input.requestId,
+      installed: true,
+      launched: true,
+    })
+    expect(deploy).toHaveBeenCalledExactlyOnceWith(
+      { taskId, id: input.id, revision: input.revision, buildNumber: input.buildNumber },
+      expect.any(AbortSignal),
+      expect.any(Function),
+    )
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+}, 15000)
 
 it('revokes expired, cancelled, replaced and stale-run grants and rotates private files for warm transports', async () => {
   const { s, taskId, policy, token, controller, post } = await setup()

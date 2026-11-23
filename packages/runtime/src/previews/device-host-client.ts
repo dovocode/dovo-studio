@@ -175,14 +175,16 @@ export class DeviceHostClient {
         },
       )
       request.setTimeout(
-        path === '/api/device-host/install'
-          ? 300000
-          : path === '/api/device-host/open'
-            ? // Targeted discovery, a cold native helper build and first-frame readiness.
-              300000
-            : path === '/api/device-host/devices'
-              ? 120000
-              : 60000,
+        path === '/api/device-host/deploy'
+          ? 25 * 60 * 1000
+          : path === '/api/device-host/install'
+            ? 300000
+            : path === '/api/device-host/open'
+              ? // Targeted discovery, a cold native helper build and first-frame readiness.
+                300000
+              : path === '/api/device-host/devices'
+                ? 120000
+                : 60000,
         () => request.destroy(new HttpError(504, 'Device host request timed out')),
       )
       request.on('error', (error) =>

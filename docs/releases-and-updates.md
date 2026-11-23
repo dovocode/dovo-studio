@@ -225,6 +225,10 @@ installed version, build number, channel and source commit. It offers matching S
 desktop release notes, platform-specific beta-store links and the local iPhone install flow. No EAS
 Update service is required.
 
+For agent-assisted updates, configure a
+[Device Hub deployment Mac](design/browser-and-devices.md#deploy-dovo-studio-to-a-physical-iphone)
+once. The agent can build, install and check launch from the thread.
+
 ```sh
 git pull --ff-only
 pnpm install --frozen-lockfile

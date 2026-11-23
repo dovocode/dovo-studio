@@ -85,6 +85,7 @@ export const previewDeviceSchema = mutableStruct({
   kind: Schema.optional(Schema.Literals(['simulator', 'physical'])),
   connection: Schema.optional(Schema.String),
   liveSupported: Schema.optional(Schema.Boolean),
+  iosDeploySupported: Schema.optional(Schema.Boolean),
   platform: Schema.Literals(['ios', 'android']),
   state: Schema.Literals(['booted', 'stopped', 'starting']),
   runtime: Schema.String,

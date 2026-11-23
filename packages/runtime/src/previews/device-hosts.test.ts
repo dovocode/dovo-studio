@@ -26,6 +26,59 @@ const host = {
   agentAccess: true,
 }
 afterEach(() => vi.restoreAllMocks())
+it('routes a deployment through its owning host and preserves a partial install result', async () => {
+  const db = openDatabase(':memory:')
+  const manager = new DeviceHosts(db, async () => {})
+  const input = {
+    action: 'start' as const,
+    taskId: 'task',
+    id: 'remote:mac:physical-ios:phone',
+    requestId: 'nightly-1058',
+    revision: 'a'.repeat(40),
+    buildNumber: 1058,
+  }
+  const authorize = () => {}
+  const remote = vi.spyOn(manager.client, 'request').mockResolvedValue({
+    installed: true,
+    launched: false,
+    message: 'Unlock the iPhone to launch.',
+  })
+  try {
+    await manager.save({ enabled: true, hosts: [{ ...host, agentAccess: false }] })
+    await expect(manager.deploy(input, 'run', true, undefined, authorize)).rejects.toThrow(
+      'Agent access is disabled',
+    )
+    expect(remote).not.toHaveBeenCalled()
+    await manager.save({ enabled: true, hosts: [host] })
+    await expect(manager.deploy(input, 'run', true, undefined, authorize)).resolves.toMatchObject({
+      status: 'running',
+    })
+    await expect(
+      manager.deploy(
+        { action: 'status', taskId: input.taskId, requestId: input.requestId, waitMs: 1000 },
+        'run',
+        true,
+        undefined,
+        authorize,
+      ),
+    ).resolves.toMatchObject({ status: 'failed', installed: true, launched: false })
+    expect(remote).toHaveBeenCalledExactlyOnceWith(
+      host,
+      '/api/device-host/deploy',
+      {
+        id: 'physical-ios:phone',
+        taskId: input.taskId,
+        revision: input.revision,
+        buildNumber: 1058,
+      },
+      expect.any(AbortSignal),
+      expect.any(Function),
+    )
+  } finally {
+    await manager.dispose()
+    db.close()
+  }
+})
 it('starts local and SSH discovery together and scopes a selected device on its host', async () => {
   const db = openDatabase(':memory:')
   const manager = new DeviceHosts(db, async () => {})

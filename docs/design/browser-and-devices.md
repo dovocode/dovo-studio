@@ -405,6 +405,30 @@ different desktop user is rejected. This preserves existing signing and provisio
 change accounts or require sudo. Keep real phones unlocked, trusted and connected for deployment.
 Installation alone does not verify startup: launch and inspect the app.
 
+### Deploy Dovo Studio to a physical iPhone
+
+The `device_deploy` agent tool is available to writable runs with Device Hub enabled. It builds Dovo
+Studio on the owning Mac, updates `com.dovo.studio` in place, and launches the installed app. Set up
+the Mac once by supplying an absolute path to its local Dovo Studio repository in
+`DOVO_IOS_DEPLOY_REPOSITORY` and the existing signing team in `DOVO_APPLE_TEAM_ID` in the runtime's
+environment. Restart that runtime after changing its environment. Keep Xcode, CocoaPods, Node, pnpm,
+and the Apple Development identity available to the signed-in Mac account. Remove
+`DOVO_IOS_DEPLOY_REPOSITORY` and restart the runtime to turn off builds on that host.
+
+1. Call `devices` and choose a physical iPhone with `iosDeploySupported`. Remote device hosts need
+   agent access enabled. An older host can still install an existing signed artifact.
+2. Call `device_deploy` with `action: "start"`, the exact device `id`, a stable `requestId`, the
+   full `revision` from Dovo Studio's upstream `main`, and the intended integer `buildNumber`.
+3. Call `device_deploy` with `action: "status"`, the same `requestId`, and optionally
+   `waitMs: 30000`. Treat install and launch as separate confirmations.
+
+The build runs the project's fixed iPhone build command in an isolated checkout in the signed-in
+desktop session. Use the same request ID after a lost response. Use a new request ID after a failed
+attempt. If a phone disconnects after signing, reconnect and unlock it before retrying. The Mac
+keeps its most recent build during the runtime session for an exact commit and build-number retry.
+Cancellation and loss of run access stop ongoing work. If an install was interrupted, inspect the
+installed version before retrying.
+
 Mobile browser navigation uses one bottom toolbar for host and direct pages. The address shows a
 single-line hostname while idle and keeps the full URL in its editable field. Mode switching,
 viewport options and page expansion live in the icon menu; expanded pages retain a floating control

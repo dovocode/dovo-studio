@@ -6,6 +6,7 @@ export { memoryScopeSchema } from './runtime/memory.js'
 export { previewDevicesSchema, previewResultSchema } from './runtime/previews/previews.js'
 export {
   deviceHostInstallSchema,
+  deviceDeployCommandSchema,
   deviceHostForwardSchema,
 } from './runtime/previews/device-hosts.js'
 export { deviceGestureSchema, deviceButtonSchema } from './runtime/previews/device-input.js'

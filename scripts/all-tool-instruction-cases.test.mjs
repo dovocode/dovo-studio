@@ -7,9 +7,9 @@ import { instructionFixture, scoreInstructions } from './model-instruction-cases
 const base = Object.entries(allToolRounds)
   .filter(([round]) => Number(round) <= 21)
   .flatMap(([, cases]) => cases)
-await test('the full-catalog matrix covers all 53 tools without missing case definitions', () => {
+await test('the full-catalog matrix covers all 54 tools without missing case definitions', () => {
   const expected =
-    `studio_discover studio_threads studio_automations studio_browsers studio_ui studio_diagnostics conversation_read dovo_help skill_read ask_question thread_prepare response_prepare automation_list automation_prepare todos secure_input linked_projects browser workflow subagent_spawn subagent_list subagent_answer subagent_send subagent_read subagent_wait subagent_cancel bot_history propose_skill memory_list memory_read memory_write memory_delete artifact_list artifact_read devices device device_install device_forward pipeline_watch pull_request_watch artifact_create artifact_update simulator_tap simulator_swipe simulator_key simulator_button simulator_gesture simulator_text terminal_run terminal_rename terminal_close terminal_read terminal_input`.split(
+    `studio_discover studio_threads studio_automations studio_browsers studio_ui studio_diagnostics conversation_read dovo_help skill_read ask_question thread_prepare response_prepare automation_list automation_prepare todos secure_input linked_projects browser workflow subagent_spawn subagent_list subagent_answer subagent_send subagent_read subagent_wait subagent_cancel bot_history propose_skill memory_list memory_read memory_write memory_delete artifact_list artifact_read devices device device_install device_deploy device_forward pipeline_watch pull_request_watch artifact_create artifact_update simulator_tap simulator_swipe simulator_key simulator_button simulator_gesture simulator_text terminal_run terminal_rename terminal_close terminal_read terminal_input`.split(
       ' ',
     )
   assert.deepEqual(

@@ -12,6 +12,8 @@ import {
   previewActionSchema,
   simulatorInputSchema,
   deviceHostInstallSchema,
+  deviceDeployCommandSchema,
+  deviceDeployTargetSchema,
   deviceHostForwardSchema,
 } from '@dovo/protocol'
 import type { Services } from '../../services.js'
@@ -19,6 +21,7 @@ import { body } from '../support/body.js'
 import { HttpError } from '../../errors.js'
 import { previewDevices, previewDeviceAction } from '../../previews/devices.js'
 import { foreignDeviceScope } from '../../previews/device-hosts.js'
+import { iosDeployDevices } from '../../previews/ios-device-deploy.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
 const scopeSchema = mutableStruct({ taskId: id })
 const sessionSchema = mutableStruct({ taskId: id, id })
@@ -29,6 +32,7 @@ async function deviceOperation<T>(
   s: Services,
   token: string,
   operation: (signal: AbortSignal, authorize: () => void) => Promise<T>,
+  recheck = false,
 ) {
   const controller = new AbortController()
   const abort = () => controller.abort()
@@ -39,10 +43,21 @@ async function deviceOperation<T>(
   }
   request.socket.once('close', abort)
   if (request.socket.destroyed) abort()
+  const timer = recheck
+    ? setInterval(() => {
+        try {
+          authorize()
+        } catch {
+          abort()
+        }
+      }, 1000)
+    : undefined
+  timer?.unref()
   try {
     authorize()
     return await operation(controller.signal, authorize)
   } finally {
+    clearInterval(timer)
     request.socket.off('close', abort)
   }
 }
@@ -92,6 +107,20 @@ export async function deviceHostRoute(
   if (path === '/api/device-hosts/test') return s.deviceHosts.test(await body(request, 16384))
   if (path === '/api/device-hosts/remove')
     return s.deviceHosts.remove(decode(mutableStruct({ id }), await body(request, 4096)).id)
+  if (path === '/api/device-hosts/deploy') {
+    const input = decode(deviceDeployCommandSchema, await body(request, 8192))
+    s.store.taskSummary(input.taskId)
+    const authorize = () =>
+      isRunToken(token)
+        ? authorizeRunRoute(s, token, method, path, input)
+        : authenticateRuntimeOperation(s, token)
+    authorize()
+    const grant = isRunToken(token) ? s.runCredentials.authenticate(token) : undefined
+    const owner = grant ? `run:${grant.runId}` : `device:${pairedDeviceId}`
+    const result = await s.deviceHosts.deploy(input, owner, agent, grant?.signal, authorize)
+    authorize()
+    return result
+  }
   if (path === '/api/device-hosts/install') {
     const input = decode(deviceHostInstallSchema, await body(request, 8192))
     s.deviceHosts.assertEnabled()
@@ -198,7 +227,20 @@ export async function deviceHostRoute(
     if (input.id?.startsWith('remote:'))
       throw new HttpError(400, 'Device host endpoint accepts only local devices')
     // Only local discovery; never recursively traverse this runtime's own device hosts.
-    return previewDevices(input.id)
+    return iosDeployDevices(await previewDevices(input.id))
+  }
+  if (path === '/api/device-host/deploy') {
+    const input = decode(
+      mutableStruct({ ...scopeSchema.fields, ...deviceDeployTargetSchema.fields }),
+      await body(request, 8192),
+    )
+    return deviceOperation(
+      request,
+      s,
+      token,
+      (signal, authorize) => s.deviceHosts.iosDeploy.run(input, signal, authorize),
+      true,
+    )
   }
   if (path === '/api/device-host/action') {
     const input = decode(previewActionSchema, await body(request, 8192))

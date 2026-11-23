@@ -23,6 +23,7 @@ import {
   previewDevicesSchema,
   previewResultSchema,
   deviceHostInstallSchema,
+  deviceDeployCommandSchema,
   deviceHostForwardSchema,
   deviceGestureSchema,
   deviceButtonSchema,
@@ -70,6 +71,7 @@ const deviceTools = new Set([
   'devices',
   'device',
   'device_install',
+  'device_deploy',
   'device_forward',
   'simulator_tap',
   'simulator_swipe',
@@ -958,6 +960,23 @@ const tools: Array<
           },
         },
         {
+          name: 'device_deploy',
+          description:
+            'Build, install and launch Dovo Studio on a supported physical iPhone returned by devices. Start with a stable requestId, device id, full main commit and buildNumber. Use status with waitMs or cancel by requestId. A Mac owner must configure signing and the deployment checkout once.',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              action: { type: 'string' as const, enum: ['start', 'status', 'cancel'] },
+              requestId: { type: 'string' as const, minLength: 1, maxLength: 80 },
+              id: { type: 'string' as const },
+              revision: { type: 'string' as const, pattern: '^[a-f0-9]{40}$' },
+              buildNumber: { type: 'integer' as const, minimum: 1, maximum: 2100000000 },
+              waitMs: { type: 'integer' as const, minimum: 0, maximum: 30000 },
+            },
+            required: ['action', 'requestId'],
+          },
+        },
+        {
           name: 'device_forward',
           description:
             'Forward a dev-server port to an authorized SSH host. start needs hostId/localPort/remotePort; stop needs id. Up to one hour, loopback only. Physical phones need a reachable server address.',
@@ -1556,6 +1575,14 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
               id: input.id,
               artifactPath: input.artifactPath,
             }),
+          ),
+        )
+      case 'device_deploy':
+        writable()
+        return text(
+          await post(
+            '/api/device-hosts/deploy',
+            decode(deviceDeployCommandSchema, { ...input, taskId: task }),
           ),
         )
       case 'device_forward':

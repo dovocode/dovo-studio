@@ -25,7 +25,25 @@ export async function appleDeviceCommand(file: string, args: string[], options: 
   }
 }
 
-async function guiDeviceCommand(file: string, args: string[], options: Options) {
+export function appleGuiBuild(
+  file: string,
+  args: string[],
+  { env, ...options }: Options & { env: Record<string, string> },
+) {
+  return guiDeviceCommand(
+    '/usr/bin/env',
+    [...Object.entries(env).map(([name, value]) => `${name}=${value}`), file, ...args],
+    options,
+    true,
+  )
+}
+
+async function guiDeviceCommand(
+  file: string,
+  args: string[],
+  options: Options,
+  processGroup = false,
+) {
   const consoleUser = await exec('/usr/bin/stat', ['-f', '%u', '/dev/console'], options)
   if (consoleUser.stdout.trim() !== String(process.getuid?.()))
     throw new HttpError(
@@ -40,9 +58,37 @@ async function guiDeviceCommand(file: string, args: string[], options: Options) 
   let completed = false
   try {
     const script = join(directory, 'command.zsh')
+    // Build children include pnpm, Metro and Xcode. Give the whole build its own
+    // process group so cancellation also reaches those children.
+    const buildRunner = `
+const { spawn } = require('node:child_process')
+const { existsSync, writeFileSync } = require('node:fs')
+const [directory, pidFile, file, ...args] = process.argv.slice(1)
+if (!existsSync(directory)) process.exit(1)
+const child = spawn(file, args, { detached: true, stdio: 'inherit' })
+child.on('error', error => { console.error(error.message); process.exitCode = 1 })
+child.on('exit', code => { process.exitCode = code ?? 1 })
+if (child.pid) {
+  try { writeFileSync(pidFile, String(child.pid)) }
+  catch { process.kill(-child.pid, 'SIGTERM') }
+}
+`
+    const command = processGroup
+      ? quote([
+          '/usr/bin/env',
+          'ELECTRON_RUN_AS_NODE=1',
+          process.execPath,
+          '-e',
+          buildRunner,
+          directory,
+          pid,
+          file,
+          ...args,
+        ])
+      : quote([file, ...args])
     await writeFile(
       script,
-      `#!/bin/zsh -l\numask 077\n${quote([file, ...args])} > ${quote([output])} 2> ${quote([errors])} &\ndevice_child=$!\nprint -r -- "$device_child" > ${quote([pid])}\nif wait "$device_child"; then device_status=0; else device_status=$?; fi\nprint -r -- "$device_status" > ${quote([exit + '.tmp'])}\n/bin/mv ${quote([exit + '.tmp', exit])}\n`,
+      `#!/bin/zsh -l\numask 077\n${command} > ${quote([output])} 2> ${quote([errors])} &\ndevice_child=$!\n${processGroup ? '' : `print -r -- "$device_child" > ${quote([pid])}\n`}if wait "$device_child"; then device_status=0; else device_status=$?; fi\nprint -r -- "$device_status" > ${quote([exit + '.tmp'])}\n/bin/mv ${quote([exit + '.tmp', exit])}\n`,
       { mode: 0o700 },
     )
     options.signal?.throwIfAborted()
@@ -82,18 +128,26 @@ async function guiDeviceCommand(file: string, args: string[], options: Options) 
     }
     throw new HttpError(
       504,
-      'Apple device command timed out in the logged-in session. Check that the iPhone is unlocked, connected and trusts this Mac.',
+      processGroup
+        ? 'The iPhone build timed out in the Mac desktop session.'
+        : 'Apple device command timed out in the logged-in session. Check that the iPhone is unlocked, connected and trusts this Mac.',
     )
   } finally {
-    await cleanupCommand(directory, pid, completed)
+    await cleanupCommand(directory, pid, completed, processGroup)
   }
 }
 
-async function cleanupCommand(directory: string, pid: string, completed: boolean) {
+async function cleanupCommand(
+  directory: string,
+  pid: string,
+  completed: boolean,
+  processGroup: boolean,
+) {
   try {
     if (!completed) {
       const child = Number((await readFile(pid, 'utf8')).trim())
-      if (Number.isSafeInteger(child) && child > 1) process.kill(child, 'SIGTERM')
+      if (Number.isSafeInteger(child) && child > 1)
+        process.kill(processGroup ? -child : child, 'SIGTERM')
     }
   } catch (error) {
     if (

@@ -322,6 +322,52 @@ export const allToolRounds = {
   ],
   20: [
     {
+      id: 'deploy-dovo-iphone-nightly',
+      prompt: `Use Device Hub to build and deploy Dovo Studio commit ${'a'.repeat(40)} as build 1058 to my iPhone. Use request ID deploy-1058 and verify launch.`,
+      steps: [
+        step('devices'),
+        step(
+          'device_deploy',
+          {
+            id: 'remote:mac:physical-ios:phone-42',
+            requestId: 'deploy-1058',
+            revision: 'a'.repeat(40),
+            buildNumber: 1058,
+          },
+          'start',
+        ),
+        step('device_deploy', { requestId: 'deploy-1058' }, 'status'),
+      ],
+      responses: {
+        devices: {
+          host: 'coding-host',
+          diagnostics: [],
+          devices: [
+            {
+              id: 'remote:mac:physical-ios:phone-42',
+              name: 'iPhone',
+              kind: 'physical',
+              platform: 'ios',
+              state: 'booted',
+              runtime: 'phone-42',
+              iosDeploySupported: true,
+            },
+          ],
+        },
+        device_deploy: {
+          actions: {
+            start: { requestId: 'deploy-1058', status: 'running' },
+            status: {
+              requestId: 'deploy-1058',
+              status: 'succeeded',
+              installed: true,
+              launched: true,
+            },
+          },
+        },
+      },
+    },
+    {
       id: 'native-discovery-install',
       prompt:
         'Install signed device build output/Release-iphoneos/Dovo.app on my connected iPhone and verify launch. Discover devices first. Do not uninstall or erase data.',
