@@ -243,6 +243,14 @@ export const jobRunStepSchema = mutableStruct({
   error: Schema.optional(Schema.String),
 })
 export const jobRunSchema = mutableStruct({
+  mcpEvent: Schema.optional(
+    mutableStruct({
+      server: Schema.String,
+      name: Schema.String,
+      eventId: Schema.String,
+      timestamp: Schema.String,
+    }),
+  ),
   retryAt: Schema.optional(Schema.String),
   startupRetryCount: Schema.optional(Schema.Number),
   scheduledFor: Schema.optional(Schema.String),

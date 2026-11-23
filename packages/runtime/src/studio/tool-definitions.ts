@@ -50,7 +50,7 @@ const definitions = [
     part: 'automations',
     schema: studioAutomationsCommandSchema,
     description:
-      'Create/run workflows; automation_prepare offers review. Create/update need full automation. Bot task: data.botId selects an existing Bot; data.objective runs its isolated worker with Bot settings/reporting. monitor.url skips unchanged checks; policy sets budgets/quietHours. Manual run never enables triggers. run: stable requestId; cancel/retry/wait: run ID; runs: automation ID. source: exact owner words. dryRun tests automation with sample input; changes nothing. definition: credential-safe run draft; restore: run ID, expected/edited definitions; pauses triggers. Human gates stay human-only.',
+      'Create/run workflows; automation_prepare offers review. Create/update need full automation. Bot task: data.botId selects an existing Bot; data.objective runs its isolated worker with Bot settings/reporting. monitor.url skips unchanged checks; policy sets budgets/quietHours. Manual run never enables triggers. run: stable requestId; cancel/retry/wait: run ID; runs: automation ID. source: exact owner words. dryRun tests automation with sample input; changes nothing. previewFromEvent and runFromEvent use an unread MCP event from this thread with a saved Manual automation on this computer. Pass event with subscriptionId, offset and eventId from mcp_events read. Retry the same event to recover its run. definition: credential-safe run draft; restore: run ID, expected/edited definitions; pauses triggers. Human gates stay human-only.',
   },
   {
     part: 'browsers',

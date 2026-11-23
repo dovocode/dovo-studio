@@ -92,6 +92,15 @@ Deletion is blocked until active runs and their threads have stopped. It removes
 configuration, future triggers and webhook credential; existing threads and stored run history
 remain.
 
+## Run a manual automation with an MCP event
+
+An agent can preview and run a saved Manual automation using an unread
+[MCP event](mcp-apps.md#subscribe-to-mcp-events-from-a-thread) from its active thread. The event and
+automation must be on the same computer. The run shows the event name and source server on desktop,
+web, and mobile. To inspect the redacted event, load output for the first page of the run audit.
+Review steps still require a person. A preview never starts work, and a manual run leaves automatic
+triggers paused.
+
 ## GitHub event triggers
 
 Select **GitHub event** on the trigger node (desktop/web) or in the mobile editor. Enter the GitHub

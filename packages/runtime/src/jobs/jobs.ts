@@ -11,6 +11,7 @@ import {
   MAX_ATTACHMENT_BYTES,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
+import type { McpAutomationInput } from '../mcp-events/subscriptions.js'
 import { GithubTriggers } from './github-triggers.js'
 import { GithubEvents } from './github-events.js'
 import type { GitService } from '../scm/git/git.js'
@@ -21,14 +22,20 @@ import type { Activity } from '../storage/activity.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { CronExpressionParser } from 'cron-parser'
-import { jobRunSchema, type JobRun, type AutomationNode, type TaskSummary } from '@dovo/protocol'
+import {
+  jobRunSchema,
+  type JobRun,
+  type AutomationNode,
+  type TaskSummary,
+  type McpAutomationEvent,
+} from '@dovo/protocol'
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
 import { runClientEffect, startPolling } from '@dovo/client-runtime'
 import { WorkspaceStore } from '../storage/workspace.js'
 import { Tasks } from '../agents/tasks/tasks.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { validateAutomation } from './validation.js'
-import { taskStepObjective, triggerContext } from './step-input.js'
+import { taskStepObjective } from './step-input.js'
 import { readStepResult, stepResultInstructions } from './step-result.js'
 import { providerFailureKind } from '../agents/execution/provider-failure.js'
 import { botStepState, botStepTurn } from './bot-step.js'
@@ -407,9 +414,39 @@ export class Jobs {
     if (existing) return existing.id
     return this.start(id, key)
   }
+  startFromMcpEvent(
+    id: string,
+    taskId: string,
+    reference: McpAutomationEvent,
+    input: () => McpAutomationInput,
+  ) {
+    const key =
+      'manual-mcp-event:' +
+      createHash('sha256')
+        .update(JSON.stringify([taskId, reference.subscriptionId, reference.eventId]))
+        .digest('hex')
+    const existing = [...this.runs.values()].find(
+      (run) => run.automationId === id && run.deliveryKey === key,
+    )
+    if (existing) return existing.id
+    const payload = input()
+    const { name, eventId, timestamp } = payload.event
+    return this.start(id, key, payload, undefined, {
+      server: payload.server,
+      name,
+      eventId,
+      timestamp,
+    })
+  }
   /** The optional receipt callback runs in the run/delivery transaction, before launch.
    * It must be synchronous. WorkspaceStore restores its snapshot if any write fails. */
-  start(id: string, key?: string, triggerPayload?: unknown, commit?: (runId: string) => undefined) {
+  start(
+    id: string,
+    key?: string,
+    triggerPayload?: unknown,
+    commit?: (runId: string) => undefined,
+    mcpEvent?: JobRun['mcpEvent'],
+  ) {
     if (key?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     const flow = this.store.get().automations.find((flow) => flow.id === id)
     if (!flow) throw new HttpError(404, 'Automation not found')
@@ -431,6 +468,7 @@ export class Jobs {
       automationId: id,
       flow: structuredClone(flow),
       triggerPayload,
+      ...(mcpEvent ? { mcpEvent } : {}),
       deliveryKey: key,
       status: 'running',
       completedNodes: [],
@@ -764,9 +802,7 @@ export class Jobs {
         yield* this.tasks.sendEffect(
           botId,
           messageId,
-          run.triggerPayload === undefined
-            ? node.data.objective
-            : `${node.data.objective}\n\nExternal trigger data (event context):\n${triggerContext(run.triggerPayload)}`,
+          taskStepObjective(node.data.objective, { triggerPayload: run.triggerPayload }),
           [],
           false,
           // Like a person's message, a routine continues after a failed turn. A queue that
@@ -1095,7 +1131,10 @@ export class Jobs {
           .sort((a, b) => (a.finishedAt ?? a.createdAt).localeCompare(b.finishedAt ?? b.createdAt))
           .at(-1)
         const lastStatus = baseline?.lastStatus ?? previous?.status ?? 'completed'
-        const automatic = initial.deliveryKey && !initial.deliveryKey.startsWith('manual:')
+        const automatic =
+          initial.deliveryKey &&
+          !initial.deliveryKey.startsWith('manual:') &&
+          !initial.deliveryKey.startsWith('manual-mcp-event:')
         const unchanged =
           automatic &&
           lastStatus === 'completed' &&

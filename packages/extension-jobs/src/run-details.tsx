@@ -145,6 +145,11 @@ export function RunDetails({
         <RunAudit key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
       )}
       <div className="space-y-3 border-b p-4">
+        {run.mcpEvent && (
+          <p className="text-xs text-muted-foreground">
+            MCP event · {run.mcpEvent.name} · {run.mcpEvent.server}
+          </p>
+        )}
         {run.scheduledFor && (
           <p className="text-xs text-muted-foreground">
             Due {formatDateTime(run.scheduledFor)} · Enqueued {formatDateTime(run.createdAt)}

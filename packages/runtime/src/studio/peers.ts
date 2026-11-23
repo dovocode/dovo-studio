@@ -184,6 +184,13 @@ export async function routedStudioTool(
     throw new HttpError(403, 'This agent has read-only Studio Tools access')
   if (runtimeId && part === 'ui')
     throw new HttpError(403, 'Studio UI interaction stays on this machine')
+  if (
+    runtimeId &&
+    runtimeId !== 'local' &&
+    part === 'automations' &&
+    (input.action === 'previewFromEvent' || input.action === 'runFromEvent')
+  )
+    throw new HttpError(403, 'Choose an automation on the computer that received the MCP event')
   let restarted: ThreadWatchSummary | undefined
   const restartMonitor = () => {
     if (!restarted) return

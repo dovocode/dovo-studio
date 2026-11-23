@@ -83,6 +83,9 @@ export function runAudit(
       outputTruncated: event.outputTruncated === undefined ? undefined : !!event.outputTruncated,
     })),
     nextOffset: events.length > 100 ? offset + 100 : undefined,
+    ...(output && offset === 0 && run.mcpEvent
+      ? { mcpEventInput: redact(run.triggerPayload) }
+      : {}),
     ...(output && offset === 0
       ? {
           results: (run.steps ?? []).flatMap((step) => {

@@ -150,6 +150,12 @@ export const studioThreadsCommandSchema = Schema.Union([
 ])
 // Reuse the full definition in JSON Schema instead of advertising three copies.
 const automationDefinition = automationSchema.annotate({ identifier: 'Automation' })
+const mcpAutomationEvent = mutableStruct({
+  subscriptionId: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  offset: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+  eventId: maxValue(minValue(Schema.String, 1), 1024),
+})
+export type McpAutomationEvent = typeof mcpAutomationEvent.Type
 export const studioAutomationsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list') }),
   mutableStruct({ action: Schema.Literal('read'), id }),
@@ -176,6 +182,11 @@ export const studioAutomationsCommandSchema = Schema.Union([
     source: Schema.optional(routineSourceInputSchema),
   }),
   mutableStruct({ action: Schema.Literal('run'), id, requestId: id }),
+  mutableStruct({
+    action: Schema.Literals(['previewFromEvent', 'runFromEvent']),
+    id,
+    event: mcpAutomationEvent,
+  }),
   mutableStruct({ action: Schema.Literals(['runs', 'cancel', 'retry']), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),
 ])

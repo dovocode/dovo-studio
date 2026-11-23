@@ -43,6 +43,7 @@ import {
   applyBotResources,
   inheritedResourceProject,
   type McpServer,
+  type McpAutomationEvent,
   type Agent,
   type McpApp,
   type ArtifactFeedQuery,
@@ -475,19 +476,13 @@ export class McpApps {
       ).values(),
     ]
   }
-  eventCommand(
-    grant: RunPolicy,
-    input: unknown,
-    signal: AbortSignal,
-    runSignal: AbortSignal,
+  private eventSource(
+    grant: Pick<RunPolicy, 'taskId' | 'permissions' | 'codeDirectories'>,
     authorize: () => void,
   ) {
-    const command = mcpEventsCommand.safeParse(input)
-    if (!command.success) throw new HttpError(400, 'Invalid MCP Events command')
-    const bindings = grant.codeDirectories?.mcp ?? []
-    const source = (name: string) => {
+    return (name: string) => {
       authorize()
-      const binding = bindings.find((entry) => entry.name === name)
+      const binding = grant.codeDirectories?.mcp?.find((entry) => entry.name === name)
       if (!binding) throw new HttpError(403, 'MCP server is outside this run snapshot')
       const agent = resolveTaskAgent(this.store.taskSummary(grant.taskId), this.store.get().agents)
       if (!agent || !samePermissionPolicy(grant.permissions, agent))
@@ -517,6 +512,27 @@ export class McpApps {
           .digest('hex'),
       }
     }
+  }
+
+  eventAutomationInput(
+    grant: Pick<RunPolicy, 'taskId' | 'permissions' | 'codeDirectories'>,
+    reference: McpAutomationEvent,
+    authorize: () => void,
+  ) {
+    return this.events.automationInput(grant.taskId, reference, this.eventSource(grant, authorize))
+  }
+
+  eventCommand(
+    grant: RunPolicy,
+    input: unknown,
+    signal: AbortSignal,
+    runSignal: AbortSignal,
+    authorize: () => void,
+  ) {
+    const command = mcpEventsCommand.safeParse(input)
+    if (!command.success) throw new HttpError(400, 'Invalid MCP Events command')
+    const bindings = grant.codeDirectories?.mcp ?? []
+    const source = this.eventSource(grant, authorize)
     const servers = [...this.scopes.values()].flatMap((scope) =>
       scope.taskId === grant.taskId &&
       (scope.server.transport === 'stdio' || scope.server.acpTransport) &&

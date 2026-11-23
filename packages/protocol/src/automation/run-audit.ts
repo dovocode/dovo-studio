@@ -37,6 +37,8 @@ export const runAuditSchema = mutableStruct({
     }),
   ),
   nextOffset: Schema.optional(Schema.Number),
+  /** Redacted input from a recorded MCP event, loaded with first-page output. */
+  mcpEventInput: Schema.optional(Schema.Json),
   results: Schema.optional(
     mutableArray(
       mutableStruct({

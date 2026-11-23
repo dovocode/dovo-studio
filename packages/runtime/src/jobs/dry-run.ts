@@ -14,6 +14,7 @@ import {
 import { ROUTINE_SOURCE_TEXT_LIMIT } from './source-monitor.js'
 import { taskStepObjective, triggerContext } from './step-input.js'
 import { runtimeAutomationIssues } from './validation.js'
+import type { McpAutomationInput } from '../mcp-events/subscriptions.js'
 
 type DryRunStepKind = AutomationData['kind'] | 'source'
 type DryRunStep = AutomationDryRun['steps'][number]
@@ -46,6 +47,8 @@ export type DryRunContext = {
   now?: number
   /** The managed-policy message when webhook tasks are blocked. */
   webhookBlocked?: string
+  /** Sample input from an event explicitly selected for a manual run. */
+  mcpEvent?: McpAutomationInput
 }
 
 /**
@@ -59,11 +62,15 @@ export function dryRunAutomation(
   const { flow } = request
   const now = context.now ?? Date.now()
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')
-  const input = { ...automationDryRunDefaults(flow, now), ...request.input }
+  const input = {
+    ...automationDryRunDefaults(flow, now),
+    ...request.input,
+    ...(context.mcpEvent === undefined ? {} : { payload: context.mcpEvent }),
+  }
   const result: AutomationDryRun = {
     outcome: 'completed',
     trigger: trigger?.data.trigger ?? 'manual',
-    generated: !request.input,
+    generated: !request.input && context.mcpEvent === undefined,
     input,
     issues: runtimeAutomationIssues(flow, context.workspace),
     warnings: [],
@@ -85,7 +92,8 @@ export function dryRunAutomation(
   const kind = trigger.data.trigger
   const automatic = kind !== 'manual'
   // Real runs pass trigger data only for deliveries. Schedules pass their due time to Bot workers.
-  const triggerPayload = kind === 'webhook' || kind === 'github' ? input.payload : undefined
+  const triggerPayload =
+    context.mcpEvent ?? (kind === 'webhook' || kind === 'github' ? input.payload : undefined)
   const monitor = flow.monitor
   const source =
     monitor && input.sourceText
@@ -246,7 +254,11 @@ export function dryRunAutomation(
     }
     inputs.push({
       name: 'Instructions',
-      value: taskStepObjective(data.objective, { triggerPayload, ...source }),
+      value: taskStepObjective(data.objective, {
+        triggerPayload,
+        mcpEvent: context.mcpEvent,
+        ...source,
+      }),
     })
     if (data.resultSchema !== undefined)
       inputs.push({ name: 'Result schema', value: data.resultSchema })

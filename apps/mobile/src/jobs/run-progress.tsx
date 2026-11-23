@@ -272,6 +272,13 @@ export function RunProgress({
             {formatDateTime(run.createdAt)}
             {(run.attempt ?? 1) > 1 ? uiText(' · Attempt {value0}', { value0: run.attempt }) : ''}
           </Text>
+          {run.mcpEvent && (
+            <Text style={styles.muted}>
+              <InterfaceText values={{ value0: run.mcpEvent.name, value1: run.mcpEvent.server }}>
+                {'MCP event · {value0} · {value1}'}
+              </InterfaceText>
+            </Text>
+          )}
           {run.scheduledFor && (
             <Text style={styles.muted}>
               <InterfaceText

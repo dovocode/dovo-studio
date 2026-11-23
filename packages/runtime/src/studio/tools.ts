@@ -52,7 +52,8 @@ import { studioSessions } from './ui-sessions.js'
 import type { RoutineActor } from '../jobs/routine-provenance.js'
 import { dryRunAutomation } from '../jobs/dry-run.js'
 
-export type StudioPolicy = Pick<RunPolicy, 'permissions' | 'readOnly' | 'studioTools'>
+export type StudioPolicy = Pick<RunPolicy, 'permissions' | 'readOnly' | 'studioTools'> &
+  Partial<Pick<RunPolicy, 'taskId' | 'codeDirectories'>>
 
 /** A routine change from Studio Tools is always an agent change. Only a local run token that
  * names this thread can point at its owner message; forwarded and integration calls cannot. */
@@ -209,9 +210,16 @@ export function studioReadAction(part: string, action: unknown) {
         'answer-child-question',
       ].includes(String(action))) ||
     (part === 'automations' &&
-      ['list', 'read', 'definition', 'validate', 'dryRun', 'runs', 'wait'].includes(
-        String(action),
-      )) ||
+      [
+        'list',
+        'read',
+        'definition',
+        'validate',
+        'dryRun',
+        'previewFromEvent',
+        'runs',
+        'wait',
+      ].includes(String(action))) ||
     (part === 'browsers' &&
       ['list', 'snapshot', 'elements', 'screenshot', 'logs', 'certificate'].includes(
         String(action),
@@ -735,6 +743,19 @@ export async function studioTool(
     if (command.action === 'read') return { automation: flow }
     if (command.action === 'runs')
       return { runs: s.jobs.list().filter((run) => run.automationId === flow.id) }
+    if (command.action === 'previewFromEvent' || command.action === 'runFromEvent') {
+      if (policy?.taskId !== taskId || forwardedCaller)
+        throw new HttpError(403, 'MCP event input requires the local thread’s active run')
+      if (!flow.nodes.some(({ data }) => data.kind === 'trigger' && data.trigger === 'manual'))
+        throw new HttpError(400, 'Choose an automation with a Manual trigger')
+      const eventInput = () =>
+        s.mcpApps.eventAutomationInput({ ...policy, taskId }, command.event, check)
+      if (command.action === 'previewFromEvent')
+        return dryRunAutomation({ flow }, { workspace, mcpEvent: eventInput() })
+      const issues = validateFlow(s, flow, policy)
+      if (issues.length) throw new HttpError(400, issues.join('\n'))
+      return { id: s.jobs.startFromMcpEvent(flow.id, taskId, command.event, eventInput) }
+    }
     if (command.action !== 'run' && command.action !== 'enable')
       throw new HttpError(400, 'Unknown automation action')
     const issues = command.action === 'run' || command.enabled ? validateFlow(s, flow, policy) : []

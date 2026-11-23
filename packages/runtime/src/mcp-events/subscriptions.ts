@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type Database from 'better-sqlite3'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
-import type { McpServer } from '@dovo/protocol'
+import type { McpAutomationEvent, McpServer } from '@dovo/protocol'
 import { z } from 'zod'
 import { HttpError } from '../errors.js'
 import { McpEventsStdio } from './stdio.js'
@@ -61,6 +61,7 @@ type Subscription = {
   recent: string[]
 }
 type Source = { server: McpServer; fingerprint: string; cwd: string }
+export type McpAutomationInput = { source: 'mcp-event'; server: string; event: McpOccurrence }
 type Stream = { taskId: string; controller: AbortController; active: boolean; done?: Promise<void> }
 type Scope = {
   taskId: string
@@ -168,6 +169,29 @@ export class McpEventSubscriptions {
         'The MCP event source changed. Remove the old subscription before using the new source.',
       )
     return source
+  }
+
+  automationInput(
+    taskId: string,
+    reference: McpAutomationEvent,
+    source: Scope['source'],
+  ): McpAutomationInput {
+    const sub = this.load(taskId, reference.subscriptionId)
+    if (!sub) throw new HttpError(404, 'MCP event subscription not found in this thread')
+    if (source(sub.server).fingerprint !== sub.fingerprint)
+      throw new HttpError(409, 'The MCP event source changed. Read from a current subscription.')
+    const item = sub.inbox.find(({ offset }) => offset === reference.offset)
+    if (
+      !item ||
+      !('event' in item) ||
+      item.event.eventId !== reference.eventId ||
+      item.offset > sub.offered
+    )
+      throw new HttpError(
+        404,
+        'Read the event before using it. Acknowledged events cannot start a new run.',
+      )
+    return { source: 'mcp-event', server: sub.server, event: item.event }
   }
 
   private async client(scope: Scope, source: Source) {

@@ -95,6 +95,13 @@ Webhook-only sources require an HTTPS receiver or a relay that exposes poll or p
 uses poll and push and does not provision public callbacks. These subscriptions deliver data to the
 calling harness. They do not schedule a run when the thread is idle.
 
+To use a received event in a saved automation, call `studio_automations` before acknowledging the
+item. Choose a Manual automation on the same computer and pass the event's `subscriptionId`, item
+`offset`, and `eventId` to `previewFromEvent` or `runFromEvent`. The preview runs no steps. A run
+captures the event as external data and uses the automation's saved task settings, review gates, and
+budget. Retrying the same event for the same automation returns the existing run while its history
+is retained, even after the inbox item has been acknowledged.
+
 ### MCP Tasks
 
 [MCP Tasks](https://modelcontextprotocol.io/extensions/tasks/overview) is a separate capability for
