@@ -65,6 +65,51 @@ async function setup(persistent = false) {
   const status = () => s.pipelineWatch.command({ taskId: task.id, action: 'status' })
   return { f, runtime, s, taskId: task.id, read, watch, status }
 }
+
+it('registers a watch when a concurrent pipeline refresh verifies the same account', async () => {
+  const f = await setup()
+  f.read.mockRestore()
+  const { git, forgeWork } = f.s
+  const repository = 'team/project'
+  const url = `https://github.com/${repository}`
+  await git.command(f.f.directory, ['remote', 'add', 'origin', url])
+  vi.spyOn(git, 'github').mockResolvedValue(JSON.stringify({ nameWithOwner: repository, url }))
+  vi.spyOn(git, 'githubCredential').mockImplementation(async () => ({
+    host: 'github.com',
+    token: 'fixture-credential',
+  }))
+  const readingRun = Promise.withResolvers<void>()
+  const finishRead = Promise.withResolvers<void>()
+  vi.spyOn(git, 'githubAccount').mockImplementation(async (args) => {
+    const path = args[3]
+    if (path === 'user') return JSON.stringify({ id: 42, login: 'viewer' })
+    if (path?.includes('/jobs?')) return JSON.stringify({ jobs: [] })
+    const id = path?.match(/\/actions\/runs\/(7|8)$/)?.[1]
+    if (!id) throw new Error(`Unexpected GitHub request: ${path}`)
+    if (id === '7') {
+      readingRun.resolve()
+      await finishRead.promise
+    }
+    return JSON.stringify({
+      id: Number(id),
+      html_url: `${url}/actions/runs/${id}`,
+      status: 'in_progress',
+      head_sha: 'a'.repeat(40),
+    })
+  })
+  const registration = f.watch()
+  try {
+    await Promise.race([readingRun.promise, registration])
+    await forgeWork.request('repo', 'pipelines/detail', { id: '8', refresh: true, section: 'jobs' })
+  } finally {
+    finishRead.resolve()
+  }
+  await expect(registration).resolves.toMatchObject({
+    watches: [{ runId: '7', status: 'watching' }],
+  })
+  expect((await f.status()).watches).toMatchObject([{ runId: '7', status: 'watching' }])
+})
+
 it('shows only active pipelines in project info without erasing watch history', async () => {
   const f = await setup()
   f.read.mockImplementation(async (_repo, _operation, input) => {

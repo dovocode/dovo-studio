@@ -16,8 +16,9 @@ export function opaqueIdentity(value: unknown) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 type VerifiedAccount = { account: string; login?: string }
+type AccountAuthorization = { valid: boolean; account?: string }
 type Verification = {
-  valid: boolean
+  authorization: AccountAuthorization
   settled: boolean
   expires: number
   value: Promise<VerifiedAccount>
@@ -33,11 +34,17 @@ function verifyAccount(
   let cache = accounts.get(git)
   if (!cache) accounts.set(git, (cache = new Map()))
   const previous = cache.get(key)
-  if (previous?.valid && previous.expires > Date.now() && (!refresh || !previous.settled))
+  if (
+    previous?.authorization.valid &&
+    (!previous.settled || (!refresh && previous.expires > Date.now()))
+  )
     return previous
-  if (previous && refresh) previous.valid = false
+  // A refresh of the same credential shares revocation with reads already in flight.
+  const authorization: AccountAuthorization = previous?.authorization.valid
+    ? previous.authorization
+    : { valid: true }
   const entry: Verification = {
-    valid: true,
+    authorization,
     settled: false,
     expires: Date.now() + 600_000,
     value: Promise.resolve().then(load),
@@ -45,11 +52,21 @@ function verifyAccount(
   cache.set(key, entry)
   while (cache.size > 256) cache.delete(cache.keys().next().value!)
   void entry.value.then(
-    () => {
+    ({ account }) => {
+      if (
+        authorization.valid &&
+        authorization.account !== undefined &&
+        authorization.account !== account
+      ) {
+        authorization.valid = false
+        entry.authorization = { valid: true, account }
+      } else {
+        authorization.account = account
+      }
       entry.settled = true
     },
     () => {
-      entry.valid = false
+      authorization.valid = false
       entry.settled = true
       if (cache.get(key) === entry) cache.delete(key)
     },
@@ -100,7 +117,7 @@ export async function verifySourceContext(
   let verification: Verification | undefined
   validate = () => {
     validateBinding()
-    if (!authorized || verification?.valid === false)
+    if (!authorized || verification?.authorization.valid === false)
       throw new HttpError(
         401,
         'Authentication failed for this source. Check the account on this runtime and refresh.',
@@ -108,7 +125,7 @@ export async function verifySourceContext(
   }
   const unauthorized = () => {
     authorized = false
-    if (verification) verification.valid = false
+    if (verification) verification.authorization.valid = false
     if (connection && connection.provider !== 'github') connections.forgetCredentials(connection.id)
   }
   validate()

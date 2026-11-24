@@ -175,6 +175,9 @@ register replacement runs after subsequent pushes or reruns. Requests not to mon
 precedence, and unrelated runs are excluded. Failed registration must be reported as inactive
 monitoring, rather than described as an installed watch.
 
+Concurrent refreshes using the same verified forge account can complete independently. A rejected
+credential interrupts reads using it and registration requires the configured account to verify.
+
 Use `action: watch, url: "https://github.com/owner/repo/actions/runs/123"` for a direct pipeline
 link without a checkout or Studio project. GitHub Actions and GitLab pipeline URLs are supported,
 including configured private hosts. GitHub job links select their parent run. URL watches inherit
