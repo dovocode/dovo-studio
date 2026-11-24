@@ -270,6 +270,21 @@ await test('all release packages and signing use the verified source and Mac art
   )
 })
 
+await test('release jobs build the desktop app for the checked-out commit after restoring dependencies', () => {
+  for (const job of ['mac', 'platform']) {
+    const steps = release[job].steps
+    const dependencies = steps.findIndex(({ run }) => run?.includes('@dovo/desktop^...'))
+    const desktop = steps.findIndex(
+      ({ run }) => run?.trim() === 'pnpm --filter @dovo/desktop build',
+    )
+    const prepare = steps.findIndex(({ run }) => run?.trim() === 'pnpm run package:prepare-runtime')
+    assert.ok(
+      dependencies >= 0 && desktop > dependencies && prepare > desktop,
+      `${job} must build the desktop app outside the dependency cache before preparing packages`,
+    )
+  }
+})
+
 await test('legacy Stable tags use their historical Windows ARM64 checks and published feed digests', async () => {
   await fixture(async (directory) => {
     const tag = 'v0.0.8'

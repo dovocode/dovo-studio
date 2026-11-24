@@ -157,7 +157,9 @@ jobs:
       - uses: ./.github/actions/task-cache
         with:
           node: ${{ steps.setup.outputs.node }}
-      - run: pnpm exec vp run --cache --filter @dovo/api... --filter @dovo/desktop... build
+      - run: pnpm exec vp run --cache --filter @dovo/api... --filter "@dovo/desktop^..." build
+      - name: Build desktop for the verified source commit
+        run: pnpm --filter @dovo/desktop build
       - run: pnpm run package:prepare-runtime
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -267,7 +269,9 @@ jobs:
       - uses: ./.github/actions/task-cache
         with:
           node: ${{ steps.setup.outputs.node }}
-      - run: pnpm exec vp run --cache --filter @dovo/api... --filter @dovo/desktop... build
+      - run: pnpm exec vp run --cache --filter @dovo/api... --filter "@dovo/desktop^..." build
+      - name: Build desktop for the verified source commit
+        run: pnpm --filter @dovo/desktop build
       - run: pnpm run package:prepare-runtime
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

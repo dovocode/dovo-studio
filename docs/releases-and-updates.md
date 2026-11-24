@@ -144,8 +144,9 @@ Both workflows cache the pnpm package store and registry metadata. Metadata entr
 frozen-lockfile supply-chain checks remain enabled. Release jobs also cache Node headers and
 Electron packaging downloads, separated by job, operating system, architecture and Node version.
 Build and typecheck tasks use Vite Task's content-validated cache, scoped to exact Node versions and
-lockfiles. Tests, packaging, signing and notarization always run. The desktop content stamp accepts
-restored outputs with old timestamps and rejects outputs that differ from the current sources.
+lockfiles. Release jobs use that cache for the API and desktop dependencies, then build the desktop
+app for the checked-out commit. The desktop content stamp checks that commit along with the source
+and output hashes. Tests, packaging, signing and notarization always run.
 
 To inspect local cache hits, repeat `pnpm build` or `pnpm typecheck`, then run
 `pnpm exec vp run --last-details`. Compare warm GitHub job timings as well as restore/save costs
