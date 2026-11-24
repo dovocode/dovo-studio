@@ -37,6 +37,9 @@ export function journalProvider(
       try {
         await adapter.run({
           ...input,
+          onStartup: (step) => {
+            if (active()) input.onStartup?.(step)
+          },
           onPromptAccepted: () => {
             if (active()) {
               input.onPromptAccepted?.()

@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { redirectSystemPath } from '../app/+native-intent'
+import { threadReferenceLink } from '@dovo/protocol'
 it('opens pairing in Computers without making an automatic trust decision', () => {
   const params = new URLSearchParams({
     address: 'http://100.90.80.70:8787',
@@ -32,5 +33,20 @@ it('opens the normal workbench for cold and warm share-sheet launches', () => {
     for (const path of ['dovo://expo-sharing', '/expo-sharing']) {
       expect(redirectSystemPath({ path, initial })).toBe('/')
     }
+  }
+})
+
+it('routes cold and warm thread links through paired-computer resolution', () => {
+  const query = new URLSearchParams({ runtimeId: 'work-computer', threadId: 'thread / one & two' })
+  for (const initial of [true, false]) {
+    for (const path of [
+      threadReferenceLink('work-computer', 'thread / one & two'),
+      `/thread?${query}`,
+    ]) {
+      expect(redirectSystemPath({ path, initial })).toBe(`/open-thread?${query}`)
+    }
+    expect(redirectSystemPath({ path: '/thread/profile/ordinary', initial })).toBe(
+      '/thread/profile/ordinary',
+    )
   }
 })

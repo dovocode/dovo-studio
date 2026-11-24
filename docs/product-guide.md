@@ -442,20 +442,23 @@ pnpm --filter @dovo/mobile android
    runtime. **Forget computer** removes its saved connection and attempts to revoke access on the
    host. If Studio cannot confirm revocation, use **Trusted devices** on the host.
 
-Desktop and mobile use one authenticated change stream for the selected runtime's workspace and
-visible thread activity. Updates are batched briefly and assistant text is sent as appends rather
-than repeated history. Reconnecting resumes from a bounded replay cursor; server restarts or gaps
-load a fresh snapshot. Mobile closes the stream in the background and resumes on return without
-stopping the agent. Foreground streaming stays active; visible working durations keep seconds.
-Backgrounding pauses fleet refreshes, terminal sockets/retries, local activity polling and UI
-clocks. Widgets update only when their visible contents change. Snapshot and conversation caches
-batch writes and flush when leaving the foreground; the recent 500-message cache is preserved. Other
-computers’ task snapshots still refresh every 30 seconds while foregrounded, but their aggregate PR
-counts refresh every five minutes (or on manual refresh); open PR screens keep their normal updates.
-Live Activity progress updates at most once every 30 seconds and uses low-priority Apple delivery.
-Status changes, input requests and completion bypass batching. Unchanged Live Activities refresh
-every three minutes with a five-minute stale date. Low-priority relay delivery requires an updated
-notification relay; progress batching also works with older relays.
+Desktop, web, and mobile use one authenticated change stream for the selected runtime's workspace
+and visible thread activity. Updates are batched briefly and assistant text is sent as appends
+rather than repeated history. On current runtimes, reconnecting shows the latest thread state after
+catch-up in a single update. Server restarts or gaps load a fresh snapshot. Mobile closes the stream
+in the background and resumes on return without stopping the agent. Before a turn begins, the
+conversation can show the agent opening or resuming its session, connecting tools, or sending the
+message. This follows the provider's startup progress and clears when the agent accepts the message.
+Foreground streaming stays active; visible working durations keep seconds. Backgrounding pauses
+fleet refreshes, terminal sockets/retries, local activity polling and UI clocks. Widgets update only
+when their visible contents change. Snapshot and conversation caches batch writes and flush when
+leaving the foreground; the recent 500-message cache is preserved. Other computers’ task snapshots
+still refresh every 30 seconds while foregrounded, but their aggregate PR counts refresh every five
+minutes (or on manual refresh); open PR screens keep their normal updates. Live Activity progress
+updates at most once every 30 seconds and uses low-priority Apple delivery. Status changes, input
+requests and completion bypass batching. Unchanged Live Activities refresh every three minutes with
+a five-minute stale date. Low-priority relay delivery requires an updated notification relay;
+progress batching also works with older relays.
 
 Older servers and connections that block WebSockets fall back to HTTP polling. The current stream
 format omits unchanged metadata and ordering lists, and uses small string patches for growing
@@ -907,6 +910,10 @@ for history; older data can lack that field.
 The Working indicator in the thread overview and conversation shows seconds during the first minute.
 After that, it shows whole minutes on desktop, web and mobile.
 
+On iOS and Android, opening a Studio thread link from another app takes you to the thread on its
+paired computer. Cached threads can open while that computer is offline. If the computer has been
+removed from your pairings, Studio shows a message and gives you a way back to Threads.
+
 Agent configuration and task overrides offer **Supervised**, **Auto-accept edits**, **Auto**, **Full
 access**, and **Read only**. Existing saved `ask` and `workspace-write` values retain their behavior
 under the first two labels. Tasks can inherit their agent's mode. Mode changes start fresh provider
@@ -1106,6 +1113,11 @@ unsupported formats retain the download action. Files outside the checkout must 
 by the assistant in that thread. Preview URLs expire after 15 minutes, contain no device token, and
 stop working when the device is revoked. Opening a chat file never creates a checkout or runs its
 setup. HTTP runtime connections remain supported.
+
+In a thread’s **Files** workspace, use **Preview folder** on a folder row to browse from that
+folder. Open a file to preview it beside the tree on desktop, web, and wide mobile layouts. On a
+narrow screen, use **Browse files** to return to the same folder. Use the up action to go to the
+parent folder.
 
 The mobile Markdown dependency has a pnpm patch for live iOS accessibility geometry: wrapped
 paragraphs and links recompute their screen coordinates after scrolling, keyboard changes and native

@@ -1,5 +1,11 @@
 import type { SandboxSession } from '../../sandbox/launcher.js'
-import type { Agent, ProviderStatus, AgentDiscovery, ModelCatalog } from '@dovo/protocol'
+import type {
+  Agent,
+  ProviderStatus,
+  AgentDiscovery,
+  ModelCatalog,
+  ProviderStartupStep,
+} from '@dovo/protocol'
 import type { QuestionPrompt, QuestionAnswers, QuestionOutcomes } from '@dovo/protocol'
 export type AgentInput = {
   id: string
@@ -62,6 +68,7 @@ export interface AgentRun {
   outputSchema?: Record<string, unknown>
   /** Evidence that the provider accepted this prompt, distinct from session allocation. */
   onPromptAccepted?: () => void
+  onStartup?: (step: ProviderStartupStep) => void
   onSession: (id: string) => void
   onText: (text: string) => void
   /** Replace the last `previousLength` characters emitted by this execution with canonical text. */

@@ -375,12 +375,14 @@ export function TaskFiles({
   onExpand?: () => void
   expanded?: boolean
 }) {
+  const uiText = useInterfaceText()
   const { request, connected, connection } = useWorkspace()
   const { openExternalLink } = useStudioHost()
   const [readError, setReadError] = useApplicationState('')
   const [focusedLine, setFocusedLine] = useApplicationState<number | undefined>(initialFile?.line)
   const [focusRevision, setFocusRevision] = useApplicationState(0)
   const [selected, setSelected] = useApplicationState(initialFile?.path ?? '')
+  const [folder, setFolder] = useApplicationState('')
   const [showTree, setShowTree] = useApplicationState(false)
   const treeVisible = !headerActionsTarget || !selected || showTree
   const [checkoutId, setCheckoutId] = useApplicationState<string | undefined>(
@@ -397,12 +399,21 @@ export function TaskFiles({
   useEffect(() => {
     if (!reveal) return
     setCheckoutId(reveal.checkoutId)
+    setFolder('')
     setSelected(reveal.path)
     setFocusedLine(reveal.line)
     setFocusRevision((value) => value + 1)
     setFullRead(false)
     onFileSelected?.({ path: reveal.path, line: reveal.line, checkoutId: reveal.checkoutId })
   }, [reveal?.requestId])
+  const previewFolder = (path: string) => {
+    setFolder(path)
+    setSelected('')
+    setFullRead(false)
+    setFocusedLine(undefined)
+    setShowTree(!!path)
+    onFileSelected?.(null)
+  }
   const draftScope = JSON.stringify([
     connection?.runtimeId,
     connection?.address,
@@ -588,6 +599,7 @@ export function TaskFiles({
           variant="ghost"
           onClick={() => {
             setCheckoutId(undefined)
+            setFolder('')
             setSelected('')
             onFileSelected?.(null)
             setFocusedLine(undefined)
@@ -660,6 +672,7 @@ export function TaskFiles({
                   size="sm"
                   variant="outline"
                   onClick={() => {
+                    if (folder && !path.startsWith(`${folder}/`)) setFolder('')
                     setSelected(path)
                     setFullRead(true)
                     onFileSelected?.({ path, checkoutId })
@@ -701,7 +714,11 @@ export function TaskFiles({
         </div>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
-        <div className={selected ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'hidden'}>
+        <div
+          role="region"
+          aria-label={uiText('File preview')}
+          className={selected ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'hidden'}
+        >
           {selected ? (
             <>
               {readError && !drafts.get(draftKey) ? (
@@ -840,10 +857,12 @@ export function TaskFiles({
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
             <ProjectFileBrowser
-              key={draftScope}
+              key={JSON.stringify([draftScope, folder])}
               taskId={task.id}
               checkoutId={checkoutId}
               revision={revision}
+              folder={folder}
+              onPreviewFolder={previewFolder}
               selected={selected}
               changedFiles={checkoutId ? [] : task.files}
               onSelect={(path, line) => {

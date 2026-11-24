@@ -417,6 +417,7 @@ export function createAcpAdapter(): AgentAdapter {
         once: true,
       })
       try {
+        if (!reusable) run.onStartup?.('initializing')
         const initialization =
           reusable?.initialization ??
           (await initializeAcp(connection, {
@@ -456,7 +457,8 @@ export function createAcpAdapter(): AgentAdapter {
           throw new Error('This ACP harness does not support HTTP MCP servers')
         loading = !!run.sessionId && !reusable
         let session = reusable?.session
-        if (!session)
+        if (!session) {
+          run.onStartup?.(run.sessionId ? 'resuming-session' : 'opening-session')
           try {
             session = await acpControl(
               connection,
@@ -486,6 +488,7 @@ export function createAcpAdapter(): AgentAdapter {
               )
             throw error
           }
+        }
         if (!session) throw new Error('ACP session setup returned no session')
         loading = false
         const id =
@@ -686,6 +689,7 @@ export function createAcpAdapter(): AgentAdapter {
               }),
             ]
           : []
+        run.onStartup?.('sending-prompt')
         const result = await Promise.race([
           rpc.request(methods.agent.session.prompt, prompt),
           exited,

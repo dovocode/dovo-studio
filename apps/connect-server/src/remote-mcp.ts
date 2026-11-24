@@ -23,6 +23,7 @@ import type { AccountStore, Login } from './store.js'
 import { RemoteMcpMailbox } from './remote-mcp-mailbox.js'
 import { RemoteMcpStore } from './remote-mcp-store.js'
 import { remoteMcpConsent, remoteMcpManage } from './remote-mcp-pages.js'
+import { nativeRemoteMcpRequest } from './remote-mcp-events.js'
 
 const computerId = /^[a-zA-Z0-9_-]{1,200}$/
 const pkceChallenge = /^[a-zA-Z0-9_-]{43}$/
@@ -378,7 +379,8 @@ export class RemoteMcp {
     if (req.headers.origin && req.headers.origin !== this.origin)
       throw new RequestError(403, 'This origin cannot call the MCP endpoint directly.')
     const token = bearerToken(req)
-    if (!this.store.token(id, token)) {
+    const grant = this.store.token(id, token)
+    if (!grant) {
       res.setHeader(
         'WWW-Authenticate',
         `Bearer resource_metadata="${this.origin}/.well-known/oauth-protected-resource/mcp/${id}", scope="${scope}"`,
@@ -393,50 +395,76 @@ export class RemoteMcp {
     const controller = new AbortController()
     const abort = () => controller.abort()
     res.once('close', abort)
-    const server = new Server(
-      { name: 'dovo-connect', version: '1.0.0' },
-      { capabilities: { tools: {} } },
-    )
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    })
+    let server: Server | undefined
+    const activeGrant = () => {
+      const active = this.store.token(id, token)
+      if (!active) throw new RequestError(403, 'This MCP grant is no longer active.')
+      return active
+    }
+    const callTool = async ({
+      name,
+      arguments: args,
+    }: (typeof CallToolRequestSchema)['_output']['params']) => {
+      try {
+        const active = activeGrant()
+        const input = Schema.decodeUnknownSync(remoteMcpCommandSchema, {
+          onExcessProperty: 'error',
+        })({
+          part: byName.get(name),
+          command: args ?? {},
+        })
+        const data = await this.mailbox.call(active, input, controller.signal)
+        return { content: [{ type: 'text' as const, text: JSON.stringify(data ?? null) }] }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                error instanceof RequestError
+                  ? error.message
+                  : 'Invalid or unavailable Dovo Studio tool request.',
+            },
+          ],
+          isError: true,
+        }
+      }
+    }
     try {
+      if (
+        await nativeRemoteMcpRequest(req, res, body, {
+          eventsEnabled: this.mailbox.eventsEnabled(grant.installation),
+          tools: Object.values(tools),
+          callTool,
+          poll: async (command) => {
+            const page = await this.mailbox.call(
+              activeGrant(),
+              { part: 'events', command },
+              controller.signal,
+            )
+            activeGrant()
+            return page
+          },
+        })
+      )
+        return
+      server = new Server(
+        { name: 'dovo-connect', version: '1.0.0' },
+        { capabilities: { tools: {} } },
+      )
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      })
       server.setRequestHandler(ListToolsRequestSchema, async () => ({
         tools: Object.values(tools),
       }))
-      server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
-        try {
-          const grant = this.store.token(id, token)
-          if (!grant) throw new RequestError(403, 'This MCP grant is no longer active.')
-          const input = Schema.decodeUnknownSync(remoteMcpCommandSchema, {
-            onExcessProperty: 'error',
-          })({
-            part: byName.get(params.name),
-            command: params.arguments ?? {},
-          })
-          const data = await this.mailbox.call(grant, input, controller.signal)
-          return { content: [{ type: 'text', text: JSON.stringify(data ?? null) }] }
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text:
-                  error instanceof RequestError
-                    ? error.message
-                    : 'Invalid or unavailable Dovo Studio tool request.',
-              },
-            ],
-            isError: true,
-          }
-        }
-      })
+      server.setRequestHandler(CallToolRequestSchema, async ({ params }) => callTool(params))
       await server.connect(transport)
       await transport.handleRequest(req, res, body)
     } finally {
       res.off('close', abort)
-      await server.close()
+      await server?.close()
     }
   }
 }

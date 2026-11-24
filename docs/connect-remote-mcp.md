@@ -45,6 +45,32 @@ An older runtime can stay connected to Connect. It will appear on the MCP manage
 supports remote MCP and opts in. If the computer disconnects between launch and reply, check for the
 thread or retry with its original request ID.
 
+The runtime starts the next queued call after a reply. A result can still reach Connect after the
+runtime's operation authorization window expires, while the original request is waiting and the
+app's grant is active.
+
+## Poll for thread events
+
+With Threads enabled in Studio Tools, an OAuth app with read or run access can discover the
+`io.modelcontextprotocol/events` extension using MCP `2026-07-28` on the same server URL.
+`events/list` advertises two event types with poll delivery:
+
+- `thread.turn_finished` provides the thread, project and turn IDs and the outcome (`completed`,
+  `failed`, or `cancelled`).
+- `thread.needs_input` provides the thread, project and request IDs and the kind (`question` or
+  `approval`). Review and respond in Studio.
+
+Start each subscription with `events/poll` and a null cursor to read from the current position. Pass
+the returned cursor on the next poll. Optional `threadIds` and `projectIds` under `arguments` narrow
+the subscription. Start a new cursor when changing filters. Use the stable `eventId` to deduplicate
+results when retrying a poll. When `hasMore` is true, poll again with the new cursor before waiting
+for `nextPollMs`.
+
+The runtime keeps the latest 1,000 events in its local database across restarts. The feed carries
+IDs and status only. It returns `truncated: true` when a cursor no longer covers the retained
+history, as can happen after a restore or a long disconnect. Read the thread's current state if you
+need to reconcile missed updates. Older runtimes continue to offer their existing MCP tools.
+
 ## Verify
 
 ```sh

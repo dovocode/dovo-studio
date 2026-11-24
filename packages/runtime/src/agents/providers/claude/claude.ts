@@ -583,6 +583,7 @@ export function createClaudeAdapter(): AgentAdapter {
       await close(previous)
     }
     let session: WarmClaude
+    let initialized = !!reusable
     if (reusable) session = reusable
     else {
       const input = new MessageQueue()
@@ -660,13 +661,16 @@ export function createClaudeAdapter(): AgentAdapter {
           claimed?.close()
           run.signal.throwIfAborted()
         }
+        if (!claimed) run.onStartup?.(run.sessionId ? 'resuming-session' : 'opening-session')
         stream = claimed ?? query({ prompt: input, options })
         if (claimed) {
+          run.onStartup?.('connecting-tools')
           const result = await nativeWait(stream.setMcpServers(mcpServers), run.signal, 15_000)
           if (Object.keys(result.errors).length) {
             stream.close()
             throw new Error('Claude prewarm MCP binding failed')
           }
+          initialized = true
         }
         if (!run.compact && !run.sandbox)
           spares.remember(() => {
@@ -723,9 +727,14 @@ export function createClaudeAdapter(): AgentAdapter {
       session.consumer = (async () => {
         try {
           for await (const message of stream) {
-            if (message.type === 'system' && message.subtype === 'init')
+            if (message.type === 'system' && message.subtype === 'init') {
               capabilities.unanswered =
                 message.capabilities?.includes('ask_user_question_unanswered_v1') ?? false
+              if (!initialized) {
+                initialized = true
+                run.onStartup?.('sending-prompt')
+              }
+            }
             if (session.closed) break
             const turn = session.turn
             session.backgroundTasks.accept(message)
@@ -921,6 +930,7 @@ export function createClaudeAdapter(): AgentAdapter {
         (async () => {
           // Rebind attempt ownership without restarting the provider or removing host settings.
           if (session.mcpBinding !== mcpBinding) {
+            run.onStartup?.('connecting-tools')
             const result = await nativeWait(
               session.stream.setMcpServers(mcpServers),
               run.signal,
@@ -939,6 +949,7 @@ export function createClaudeAdapter(): AgentAdapter {
           if (!turn) throw new Error('Claude turn is unavailable')
           turn.pendingPrompts.add(prompt.uuid)
           turn.submitted = true
+          if (initialized) run.onStartup?.('sending-prompt')
           session.input.push(prompt)
           if (!run.compact)
             run.onSteer?.(async (input) => {
@@ -1018,6 +1029,7 @@ export function createClaudeAdapter(): AgentAdapter {
       const binding: ClaudeBinding = { activeRun: () => run, capabilities }
       try {
         const goalInput = run.goal ? new MessageQueue() : undefined
+        run.onStartup?.(run.sessionId ? 'resuming-session' : 'opening-session')
         stream = query({
           prompt: goalInput ?? (run.attachments?.length ? claudeInput(run) : run.prompt),
           options: claudeOptions(run, controller, binding, command, configFile.path),
@@ -1030,9 +1042,11 @@ export function createClaudeAdapter(): AgentAdapter {
         let compacted = false
         let completed = false
         for await (const message of stream) {
-          if (message.type === 'system' && message.subtype === 'init')
+          if (message.type === 'system' && message.subtype === 'init') {
             capabilities.unanswered =
               message.capabilities?.includes('ask_user_question_unanswered_v1') ?? false
+            run.onStartup?.('sending-prompt')
+          }
           handleMessage(run, message, () => (compacted = true))
           if (message.type === 'result') completed = true
         }

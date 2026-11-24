@@ -99,6 +99,7 @@ export class Questions {
       /** Undefined without a receipt; null for a receipt written before prompt identity. */
       questionPrompt?: (id: string) => string | null | undefined
     },
+    private onRequested?: (taskId: string, requestId: string) => void,
   ) {}
   private secrets?: Pick<SecretReferences, 'value' | 'invalidate'>
   setSecretReferences(secrets: Pick<SecretReferences, 'value' | 'invalidate'>) {
@@ -142,6 +143,7 @@ export class Questions {
         { ...request.info, status: 'requested' },
         `question:${id}`,
       )
+      this.onRequested?.(taskId, id)
     }
   }
   list() {
@@ -221,6 +223,7 @@ export class Questions {
       },
       `question:${id}`,
     )
+    if (info.routing !== 'parent') this.onRequested?.(taskId, id)
     return new Promise<QuestionAnswers | null>((resolve) => {
       const finish = (
         answers: QuestionAnswers | null,
@@ -301,6 +304,7 @@ export class Questions {
         } catch (error) {
           // A full/stopped coordinator must never strand a question hidden from the human.
           this.requests.get(id)!.info = { ...info, routing: 'human' }
+          this.onRequested?.(taskId, id)
           console.error('Could not route child question to parent', error)
         }
       }

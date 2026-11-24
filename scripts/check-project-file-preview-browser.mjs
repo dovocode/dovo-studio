@@ -302,6 +302,30 @@ try {
     'Loaded folders remain browsable offline',
   )
   assert.equal(await page.evaluate(() => window.folderCalls.length), beforeReopen)
+  await page.evaluate(() => {
+    window.runtime.connected = true
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await page.getByRole('button', { name: 'Preview folder src', exact: true }).click()
+  await page.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  const parentFolder = page.getByRole('button', { name: 'Go to parent folder', exact: true })
+  assert.equal(await parentFolder.evaluate((element) => element === document.activeElement), true)
+  assert.equal(await page.getByRole('button', { name: 'root.txt', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Preview folder src/nested', exact: true }).click()
+  const nestedFile = page.getByRole('button', { name: 'src/nested/deep.ts', exact: true })
+  await nestedFile.click()
+  await page.getByTestId('file-preview').waitFor()
+  assert.equal(await nestedFile.isVisible(), true)
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some((item) => item.path.endsWith('/read') && item.input.path === 'src'),
+    ),
+    false,
+  )
+  await parentFolder.click()
+  await page.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  await parentFolder.click()
+  await page.getByRole('button', { name: 'root.txt', exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Project text/image previews, retry, format switching, external opening and read-only checks passed.',

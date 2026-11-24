@@ -8,7 +8,10 @@ import { AccountStore } from '../../../../apps/connect-server/src/store.js'
 import { createConnectServer } from '../../../../apps/connect-server/src/server.js'
 import { fixture } from '../testing/fixture.js'
 import { startRuntime } from '../index.js'
+import { remoteMcpTool } from '../studio/remote-mcp.js'
 import type { AgentAdapter } from '../agents/execution/types.js'
+import { McpEventsClient } from '../mcp-events/client.js'
+import { decode, mcpServerSchema, questionPromptSchema } from '@dovo/protocol'
 
 const cleanup: (() => void | Promise<void>)[] = []
 afterEach(async () => {
@@ -17,13 +20,17 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-it('links an OAuth app to a Connect computer, starts one agent on retry and revokes access', async () => {
+it('links an OAuth app to Connect, starts one agent on retry, polls events, and revokes access', async () => {
   const workspace = await fixture()
   cleanup.push(workspace.cleanup)
   const accounts = new AccountStore(':memory:')
   cleanup.push(() => accounts.db.close())
   let connect: HttpServer
-  const front = createServer((req, res) => connect.emit('request', req, res))
+  let replies = 0
+  const front = createServer((req, res) => {
+    if (req.url === '/v1/internet/host/mcp/reply') replies++
+    connect.emit('request', req, res)
+  })
   front.listen(0, '127.0.0.1')
   await once(front, 'listening')
   const address = front.address()
@@ -59,9 +66,20 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
   s.preferences.save({ enableStudioThreads: true, enableStudioAutomations: true })
   const ran = vi.fn<AgentAdapter['run']>(async (run) => {
     run.onText('Remote MCP answer')
-    if (run.prompt.includes('One follow-up') && !run.signal.aborted)
-      await new Promise<void>((resolve) =>
-        run.signal.addEventListener('abort', () => resolve(), { once: true }),
+    if (run.prompt.includes('One follow-up'))
+      await run.ask(
+        decode(questionPromptSchema, {
+          title: 'Private question title',
+          questions: [
+            {
+              id: 'choice',
+              header: 'Choice',
+              question: 'Private question text',
+              custom: true,
+              options: [],
+            },
+          ],
+        }),
       )
   })
   vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run: ran })
@@ -199,10 +217,56 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
     'dovo_threads',
     'dovo_automations',
   ])
+  const eventsClient = (accessToken: string) =>
+    new McpEventsClient(
+      decode(mcpServerSchema, {
+        name: 'dovo-connect',
+        enabled: true,
+        transport: 'http',
+        headerValues: { Authorization: 'Bearer ' + accessToken },
+        url: resource,
+      }),
+    )
+  const eventSource = eventsClient(token.access_token)
+  const signal = () => AbortSignal.timeout(8000)
+  const catalog = await eventSource.list(signal())
+  expect(catalog?.map(({ name, delivery }) => ({ name, delivery }))).toEqual([
+    { name: 'thread.turn_finished', delivery: ['poll'] },
+    { name: 'thread.needs_input', delivery: ['poll'] },
+  ])
+  const [turnFinished, needsInput] = catalog ?? []
+  if (!turnFinished || !needsInput) throw new Error('Connect did not advertise both event types')
+  const [turnsAtStart, inputAtStart] = await Promise.all([
+    eventSource.poll(turnFinished, { name: turnFinished.name, cursor: null }, signal()),
+    eventSource.poll(needsInput, { name: needsInput.name, cursor: null }, signal()),
+  ])
+  expect(turnsAtStart.events).toEqual([])
+  expect(inputAtStart.events).toEqual([])
   const call = async (arguments_: Record<string, unknown>) => {
     const response = await client.callTool({ name: 'dovo_threads', arguments: arguments_ })
     expect(response).not.toMatchObject({ isError: true })
     return JSON.parse((response.content as { text: string }[])[0].text)
+  }
+  const completed = await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      await call({ action: 'list' })
+      return performance.now()
+    }),
+  )
+  expect(Math.max(...completed) - Math.min(...completed)).toBeLessThan(3000)
+
+  const realNow = Date.now
+  const clock = vi.spyOn(Date, 'now')
+  s.peers.internet.registerRemoteMcp(async (_claim, authorize) => {
+    authorize()
+    clock.mockReturnValue(realNow() + 13_000)
+    return { lateResult: true }
+  })
+  try {
+    expect(await call({ action: 'list' })).toEqual({ lateResult: true })
+  } finally {
+    clock.mockRestore()
+    s.peers.internet.registerRemoteMcp((claim, authorize) => remoteMcpTool(s, claim, authorize))
   }
   const launch = {
     action: 'create',
@@ -234,6 +298,32 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
   expect(JSON.stringify(await call({ action: 'read', id: admitted.id }))).toContain(
     'Remote MCP answer',
   )
+  await vi.waitFor(() => expect(s.store.taskSummary(admitted.id).status).toBe('review'))
+  const turnPoll = {
+    name: turnFinished.name,
+    cursor: turnsAtStart.cursor,
+    arguments: { projectIds: ['repo'], threadIds: [admitted.id] },
+  }
+  const [finished, excluded] = await Promise.all([
+    eventSource.poll(turnFinished, turnPoll, signal()),
+    eventSource.poll(
+      turnFinished,
+      {
+        ...turnPoll,
+        arguments: { projectIds: ['different-project'], threadIds: [admitted.id] },
+      },
+      signal(),
+    ),
+  ])
+  expect(finished.events).toHaveLength(1)
+  expect(finished.events[0]?.data).toEqual({
+    threadId: admitted.id,
+    projectId: 'repo',
+    turnId: s.store.taskSummary(admitted.id).history.latestTurn?.id,
+    outcome: 'completed',
+  })
+  expect(excluded.events).toEqual([])
+  expect(excluded.cursor).toBe(finished.cursor)
   await call({
     action: 'send',
     id: admitted.id,
@@ -243,6 +333,24 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
   expect(
     s.store.task(admitted.id).messages.filter((message) => message.id === 'external-follow-up-1'),
   ).toHaveLength(1)
+  await vi.waitFor(() => expect(s.questions.list()).toHaveLength(1))
+  const inputPoll = {
+    name: needsInput.name,
+    cursor: inputAtStart.cursor,
+    arguments: { threadIds: [admitted.id] },
+  }
+  const [input, repeated] = await Promise.all([
+    eventSource.poll(needsInput, inputPoll, signal()),
+    eventSource.poll(needsInput, inputPoll, signal()),
+  ])
+  expect(input.events).toHaveLength(1)
+  expect(input.events[0]?.data).toEqual({
+    threadId: admitted.id,
+    projectId: 'repo',
+    requestId: s.questions.list()[0]?.id,
+    kind: 'question',
+  })
+  expect(repeated).toEqual(input)
 
   await call({ action: 'stop', id: admitted.id })
   await vi.waitFor(() => expect(s.store.task(admitted.id).activeRunId).toBeUndefined())
@@ -276,6 +384,9 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
     (await request(endpoint, { headers: { Authorization: 'Bearer ' + rotated.access_token } }))
       .status,
   ).toBe(401)
+  await expect(
+    eventsClient(rotated.access_token).poll(turnFinished, turnPoll, signal()),
+  ).rejects.toThrow('Authorize this MCP connection')
   const readSignIn = await authorizeBrowser(issuer + '/authorize?' + params.toString())
   const readConsent = await browser(
     '/mcp/approve',
@@ -306,7 +417,46 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
   expect((await readClient.callTool({ name: 'dovo_threads', arguments: launch })).isError).toBe(
     true,
   )
-  const disabled = await configure(false)
+  const readEvents = await eventsClient(readToken.access_token).poll(
+    turnFinished,
+    { ...turnPoll, cursor: finished.cursor },
+    signal(),
+  )
+  expect(readEvents.events.map(({ data }) => data)).toEqual([
+    expect.objectContaining({ threadId: admitted.id, outcome: 'cancelled' }),
+  ])
+  let started!: () => void
+  const inProgress = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  let completeRevokedCall!: () => void
+  const finish = new Promise<void>((resolve) => {
+    completeRevokedCall = resolve
+  })
+  s.peers.internet.registerRemoteMcp(async (_claim, authorize) => {
+    authorize()
+    started()
+    await finish
+    return { revokedResult: true }
+  })
+  const cancel = new AbortController()
+  const blocked = readClient
+    .callTool({ name: 'dovo_threads', arguments: { action: 'list' } }, undefined, {
+      signal: cancel.signal,
+      timeout: 5000,
+    })
+    .catch((error: unknown) => error)
+  const beforeDisable = replies
+  const disabled = await Promise.race([
+    inProgress.then(() => configure(false)),
+    blocked.then(() => {
+      throw new Error('MCP call ended before reaching its handler')
+    }),
+  ]).finally(completeRevokedCall)
+  await s.peers.internet.drain()
+  cancel.abort()
+  await blocked
+  expect(replies).toBe(beforeDisable)
   expect(disabled.status).toBe(200)
   expect(await disabled.json()).toMatchObject({
     enabled: true,
@@ -318,4 +468,4 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
     (await request(endpoint, { headers: { Authorization: 'Bearer ' + readToken.access_token } }))
       .status,
   ).toBe(401)
-}, 40000)
+}, 60000)

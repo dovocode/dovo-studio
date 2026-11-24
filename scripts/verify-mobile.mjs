@@ -1,5 +1,7 @@
 import { startRuntime } from '../packages/runtime/dist/index.js'
 import { preparePairingFlow, startPairingControl } from './ci/mobile-pairing.mjs'
+import { startMobileRecoveryNetwork } from './ci/mobile-recovery-network.mjs'
+import { threadReferenceLink } from '../packages/protocol/dist/index.js'
 import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir, networkInterfaces } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -9,7 +11,8 @@ import { promisify } from 'node:util'
 import { createServer, request as httpRequest } from 'node:http'
 
 const device = process.argv[2]
-const releaseSmoke = process.argv.includes('--release-smoke')
+const androidRecovery = process.argv.includes('--android-recovery')
+const releaseSmoke = androidRecovery || process.argv.includes('--release-smoke')
 const terminalOnly = process.argv.includes('--terminal-only')
 const composerLayoutOnly = process.argv.includes('--composer-layout-only')
 const composerOnly = process.argv.includes('--composer-only') || composerLayoutOnly
@@ -25,19 +28,21 @@ const modeSaves = []
 const settingsSaves = []
 const jobAttempts = []
 const jobStartIds = []
-if (!device) throw new Error('Pass an iOS simulator UUID with the native app installed')
-const appData = execFileSync(
-  'xcrun',
-  ['simctl', 'get_app_container', device, 'com.dovo.studio', 'data'],
-  { encoding: 'utf8' },
-).trim()
-await writeFile(join(appData, 'Documents', 'dovo-attachment.txt'), 'Attachment fixture context')
+if (!device) throw new Error('Pass a simulator or emulator ID with the native app installed')
+const appData = androidRecovery
+  ? undefined
+  : execFileSync('xcrun', ['simctl', 'get_app_container', device, 'com.dovo.studio', 'data'], {
+      encoding: 'utf8',
+    }).trim()
+if (appData)
+  await writeFile(join(appData, 'Documents', 'dovo-attachment.txt'), 'Attachment fixture context')
 const directory = await mkdtemp(join(tmpdir(), 'dovo-mobile-check-'))
-// Pairing deliberately rejects phone-local loopback addresses. Use the host's actual
-// interface even on a simulator so the release gate exercises the supported HTTP path.
-const fixtureHost = Object.values(networkInterfaces())
-  .flat()
-  .find((entry) => entry && entry.family === 'IPv4' && !entry.internal)?.address
+// iOS pairs over the host's actual interface. Android reaches host loopback at 10.0.2.2.
+const fixtureHost = androidRecovery
+  ? '127.0.0.1'
+  : Object.values(networkInterfaces())
+      .flat()
+      .find((entry) => entry && entry.family === 'IPv4' && !entry.internal)?.address
 if (!fixtureHost) throw new Error('Native mobile verification requires a LAN or VPN IPv4 address')
 const runtime = await startRuntime({
   databasePath: ':memory:',
@@ -48,6 +53,7 @@ const runtime = await startRuntime({
 let approve
 let settingsProxy
 let pairingControl
+let recoveryNetwork
 let terminalConnected = false
 const composerMessageAttempts = []
 const composerRetryAttempts = []
@@ -222,18 +228,25 @@ try {
       },
     })
   }
-  pairingControl = await startPairingControl(runtime.services.pairing)
+  if (androidRecovery) recoveryNetwork = await startMobileRecoveryNetwork(runtime.port)
+  pairingControl = await startPairingControl(runtime.services.pairing, recoveryNetwork)
+  const fixtureDeviceName = androidRecovery ? 'Dovo Android test' : 'Dovo simulator test'
+  const runtimeAddress = recoveryNetwork
+    ? `http://10.0.2.2:${recoveryNetwork.port}`
+    : `http://${fixtureHost}:${settingsProxy?.port ?? runtime.port}`
   // Approve only this isolated fixture's explicitly named test device.
   approve = setInterval(() => {
     for (const terminal of runtime.services.terminals.list()) {
       if (runtime.services.terminals.get(terminal.id).listeners.size > 0) terminalConnected = true
     }
     for (const request of runtime.services.pairing.pending())
-      if (request.name === 'Dovo simulator test') runtime.services.pairing.approve(request.id, true)
+      if (request.name === fixtureDeviceName) runtime.services.pairing.approve(request.id, true)
   }, 250)
   let flowPath = resolve(
     releaseSmoke
-      ? 'apps/mobile/maestro/release-smoke.yaml'
+      ? androidRecovery
+        ? 'apps/mobile/maestro/android-recovery.yaml'
+        : 'apps/mobile/maestro/release-smoke.yaml'
       : settingsOnly
         ? 'apps/mobile/maestro/settings-save.yaml'
         : modesOnly
@@ -278,13 +291,14 @@ try {
   const fixtureFlows = join(directory, 'flows')
   await mkdir(fixtureFlows)
   const prepareFlow = (flow) =>
-    preparePairingFlow(flow)
-      .replace(
-        /^(\s*)id: Tab (.+)$/gm,
-        (_match, indent, label) =>
-          `${indent}text: ${label}\n${indent}childOf:\n${indent}  text: Tab Bar`,
-      )
-      .replaceAll(resolve('apps/mobile/maestro') + '/', fixtureFlows + '/')
+    (androidRecovery
+      ? flow
+      : preparePairingFlow(flow).replace(
+          /^(\s*)id: Tab (.+)$/gm,
+          (_match, indent, label) =>
+            `${indent}text: ${label}\n${indent}childOf:\n${indent}  text: Tab Bar`,
+        )
+    ).replaceAll(resolve('apps/mobile/maestro') + '/', fixtureFlows + '/')
   for (const name of await readdir('apps/mobile/maestro'))
     if (name.endsWith('.yaml'))
       await writeFile(
@@ -307,9 +321,12 @@ try {
         '--debug-output',
         join(diagnostics, 'maestro'),
         '-e',
-        `RUNTIME_ADDRESS=http://${fixtureHost}:${settingsProxy?.port ?? runtime.port}`,
+        `RUNTIME_ADDRESS=${runtimeAddress}`,
         '-e',
         `PAIRING_CONTROL_ADDRESS=${pairingControl.address}`,
+        ...(releaseSmoke
+          ? ['-e', `THREAD_LINK=${threadReferenceLink(runtime.services.runtimeId, 'mobile-task')}`]
+          : []),
         entrypoint,
       ],
       { stdio: 'inherit' },
@@ -590,7 +607,15 @@ try {
     )
       throw new Error('Saving task settings changed the base agent or submitted a message')
   }
-  if (releaseSmoke) {
+  if (androidRecovery) {
+    const task = runtime.services.store.task('mobile-task')
+    const messages = task.messages.filter((message) => message.role === 'user')
+    if (messages.length !== 1 || messages[0].text !== 'Android recovery draft')
+      throw new Error('The recovered Android draft was missing or duplicated')
+    const devices = runtime.services.devices.list()
+    if (devices.length !== 1 || devices[0].name !== fixtureDeviceName)
+      throw new Error('The Android app must recover using the original pairing')
+  } else if (releaseSmoke) {
     const task = runtime.services.store.task('mobile-task')
     if (
       task.messages.filter(
@@ -611,7 +636,9 @@ try {
   }
   console.log(
     releaseSmoke
-      ? 'Installed native app: pairing over HTTP, thread send, recalled send, first send, saved draft, navigation and update settings verified.'
+      ? androidRecovery
+        ? 'Android installed app: HTTP pairing, warm thread link, offline restart, cold thread link, draft recovery and single delivery verified.'
+        : 'Installed native app: HTTP pairing, external thread link, thread send, recalled send, first send, saved draft, navigation and update settings verified.'
       : settingsOnly
         ? 'Native inline model settings guard Back, Close and edits during a pending save; visible failure retains values and retry persists exactly once.'
         : modesOnly
@@ -641,10 +668,11 @@ try {
     execFileSync('xcrun', ['simctl', 'privacy', device, 'reset', 'microphone', 'com.dovo.studio'])
   clearInterval(approve)
   await pairingControl?.close()
+  await recoveryNetwork?.close()
   await settingsProxy?.close()
   await runtime.close()
   await rm(directory, { recursive: true, force: true })
-  await rm(join(appData, 'Documents', 'dovo-attachment.txt'), { force: true })
+  if (appData) await rm(join(appData, 'Documents', 'dovo-attachment.txt'), { force: true })
 }
 
 /** Measure stable native keyboard states between Maestro flows, without two UI drivers racing. */

@@ -25,6 +25,7 @@ it('retires callbacks after every physical execution, including hook repair atte
         },
       ],
     }))
+    const startup = vi.fn<NonNullable<AgentRun['onStartup']>>()
     const input: AgentRun = {
       agent: {
         id: 'agent',
@@ -43,6 +44,7 @@ it('retires callbacks after every physical execution, including hook repair atte
       onActivity: vi.fn<AgentRun['onActivity']>(),
       onSession: vi.fn<AgentRun['onSession']>(),
       onPromptAccepted: vi.fn<NonNullable<AgentRun['onPromptAccepted']>>(),
+      onStartup: startup,
       ask: vi.fn<AgentRun['ask']>().mockResolvedValue(null),
       approve: vi.fn<AgentRun['approve']>().mockResolvedValue('deny' as const),
     }
@@ -59,7 +61,9 @@ it('retires callbacks after every physical execution, including hook repair atte
     const provider = journalProvider(
       {
         run: async (current) => {
+          current.onStartup?.(previous ? 'resuming-session' : 'opening-session')
           if (previous) {
+            previous.onStartup?.('sending-prompt')
             previous.onText('Retired text')
             previous.onTextReplace?.('Retired replacement', 0)
             previous.onSession('Retired session')
@@ -86,6 +90,8 @@ it('retires callbacks after every physical execution, including hook repair atte
     )
     await provider.run(input)
     await provider.run(input)
+    previous?.onStartup?.('connecting-tools')
+    expect(startup.mock.calls).toEqual([['opening-session'], ['resuming-session']])
     previous?.onText('Late repair text')
     previous?.onTextReplace?.('Late replacement', 0)
     expect(retiredReplies).toEqual(['deny', null])

@@ -416,6 +416,7 @@ export class WorkspaceStore {
               ? 'cancelled'
               : 'failed',
         runPhase: 'finalizing',
+        runAttempt: task.runAttempt && { ...task.runAttempt, providerStartup: undefined },
         activeRunId: undefined,
         activity: undefined,
         queuePaused: true,
@@ -444,6 +445,7 @@ export class WorkspaceStore {
         status: 'failed',
         activeRunId: undefined,
         runPhase: undefined,
+        runAttempt: task.runAttempt && { ...task.runAttempt, providerStartup: undefined },
         preparation: undefined,
         activity: undefined,
         restartRecovery: {

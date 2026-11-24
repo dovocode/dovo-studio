@@ -193,6 +193,7 @@ export async function executeCodeTool(options: {
       Array.isArray(values) ? values.map(selected) : selected(values),
     ),
     calls: execution.calls,
+    ...(failed && { callOutcomes: execution.callOutcomes }),
   }
   const inline = retention
     ? retention.store.retain(retention.scope, summary, Date.now(), codeResponseTextLimit, !failed)

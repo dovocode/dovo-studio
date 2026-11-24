@@ -27,7 +27,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
-async function stalledSocketFixture(address: string, format?: number) {
+async function stalledSocketFixture(address: string, format?: number, resumeHeartbeat?: true) {
   const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
   class Socket {
     static instances: Socket[] = []
@@ -53,7 +53,7 @@ async function stalledSocketFixture(address: string, format?: number) {
     'fetch',
     vi
       .fn<typeof fetch>()
-      .mockImplementation(async () => Response.json({ ticket: 'ticket', format })),
+      .mockImplementation(async () => Response.json({ ticket: 'ticket', format, resumeHeartbeat })),
   )
   const receive = vi.fn<(value: RuntimeSnapshot) => void>()
   const wake = vi.fn<() => void>()
@@ -91,6 +91,64 @@ async function stalledSocketFixture(address: string, format?: number) {
   })
   return { clock, Socket, receive, wake, status, live, frame }
 }
+
+it.each(['atomic', 'interrupted', 'legacy'] as const)(
+  'handles reconnect replay with an %s runtime connection',
+  async (mode) => {
+    const { Socket, receive, live, frame } = await stalledSocketFixture(
+      `http://replay-${mode}.local`,
+      7,
+      mode === 'legacy' ? undefined : true,
+    )
+    const baseline = decode(snapshotSchema, JSON.parse(frame).snapshot)
+    const updates = [2, 3, 4].map((revision) => ({ ...baseline, revision }))
+    const delta = (index: number) => {
+      const previous = index === 0 ? baseline : updates[index - 1]!
+      const next = updates[index]!
+      return JSON.stringify({
+        type: 'delta',
+        epoch: 'stalled',
+        base: previous.revision,
+        sequence: next.revision,
+        tag: `revision-${next.revision}`,
+        delta: snapshotDelta(previous, next),
+      })
+    }
+    const open = async (index: number) => {
+      await vi.waitFor(() => expect(Socket.instances).toHaveLength(index + 1))
+      const socket = Socket.instances[index]!
+      socket.readyState = 1
+      socket.onopen?.()
+      return socket
+    }
+    const revisions = () => receive.mock.calls.map(([snapshot]) => snapshot.revision)
+    const first = await open(0)
+    first.onmessage?.({ data: frame })
+    live.retry()
+    let socket = await open(1)
+    expect(JSON.parse(socket.sent[0]!)).toEqual({ type: 'resume', epoch: 'stalled', sequence: 1 })
+    socket.onmessage?.({ data: delta(0) })
+    expect(revisions()).toEqual(mode === 'legacy' ? [1, 2] : [1])
+    if (mode !== 'legacy') live.refresh()
+    expect(socket.sent.map((wire) => JSON.parse(wire).type)).toEqual(['resume', 'watch'])
+    if (mode === 'interrupted') {
+      const interrupted = socket
+      live.retry()
+      socket = await open(2)
+      interrupted.onmessage?.({ data: delta(1) })
+      socket.onmessage?.({ data: delta(0) })
+    }
+    expect(JSON.parse(socket.sent[0]!)).toEqual({ type: 'resume', epoch: 'stalled', sequence: 1 })
+    socket.onmessage?.({ data: delta(1) })
+    expect(revisions()).toEqual(mode === 'legacy' ? [1, 2, 3] : [1])
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'heartbeat', epoch: 'stalled', sequence: 3 }),
+    })
+    expect(revisions()).toEqual(mode === 'legacy' ? [1, 2, 3] : [1, 3])
+    socket.onmessage?.({ data: delta(2) })
+    expect(revisions()).toEqual(mode === 'legacy' ? [1, 2, 3, 4] : [1, 3, 4])
+  },
+)
 
 async function routedSocketFixture(
   id: string,

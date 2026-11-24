@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
 import type { ChatMessage, TaskSummary } from '@dovo/protocol'
 import type { WorkspaceChange } from './workspace.js'
+import { RemoteMcpEvents } from './remote-mcp-events.js'
 export function redact(value: unknown): unknown {
   if (Array.isArray(value))
     return value.map((v, i) =>
@@ -52,6 +53,7 @@ export type RetainedToolOutput = {
 }
 
 export class Activity {
+  readonly remoteMcpEvents: RemoteMcpEvents
   private readonly recordListeners = new Set<(kind: string, scope: string) => void>()
   onRecorded(listener: (kind: string, scope: string) => void) {
     this.recordListeners.add(listener)
@@ -99,6 +101,7 @@ export class Activity {
   private pendingMessages = new Map<string, Map<string, ChatMessage>>()
   revision = 0
   constructor(private db: Database.Database) {
+    this.remoteMcpEvents = new RemoteMcpEvents(db)
     db.exec(
       'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC); CREATE INDEX IF NOT EXISTS activity_scope_time ON activity(scope,time DESC,id DESC)',
     )
@@ -233,6 +236,7 @@ export class Activity {
     for (const task of after.tasks) {
       const previous = previousTasks.get(task.id)
       if (previous === task) continue
+      this.remoteMcpEvents.turnFinished(previous, task)
       if (
         previous?.status !== task.status ||
         previous?.activity !== task.activity ||

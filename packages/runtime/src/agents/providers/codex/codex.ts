@@ -655,7 +655,8 @@ export function createCodexAdapter(turnAcceptanceMs = 120_000): AgentAdapter {
       let initialized: unknown = reusable?.initialized
       try {
         if (run.signal.aborted) throw new Error('Task cancelled')
-        if (!reusable)
+        if (!reusable) {
+          run.onStartup?.('initializing')
           initialized = await request('initialize', {
             clientInfo: {
               name: 'dovo_studio',
@@ -667,6 +668,7 @@ export function createCodexAdapter(turnAcceptanceMs = 120_000): AgentAdapter {
               experimentalApi: true,
             },
           })
+        }
         if (!reusable) await rpc.sendNotification('initialized', {})
         try {
           emitEvent('account/read', await request('account/read', { refreshToken: false }))
@@ -681,6 +683,7 @@ export function createCodexAdapter(turnAcceptanceMs = 120_000): AgentAdapter {
         const startsGoal = run.goal?.action === 'set' || run.goal?.action === 'resume'
         if (run.goal && !startsGoal && run.sessionId) {
           // Resuming a saved Codex thread can wake its active goal.
+          run.onStartup?.('sending-prompt')
           await codexGoal(request, run.sessionId, run.goal, acceptPrompt, run.onText)
           turnFinished = true
           succeeded = true
@@ -740,6 +743,7 @@ export function createCodexAdapter(turnAcceptanceMs = 120_000): AgentAdapter {
         }
         submitted = startsGoal
         awaitingTurn = startsGoal
+        run.onStartup?.(run.sessionId ? 'resuming-session' : 'opening-session')
         const response = await request(run.sessionId ? 'thread/resume' : 'thread/start', {
           ...(run.sessionId
             ? {
@@ -923,6 +927,7 @@ export function createCodexAdapter(turnAcceptanceMs = 120_000): AgentAdapter {
           }
         }
         clearTimeout(timeout)
+        run.onStartup?.('sending-prompt')
         if (run.goal) {
           goalStatus = await codexGoal(request, thread.id, run.goal, acceptPrompt, run.onText)
           if (startsGoal && goalStatus === 'active') {

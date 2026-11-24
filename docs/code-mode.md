@@ -126,8 +126,11 @@ destructive hint. These hints are server claims, not an operating-system sandbox
 
 Calls are not a transaction. An error or cancellation does not undo completed calls. Inspect the
 current state before retrying a mutation. Await calls whose results matter. Failed MCP calls reject
-with an error. Code mode shortens long error messages. If a script throws after calling `print()`,
-the MCP error includes the output already printed, or a result reference if that output is large.
+with an error. Code mode shortens long error messages. When a script fails after dispatching a call
+or printing output, the MCP error includes the partial result or a reference. In `callOutcomes`,
+`completed` lists calls whose dispatcher returned successfully and `unconfirmed` lists dispatched
+calls without a successful response. The numbers refer to one-based call order. A call can change
+state even when its response is lost, so check before retrying an unconfirmed call.
 
 ## Verification
 

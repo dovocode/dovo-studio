@@ -21,7 +21,7 @@ const leaseMs = 12000
 
 /** Content lives in memory through one MCP request. Installations claim only their own work. */
 export class RemoteMcpMailbox {
-  private seen = new Map<string, number>()
+  private seen = new Map<string, { expires: number; events: boolean }>()
   private jobs = new Map<string, Job>()
 
   constructor(
@@ -30,16 +30,21 @@ export class RemoteMcpMailbox {
   ) {}
 
   enabled(installation: string) {
-    return (this.seen.get(installation) ?? 0) > this.now()
+    return (this.seen.get(installation)?.expires ?? 0) > this.now()
   }
 
-  offer(host: Host) {
+  eventsEnabled(installation: string) {
+    return this.enabled(installation) && this.seen.get(installation)?.events === true
+  }
+
+  offer(host: Host, events = false) {
     const now = this.now()
-    for (const [key, expires] of this.seen) if (expires <= now) this.seen.delete(key)
-    this.seen.set(host.installation, now + leaseMs)
+    for (const [key, { expires }] of this.seen) if (expires <= now) this.seen.delete(key)
+    this.seen.set(host.installation, { expires: now + leaseMs, events })
     for (const job of this.jobs.values()) {
       if (
         job.installation === host.installation &&
+        (job.input.input.part !== 'events' || events) &&
         !job.claimed &&
         this.store.grant(job.input.grantId)
       )
@@ -57,7 +62,10 @@ export class RemoteMcpMailbox {
         active: !!grant,
         boundResource: grant?.runtimeId === host.id,
         boundInstallation: grant?.installation === host.installation,
-        hostEnabled: this.enabled(host.installation),
+        hostEnabled:
+          job.input.input.part === 'events'
+            ? this.eventsEnabled(host.installation)
+            : this.enabled(host.installation),
         allowsWrite: grant?.access === 'run',
         writes: remoteMcpWrites(job.input.input),
       })
@@ -87,6 +95,8 @@ export class RemoteMcpMailbox {
   async call(grant: RemoteMcpGrant, input: RemoteMcpCommand, signal: AbortSignal) {
     if (!this.enabled(grant.installation))
       throw new RequestError(503, 'This computer is offline or its remote MCP access is disabled.')
+    if (input.part === 'events' && !this.eventsEnabled(grant.installation))
+      throw new RequestError(503, 'This computer does not currently offer MCP events.')
     if (remoteMcpWrites(input) && grant.access !== 'run')
       throw new RequestError(403, 'This app has read-only access.')
     if (

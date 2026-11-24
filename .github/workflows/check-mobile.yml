@@ -42,3 +42,54 @@ jobs:
             work/mobile-native-smoke/
             ~/.maestro/tests/
           if-no-files-found: ignore
+  android-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+        id: setup
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build an installable Android release
+        run: |
+          pnpm --filter @dovo/runtime... --filter @dovo/mobile... -r build
+          pnpm --filter @dovo/mobile exec expo prebuild --platform android --no-install
+          cd apps/mobile/android
+          ./gradlew :app:assembleRelease -PreactNativeArchitectures=x86_64
+      - name: Install Maestro CLI
+        run: |
+          curl --fail --location --retry 2 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.11.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-cli"
+          echo "$RUNNER_TEMP/maestro-cli/maestro/bin" >> "$GITHUB_PATH"
+      - name: Enable KVM on the hosted runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify HTTP pairing and offline draft recovery
+        uses: reactivecircus/android-emulator-runner@5d6e86df22ab11632167a1a6b0c9ab0dc3469586 # v2.36.0
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb -s emulator-5554 install apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+            node scripts/verify-mobile.mjs emulator-5554 --android-recovery
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: android-native-failure
+          include-hidden-files: true
+          path: |
+            work/mobile-native-smoke/
+            ~/.maestro/tests/
+          if-no-files-found: ignore

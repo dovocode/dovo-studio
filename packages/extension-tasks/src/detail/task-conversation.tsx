@@ -5,7 +5,7 @@ import { InlineThreadSuggestions } from '../chat/thread-sharing'
 import { CodeReviewCard } from '../review/code-review-card'
 import type { CodeFinding } from '@dovo/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { LoaderCircle, GitFork, Folder } from 'lucide-react'
+import { Bot, LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useScopedError } from '@dovo/studio-core/scoped-error'
 import {
@@ -14,6 +14,7 @@ import {
   taskBudgetUsage,
   taskFailureVersion,
   taskPreparation,
+  providerStartupLabel,
   mergePendingMessages,
   pendingMessageQueue,
   startingConversationMessage,
@@ -236,6 +237,7 @@ export function TaskConversation({
     historyLoaded ?? (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id))
   const viewed = useTaskViewed(task, visible && loaded && !temporary)
   const preparation = taskPreparation(task)
+  const startup = providerStartupLabel(task)
   const budget = taskBudgetUsage(task)
   const [retrying, setRetrying] = useApplicationState(false)
   const [retryError, setRetryError] = useScopedError(
@@ -391,17 +393,19 @@ export function TaskConversation({
               retrying={retrying || !!task.activeRunId}
               retryError={retryError}
             />
-          ) : task.status === 'running' && task.runPhase === 'preparing' ? (
+          ) : startup ? (
             <div
               role="status"
               className="mx-auto flex w-full max-w-[var(--chat-max)] items-center gap-2 px-5 py-2 text-xs text-muted-foreground"
             >
-              {task.execution === 'worktree' ? (
+              {task.runPhase === 'provider' ? (
+                <Bot className="size-4" />
+              ) : task.execution === 'worktree' ? (
                 <GitFork className="size-4" />
               ) : (
                 <Folder className="size-4" />
               )}
-              <span className="flex-1">Starting agent…</span>
+              <span className="flex-1">{uiText(startup)}</span>
               <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
             </div>
           ) : null}

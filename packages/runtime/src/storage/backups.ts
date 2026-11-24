@@ -306,7 +306,7 @@ export async function restoreRuntimeBackup(databasePath: string, source: string)
           .run('replication-generation:v1', JSON.stringify(randomUUID()))
         staged
           .prepare(
-            "DELETE FROM documents WHERE id IN ('thread-state-checkpoints:v1','shared-state-checkpoints:v1')",
+            "DELETE FROM documents WHERE id IN ('thread-state-checkpoints:v1','shared-state-checkpoints:v1','remote-mcp-events-epoch')",
           )
           .run()
       })()

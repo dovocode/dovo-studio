@@ -235,6 +235,12 @@ export class RuntimeConnections {
   }
   private publishSnapshot(pool: Pool, snapshot: RuntimeSnapshot) {
     const previous = pool.snapshot
+    if (
+      previous?.runtimeInstanceId &&
+      previous.runtimeInstanceId === snapshot.runtimeInstanceId &&
+      previous.revision > snapshot.revision
+    )
+      return
     if (previous === snapshot) {
       for (const subscriber of pool.subscribers.values())
         if (subscriber.sourceVersion !== pool.sequence) this.updateSubscriber(pool, subscriber)

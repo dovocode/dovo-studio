@@ -23,6 +23,8 @@ it.each(['harness', 'custom agent'] as const)(
     const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
     let complete = () => {}
     const completion = new Promise<void>((resolve) => (complete = resolve))
+    let allowOutput = () => {}
+    const waitingForOutput = new Promise<void>((resolve) => (allowOutput = resolve))
     try {
       const configured = { ...defaultTaskHarness('claude'), model: 'default' }
       const custom = { ...configured, id: 'claude', name: 'Custom Claude' }
@@ -30,8 +32,11 @@ it.each(['harness', 'custom agent'] as const)(
       const run = vi.fn<AgentAdapter['run']>(async (input) => {
         expect(input.agent.provider).toBe('claude')
         expect(input.agent.model).toBe('opus')
+        input.onStartup?.('opening-session')
         input.onSession('claude-session')
+        await waitingForOutput
         input.onText('First response')
+        input.onStartup?.('connecting-tools')
         await completion
       })
       vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
@@ -105,12 +110,23 @@ it.each(['harness', 'custom agent'] as const)(
         expect(saved.harnessCustomized).toBe(true)
         return saved
       }
-      expect((await selectedModel()).status).toBe('running')
+      const starting = await selectedModel()
+      expect(starting.status).toBe('running')
+      expect(starting.runAttempt?.providerStartup).toBe('opening-session')
+      allowOutput()
+      await waitForRuntime(async () => {
+        const responding = await selectedModel()
+        expect(responding.messages).toContainEqual(
+          expect.objectContaining({ text: 'First response' }),
+        )
+        expect(responding.runAttempt?.providerStartup).toBeUndefined()
+      })
       complete()
       await waitForRuntime(() => expect(runtime.services.store.task(task.id).status).toBe('review'))
       expect((await selectedModel()).draft).toBe('')
       expect(runtime.services.store.get().agents[0]?.model).toBe('default')
     } finally {
+      allowOutput()
       complete()
       await runtime.close()
       await f.cleanup()

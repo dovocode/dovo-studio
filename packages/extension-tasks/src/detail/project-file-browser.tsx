@@ -1,10 +1,11 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Effect } from 'effect'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import type { ProjectContentSearch, ChangedFile } from '@dovo/protocol'
 import { Button, SearchField, FileTypeIcon, FileChangeCounts } from '@dovo/studio-ui'
 import { ProjectDirectoryTree } from './project-directory-tree'
+import { ArrowUp } from 'lucide-react'
 import { fileStats } from '../files/presentation'
 
 export function ProjectFileBrowser({
@@ -13,6 +14,8 @@ export function ProjectFileBrowser({
   revision,
   disabled,
   onSelect,
+  folder = '',
+  onPreviewFolder,
   selected,
   changedFiles,
 }: {
@@ -23,8 +26,15 @@ export function ProjectFileBrowser({
   selected: string
   changedFiles: readonly ChangedFile[]
   onSelect: (path: string, line?: number) => void
+  folder?: string
+  onPreviewFolder: (path: string) => void
 }) {
   const uiText = useInterfaceText()
+  const parentFolderButton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    parentFolderButton.current?.focus({ preventScroll: true })
+  }, [folder])
 
   const { requestEffect, connected, connection, activeRuntimeId } = useWorkspace()
   const changed = useMemo(
@@ -118,44 +128,61 @@ export function ProjectFileBrowser({
   }, [])
   return (
     <>
-      <div className="space-y-2 border-b p-2">
-        <div className="flex gap-1" aria-label="Project search mode">
+      {folder ? (
+        <div className="flex items-center gap-2 border-b p-2">
           <Button
+            ref={parentFolderButton}
             size="sm"
             variant="ghost"
-            className={`h-7 rounded-md border px-2 text-xs ${mode === 'files' ? 'studio-selected-surface font-medium' : 'border-transparent text-muted-foreground'}`}
-            aria-pressed={mode === 'files'}
-            onClick={() => setMode('files')}
+            aria-label={uiText('Go to parent folder')}
+            onClick={() => onPreviewFolder(folder.split('/').slice(0, -1).join('/'))}
           >
-            {uiText('Files')}
+            <ArrowUp size={14} />
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className={`h-7 rounded-md border px-2 text-xs ${mode === 'content' ? 'studio-selected-surface font-medium' : 'border-transparent text-muted-foreground'}`}
-            aria-pressed={mode === 'content'}
-            onClick={() => setMode('content')}
-          >
-            Code
-          </Button>
+          <span className="min-w-0 truncate text-xs font-medium" title={folder}>
+            {folder}
+          </span>
         </div>
-        <SearchField
-          role="searchbox"
-          aria-label={mode === 'content' ? 'Search project code' : 'Search project files'}
-          placeholder={mode === 'content' ? 'Literal code search…' : 'Search files…'}
-          value={query}
-          onValueChange={(value) => {
-            setQuery(value.slice(0, 256))
-          }}
-          clearLabel="Clear file search"
-          className="text-xs"
-        />
-        {mode === 'content' && (
-          <p className="text-[0.625rem] text-muted-foreground">
-            Case-sensitive literal search · up to 200 matching lines.
-          </p>
-        )}
-      </div>
+      ) : (
+        <div className="space-y-2 border-b p-2">
+          <div className="flex gap-1" aria-label="Project search mode">
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`h-7 rounded-md border px-2 text-xs ${mode === 'files' ? 'studio-selected-surface font-medium' : 'border-transparent text-muted-foreground'}`}
+              aria-pressed={mode === 'files'}
+              onClick={() => setMode('files')}
+            >
+              {uiText('Files')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`h-7 rounded-md border px-2 text-xs ${mode === 'content' ? 'studio-selected-surface font-medium' : 'border-transparent text-muted-foreground'}`}
+              aria-pressed={mode === 'content'}
+              onClick={() => setMode('content')}
+            >
+              Code
+            </Button>
+          </div>
+          <SearchField
+            role="searchbox"
+            aria-label={mode === 'content' ? 'Search project code' : 'Search project files'}
+            placeholder={mode === 'content' ? 'Literal code search…' : 'Search files…'}
+            value={query}
+            onValueChange={(value) => {
+              setQuery(value.slice(0, 256))
+            }}
+            clearLabel="Clear file search"
+            className="text-xs"
+          />
+          {mode === 'content' && (
+            <p className="text-[0.625rem] text-muted-foreground">
+              Case-sensitive literal search · up to 200 matching lines.
+            </p>
+          )}
+        </div>
+      )}
       <div
         className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5"
         aria-label="Project file entries"
@@ -171,6 +198,7 @@ export function ProjectFileBrowser({
             ])}
             taskId={taskId}
             checkoutId={checkoutId}
+            directory={folder}
             revision={revision}
             refresh={retry}
             active={!query && mode === 'files'}
@@ -178,6 +206,7 @@ export function ProjectFileBrowser({
             disabled={disabled}
             changed={changed}
             onSelect={onSelect}
+            onPreviewFolder={onPreviewFolder}
           />
         </div>
         {!query && mode === 'files' ? null : !connected ? (

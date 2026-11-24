@@ -395,6 +395,7 @@ export function startRuntimeSync(
   let taskUpdates = false
   let incremental = false
   let selectionThrough: number | undefined
+  let reconnectBaseline: Registration['cursor']
   // Keep at most eight departed selections and 4 MiB of estimated retained data.
   // This cache is private to the authenticated connection and dies with its stream owner.
   const selections = new Map<
@@ -442,7 +443,14 @@ export function startRuntimeSync(
     }
   }
   const rememberSelection = () => {
-    if (!snapshot || epoch === undefined || sequence === undefined || !incremental) return
+    if (
+      reconnectBaseline ||
+      !snapshot ||
+      epoch === undefined ||
+      sequence === undefined ||
+      !incremental
+    )
+      return
     const id = cursorKey(epoch, sequence)
     if (selections.has(id)) return
     const bytes = retainedBytes(snapshot)
@@ -489,11 +497,11 @@ export function startRuntimeSync(
         // reporting it online so HTTP fallback does not download the same baseline in
         // parallel. Failure, inactivity or the handshake deadline end this grace period.
         const wasOnline = online
+        request?.abort()
+        closeSocket()
         snapshot = undefined
         epoch = undefined
         sequence = undefined
-        request?.abort()
-        closeSocket()
         replacingSince = wasOnline ? Date.now() : undefined
         if (!wasOnline) options.onWake?.()
         if (!connecting) void connect()
@@ -563,6 +571,14 @@ export function startRuntimeSync(
   // A suspended native socket may never emit close. Detach it first so late
   // callbacks cannot update the cursor or prevent a replacement connection.
   const closeSocket = () => {
+    if (reconnectBaseline) {
+      snapshot = reconnectBaseline.snapshot
+      snapshotTasks = reconnectBaseline.tasks
+      epoch = reconnectBaseline.epoch
+      sequence = reconnectBaseline.sequence
+      reconnectBaseline = undefined
+    }
+    selectionThrough = undefined
     pendingSelections.clear()
     const previous = socket
     socket = undefined
@@ -662,6 +678,8 @@ export function startRuntimeSync(
           current.close()
           return
         }
+        if (ticket.resumeHeartbeat && snapshot && epoch !== undefined && sequence !== undefined)
+          reconnectBaseline = { snapshot, epoch, sequence, time: Date.now(), tasks: snapshotTasks }
         sendResume()
         if (current === socket) sendWatch()
       }
@@ -746,6 +764,10 @@ export function startRuntimeSync(
             setRuntimeSnapshotTag(snapshot, frame.tag)
           } else if (!snapshot || epoch !== frame.epoch || sequence !== frame.sequence)
             throw new Error('Sync needs a fresh baseline')
+          if (reconnectBaseline) {
+            if (frame.type !== 'heartbeat') return
+            reconnectBaseline = undefined
+          }
           if (
             snapshot &&
             snapshotTasks === taskIdentity &&
@@ -778,6 +800,7 @@ export function startRuntimeSync(
           }
         } catch {
           // Never guess through a gap. Reopen with an empty cursor to request a complete baseline.
+          closeSocket()
           snapshot = undefined
           epoch = undefined
           sequence = undefined
@@ -787,8 +810,6 @@ export function startRuntimeSync(
           selectionBytes = 0
           activities.clear()
           for (const compact of value.compactors.values()) compact([])
-          online = false
-          closeSocket()
           reconnect()
         }
       }
@@ -875,7 +896,7 @@ export function startRuntimeSync(
       if (socket?.readyState === 1) {
         // A native socket can remain OPEN after VPN changes or suspend. Require
         // the server's resume acknowledgement instead of waiting for a heartbeat timeout.
-        if (resumeStarted !== undefined) return
+        if (reconnectBaseline || resumeStarted !== undefined) return
         resumeResent = false
         resumeStarted = Date.now()
         sendResume()

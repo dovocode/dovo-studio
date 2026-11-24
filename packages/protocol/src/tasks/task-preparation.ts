@@ -1,4 +1,22 @@
 import type { TaskMetadata as Task } from './task-summary.js'
+import type { ProviderStartupStep } from '../workspace.js'
+
+const startupLabels: Record<ProviderStartupStep, string> = {
+  starting: 'Starting agent…',
+  initializing: 'Initializing agent…',
+  'opening-session': 'Opening agent session…',
+  'resuming-session': 'Resuming agent session…',
+  'connecting-tools': 'Connecting agent tools…',
+  'sending-prompt': 'Sending message to agent…',
+}
+
+export function providerStartupLabel(task: Task) {
+  if (task.status !== 'running') return undefined
+  if (task.runPhase === 'preparing') return startupLabels.starting
+  const attempt = task.runAttempt
+  if (task.runPhase === 'provider' && attempt?.providerStartup && !attempt.promptAccepted)
+    return startupLabels[attempt.providerStartup]
+}
 
 export type PreparationStepState = 'done' | 'active' | 'pending' | 'failed'
 export type PreparationStep = {

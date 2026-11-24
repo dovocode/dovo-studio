@@ -180,7 +180,7 @@ export const defaultAppPreferences: AppPreferences = {
   globalAgentPresets: [],
   retiredGlobalAgentPresets: [],
   projectGrouping: true,
-  projectPanelOpen: true,
+  projectPanelOpen: false,
   workingSection: false,
   collapsedThreadSections: ['working', 'waiting', 'snoozed', 'settled'],
   threadSectionOrder: [...defaultThreadSectionOrder],

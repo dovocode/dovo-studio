@@ -398,6 +398,7 @@ it('keeps a streaming Claude connection across turns', async () => {
   const prompts: string[] = []
   const output: string[] = []
   const events: string[] = []
+  const startup = vi.fn<NonNullable<AgentRun['onStartup']>>()
   let resolveAccount: (account: { subscriptionType: string }) => void = () => {}
   const metadata = new Promise<{ subscriptionType: string }>((resolve) => {
     resolveAccount = resolve
@@ -421,6 +422,7 @@ it('keeps a streaming Claude connection across turns', async () => {
             ? content
             : content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join(''),
         )
+        if (prompts.length === 1) yield { type: 'system', subtype: 'init', session_id: 'session' }
         yield {
           type: 'stream_event',
           event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Reply' } },
@@ -448,6 +450,7 @@ it('keeps a streaming Claude connection across turns', async () => {
     prompt: 'first',
     signal: new AbortController().signal,
     onSession: () => {},
+    onStartup: startup,
     onText: (text) => output.push(text),
     onTextBoundary: () => output.push('boundary'),
     onActivity: () => {},
@@ -468,6 +471,8 @@ it('keeps a streaming Claude connection across turns', async () => {
       },
     })
     await claudeAdapter.run(boundRun('first-run'))
+    expect(startup.mock.calls).toEqual([['opening-session'], ['sending-prompt']])
+    startup.mockClear()
     const launched = mocks.query.mock.calls.at(-1)?.[0].options
     expect(launched?.mcpServers).toBeUndefined()
     const configPath = launched?.extraArgs?.['mcp-config']
@@ -480,6 +485,7 @@ it('keeps a streaming Claude connection across turns', async () => {
     await metadata
     expect(events).not.toContain('account/info')
     await claudeAdapter.run({ ...boundRun('second-run'), sessionId: 'session', prompt: 'second' })
+    expect(startup.mock.calls).toEqual([['connecting-tools'], ['sending-prompt']])
     expect(accountInfo).toHaveBeenCalledOnce()
     expect(setMcpServers).toHaveBeenCalledWith(
       expect.objectContaining({

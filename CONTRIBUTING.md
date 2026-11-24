@@ -75,6 +75,13 @@ tests, Electron/media checks under a window manager, native mobile builds, bundl
 and TURN kernel/network-namespace checks; those need their respective OS, SDK or system
 dependencies. A local pass does not replace these hosted checks.
 
+Mobile integration CI pairs the installed Android release over HTTP, opens a thread from a link,
+restarts the app with the runtime unreachable, and sends the recovered draft once after reconnect.
+To run that flow with Maestro on a disposable stock Android emulator and the release APK installed,
+build the runtime with `pnpm --filter @dovo/runtime... -r build` and run
+`node scripts/verify-mobile.mjs <emulator-id> --android-recovery`. The flow clears the app data on
+that emulator.
+
 Task, recovery, and automation integration tests share the bounded budgets in
 `packages/runtime/src/testing/integration.ts` because they run real Git commands. Use state
 assertions through `waitForRuntime`, not arbitrary sleeps; keep pure unit tests on their normal

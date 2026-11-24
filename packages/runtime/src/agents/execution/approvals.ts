@@ -68,6 +68,7 @@ export class Approvals {
     private activity?: Pick<Activity, 'add'>,
     private store?: WorkspaceStore,
     private preferences?: Pick<RuntimePreferences, 'get'>,
+    private onRequested?: (taskId: string, requestId: string) => void,
   ) {}
   private requests = new Map<
     string,
@@ -112,6 +113,7 @@ export class Approvals {
     }
     const id = randomUUID()
     this.activity?.add('approval', taskId, title, { id, detail, status: 'requested' })
+    this.onRequested?.(taskId, id)
     return new Promise<ApprovalDecision>((resolve) => {
       const finish = (
         decision: ApprovalDecision,

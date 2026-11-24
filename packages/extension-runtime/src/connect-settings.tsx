@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { responses, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useAccount, useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { RelaySettings } from './relay-settings'
 
 export function ConnectSettings() {
@@ -229,7 +230,7 @@ function ConnectSettingsContent({
                     onClick={async () => {
                       setFailure('')
                       try {
-                        await navigator.clipboard.writeText(mcp.serverUrl!)
+                        await copyTextToClipboard(mcp.serverUrl!)
                         setCopied(true)
                       } catch {
                         setFailure(uiText('Could not copy the MCP server URL'))

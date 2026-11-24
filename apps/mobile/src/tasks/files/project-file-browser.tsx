@@ -19,6 +19,8 @@ export function ProjectFileBrowser({
   selected,
   active = true,
   onSelect,
+  folder = '',
+  onPreviewFolder,
 }: {
   taskId: string
   checkoutId: string
@@ -26,6 +28,8 @@ export function ProjectFileBrowser({
   selected?: string
   active?: boolean
   onSelect: (path: string, line?: number) => void
+  folder?: string
+  onPreviewFolder: (path: string) => void
 }) {
   const uiText = useInterfaceText()
 
@@ -107,32 +111,45 @@ export function ProjectFileBrowser({
   }, [active, readEffect, connected, taskId, checkoutId, mode, query, revision, retry, identity])
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
-      <View style={{ paddingHorizontal: 12, gap: 6 }}>
-        <Choice
-          compact
-          label={uiText('Project search mode')}
-          value={mode}
-          items={[
-            { id: 'files', name: uiText('File names') },
-            { id: 'content', name: uiText('Code contents') },
-          ]}
-          onChange={setMode}
-        />
-        <SearchField
-          label={mode === 'content' ? uiText('Search project code') : uiText('Search files')}
-          value={query}
-          onChangeText={(value) => {
-            setQuery(value.slice(0, 256))
-          }}
-        />
-        {mode === 'content' && (
-          <Text style={styles.muted}>
-            <InterfaceText>
-              {'Case-sensitive literal search · up to 200 matching lines.'}
-            </InterfaceText>
+      {folder ? (
+        <View style={{ paddingHorizontal: 12, gap: 6 }}>
+          <Action
+            secondary
+            label={uiText('Go to parent folder')}
+            onPress={() => onPreviewFolder(folder.split('/').slice(0, -1).join('/'))}
+          />
+          <Text selectable style={styles.text}>
+            {folder}
           </Text>
-        )}
-      </View>
+        </View>
+      ) : (
+        <View style={{ paddingHorizontal: 12, gap: 6 }}>
+          <Choice
+            compact
+            label={uiText('Project search mode')}
+            value={mode}
+            items={[
+              { id: 'files', name: uiText('File names') },
+              { id: 'content', name: uiText('Code contents') },
+            ]}
+            onChange={setMode}
+          />
+          <SearchField
+            label={mode === 'content' ? uiText('Search project code') : uiText('Search files')}
+            value={query}
+            onChangeText={(value) => {
+              setQuery(value.slice(0, 256))
+            }}
+          />
+          {mode === 'content' && (
+            <Text style={styles.muted}>
+              <InterfaceText>
+                {'Case-sensitive literal search · up to 200 matching lines.'}
+              </InterfaceText>
+            </Text>
+          )}
+        </View>
+      )}
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 12, gap: 4 }}
@@ -142,10 +159,12 @@ export function ProjectFileBrowser({
             key={JSON.stringify([connection?.address, connection?.token, taskId, checkoutId])}
             taskId={taskId}
             checkoutId={checkoutId}
+            directory={folder}
             revision={revision}
             active={active && !query && mode === 'files'}
             selected={selected}
             onSelect={onSelect}
+            onPreviewFolder={onPreviewFolder}
           />
         </View>
         {!query && mode === 'files' ? null : !connected ? (

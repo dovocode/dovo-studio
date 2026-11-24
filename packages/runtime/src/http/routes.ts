@@ -1688,6 +1688,8 @@ export function route(
             url.searchParams.get('history') === 'paged',
             settledLimit(),
           ),
+          // The initial resume always ends with an ordered heartbeat for its final cursor.
+          resumeHeartbeat: true,
           ...(format === '4' || format === '5' || format === '6' || format === '7'
             ? { format: Number(format) }
             : {}),

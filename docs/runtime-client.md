@@ -94,18 +94,26 @@ the last sent cursor, so crossing live updates do not replay twice. Cancelled se
 start their replacement without failure backoff. Web and desktop keep cold HTTP fallback immediate,
 then cancel it when the stream provides a usable snapshot.
 
+A ticket with `resumeHeartbeat: true` promises a heartbeat at the end of the initial resume. When
+reconnecting with a retained snapshot, the client applies replay deltas privately. It publishes the
+final snapshot when the heartbeat confirms the same epoch and sequence. If the socket closes first,
+the next attempt starts from the last committed cursor. Older runtimes omit the flag and their
+frames publish as they arrive. Live updates continue to publish immediately.
+
 Desktop windows keep their own IPC sequence and last delivered projection. Changing one window's
 thread selection sends a patch from that projection, without repeating the retained conversation or
 moving another window's cursor. Source updates can skip views that omit a window's selected history;
 the next covered source patches directly from that window's baseline. Unchanged source workspaces
 reuse their projected workspace.
 
-Renderer subscription changes merge within one microtask. Initial subscription stays immediate.
-Refresh flushes the current selection before it reaches the main process, and stop cancels pending
-updates. Foreground refresh supplies the renderer's cursor. A matching epoch and a sequence at or
-behind the last sent sequence need no new baseline, because IPC preserves order. A missing, future
-or foreign cursor requests a baseline. If the runtime is offline, that recovery request stays
-pending until the next usable source snapshot. The cursor remains optional for existing callers.
+Renderer subscription changes merge within one microtask. Initial subscription stays immediate. When
+an HTTP snapshot arrives during reconnect, the desktop keeps its revision until the stream catches
+up with that runtime instance. Refresh flushes the current selection before it reaches the main
+process, and stop cancels pending updates. Foreground refresh supplies the renderer's cursor. A
+matching epoch and a sequence at or behind the last sent sequence need no new baseline, because IPC
+preserves order. A missing, future or foreign cursor requests a baseline. If the runtime is offline,
+that recovery request stays pending until the next usable source snapshot. The cursor remains
+optional for existing callers.
 
 This follows the same approach as T3 Code's
 [per-thread resume state](https://github.com/pingdotgg/t3code/blob/79bca436/packages/client-runtime/src/state/threads.ts)

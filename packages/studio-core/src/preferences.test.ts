@@ -489,14 +489,14 @@ it('merges desktop updates with the latest settings from another window', async 
   expect(saved).toMatchObject({ browserWorkspaceEnabled: true, textSize: 'large' })
 })
 
-it('opens thread info by default and remembers closing it across reloads', async () => {
+it('keeps thread info closed by default and remembers opening it across reloads', async () => {
   vi.stubGlobal('localStorage', storage())
   const { readAppPreferences, updateAppPreferences } = await import('./preferences')
-  expect(readAppPreferences().projectPanelOpen).toBe(true)
-  updateAppPreferences({ projectPanelOpen: false })
+  expect(readAppPreferences().projectPanelOpen).toBe(false)
+  updateAppPreferences({ projectPanelOpen: true })
   vi.resetModules()
   const reopened = await import('./preferences')
-  expect(reopened.readAppPreferences().projectPanelOpen).toBe(false)
+  expect(reopened.readAppPreferences().projectPanelOpen).toBe(true)
 })
 
 it('defaults to activity sorting and remembers manual sorting across reloads', async () => {

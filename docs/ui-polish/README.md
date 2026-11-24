@@ -10,10 +10,11 @@ Screenshots were reviewed locally and intentionally excluded from the shipping P
 request. Written assessments, manifests and reproducible capture scripts remain.
 
 - **Workspace:** thread rows retain project/status above one-line ellipsized titles and machine,
-  harness, PR and terminal indicators. Thread info overlays chat above the composer. All sections,
-  grouping, ordering and visibility controls remain. Queue/composer layouts adapt to narrow panes;
-  Stop, Queue and Steer are icon-only with hover titles and accessible names. Wrapped Markdown
-  bullets and checklists retain hanging indents.
+  harness, PR and terminal indicators. Thread info starts closed and remembers your choice when you
+  open it from the thread header. It overlays chat above the composer. All sections, grouping,
+  ordering and visibility controls remain. Queue/composer layouts adapt to narrow panes; Stop, Queue
+  and Steer are icon-only with hover titles and accessible names. Wrapped Markdown bullets and
+  checklists retain hanging indents.
 - **Settings:** page-specific breadcrumbs, aligned fields, consistent section hierarchy and labeled
   project/computer targets pinned during scoped editing. Controls respond to the actual content
   width; Agent profiles switch between flat master/detail and a searchable compact picker. Automatic

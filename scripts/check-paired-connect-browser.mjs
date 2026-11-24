@@ -193,6 +193,14 @@ try {
     if (kind === 'desktop') {
       assert.equal(await page.evaluate(() => window.mcpEnabled), false)
       await page.getByRole('button', { name: 'Confirm remote MCP access' }).click()
+      await page.evaluate(() => {
+        navigator.clipboard.writeText = async () => {
+          throw new Error('Document is not focused')
+        }
+        window.dovoCopyText = async (value) => {
+          await window.copy(value)
+        }
+      })
     }
     await page.getByRole('button', { name: 'Copy MCP server URL' }).click()
     await page.getByRole('button', { name: 'Copied', exact: true }).waitFor()

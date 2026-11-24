@@ -545,6 +545,28 @@ try {
     input: { id: 'third' },
   })
   assert.equal(await page.getByText(startupError, { exact: true }).count(), 1)
+  await page.evaluate(() =>
+    window.setTaskState({
+      status: 'running',
+      runPhase: 'provider',
+      archived: false,
+      runAttempt: {
+        providerStartup: 'resuming-session',
+        promptAccepted: false,
+        inputMessageIds: [],
+      },
+    }),
+  )
+  await page.getByText('Resuming agent session…', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.setTaskState({
+      status: 'running',
+      runPhase: 'provider',
+      archived: false,
+      runAttempt: { promptAccepted: true, inputMessageIds: [] },
+    }),
+  )
+  await page.getByText('Resuming agent session…', { exact: true }).waitFor({ state: 'hidden' })
   await page.evaluate(() => window.setTaskState({ status: 'review', archived: false }))
   await startupRetry.waitFor({ state: 'hidden' })
   assert.equal(await page.getByRole('alert').count(), 0)

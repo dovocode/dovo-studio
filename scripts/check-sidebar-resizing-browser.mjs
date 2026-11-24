@@ -52,7 +52,7 @@ window.mount=()=>root.render(<ApplicationStateProvider><TooltipProvider><Fixture
           namespace: 'fixture',
         }))
         build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
-          contents: `import {Effect} from 'effect';export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async(path,input)=>path.endsWith('/directory')?{entries:input.directory?[{path:'src/first.ts',kind:'file'},{path:'src/second.ts',kind:'file'}]:[{path:'src',kind:'directory'}],truncated:false}:{files:['src/first.ts','src/second.ts'].filter(path=>path.includes(input.query??'')),truncated:false};const requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});export const useWorkspace=()=>({workspace:{tasks:[]},connected:true,request,requestEffect});`,
+          contents: `import {Effect} from 'effect';export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async(path,input)=>path.endsWith('/directory')?{entries:input.directory?[{path:'src/first.ts',kind:'file'},{path:'src/second.ts',kind:'file'}]:[{path:'src',kind:'directory'}],truncated:false}:path.endsWith('/read')?{path:input.path,contents:'export const first = 1',complete:true,truncated:false,startLine:1,size:22,hasMore:false}:{files:['src/first.ts','src/second.ts'].filter(path=>path.includes(input.query??'')),truncated:false};const requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});export const useWorkspace=()=>({workspace:{tasks:[]},connected:true,request,requestEffect});`,
           loader: 'ts',
           resolveDir: fileURLToPath(new URL('../packages/studio-core/', import.meta.url)),
         }))
@@ -249,6 +249,21 @@ try {
       expected,
     )
   }
+  await projectPane.getByRole('button', { name: 'Preview folder src', exact: true }).click()
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).click()
+  const filePreview = page.getByRole('region', { name: 'File preview', exact: true })
+  const [treeBounds, previewBounds] = await Promise.all([
+    projectPane.boundingBox(),
+    filePreview.boundingBox(),
+  ])
+  if (
+    !treeBounds ||
+    !previewBounds ||
+    Math.abs(previewBounds.x - treeBounds.x - treeBounds.width) > 1
+  )
+    throw new Error('The folder tree must appear beside the file preview')
+  await page.screenshot({ path: '/tmp/dovo-folder-preview.png' })
+  await projectPane.getByRole('button', { name: 'Go to parent folder' }).click()
   const projectFolder = projectPane.locator('summary[aria-label="Folder src"]')
   await projectFolder.waitFor()
   if ((await projectFolder.innerText()).trim() !== 'src')

@@ -1,7 +1,12 @@
-import { parsePairingInvitation, pairingInvitationUrl } from '@dovo/protocol'
+import { parsePairingInvitation, pairingInvitationUrl, parseStudioLink } from '@dovo/protocol'
 // The shortcut inbox consumes the original URL, including all task parameters.
 // Route it to the workbench instead of letting Router treat it as an unknown screen.
 export function redirectSystemPath({ path }: { path: string; initial: boolean }) {
+  const thread = parseStudioLink(path.startsWith('/thread?') ? `dovo:/${path}` : path)
+  if (thread?.kind === 'thread') {
+    const { runtimeId, threadId } = thread
+    return `/open-thread?${new URLSearchParams({ runtimeId, threadId })}`
+  }
   if (path.startsWith('dovo://launch') || path === '/launch' || path.startsWith('/launch?')) {
     try {
       const url = new URL(path.startsWith('/') ? `dovo:/${path}` : path)

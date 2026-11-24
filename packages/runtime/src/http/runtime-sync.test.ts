@@ -7,6 +7,7 @@ import {
   artifactReferences,
   decode,
   syncFrameSchema,
+  syncTicketSchema,
   studioExtensionResultSchema,
   workspaceRecoveriesSchema,
   threadWatchSnapshotSchema,
@@ -54,7 +55,7 @@ async function setup() {
       headers: { Authorization: `Bearer ${credential}` },
     })
     expect(response.status).toBe(200)
-    const ticket = (await response.json()).ticket as string
+    const { ticket, resumeHeartbeat } = decode(syncTicketSchema, await response.json())
     const socket = new WebSocket(`ws://127.0.0.1:${runtime.port}/ws/sync?ticket=${ticket}`)
     cleanup.push(() => socket.terminate())
     const frames: SyncFrame[] = []
@@ -67,7 +68,7 @@ async function setup() {
       await expect.poll(() => frames.some((frame) => frame.type === type)).toBe(true)
       return frames.find((frame): frame is Extract<SyncFrame, { type: T }> => frame.type === type)!
     }
-    return { socket, frames, wait, ticket }
+    return { socket, frames, wait, ticket, resumeHeartbeat }
   }
   return { runtime, open, address }
 }
@@ -417,6 +418,7 @@ it('wakes live sync on a committed thread change instead of waiting for its peri
 it('pushes small deltas and replays updates after reconnect without a second baseline', async () => {
   const { runtime, open } = await setup()
   const first = await open()
+  expect(first.resumeHeartbeat).toBe(true)
   first.socket.send(JSON.stringify({ type: 'resume' }))
   const baseline = await first.wait('snapshot')
   runtime.services.store.updateTaskHistory('task', (task) => ({
@@ -429,6 +431,11 @@ it('pushes small deltas and replays updates after reconnect without a second bas
   expect(
     applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks[0]!.messages[0]!.text,
   ).toMatch(/Next$/)
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Final title' }))
+  await expect.poll(() => first.frames.filter((frame) => frame.type === 'delta').length).toBe(2)
+  const final = first.frames.find(
+    (frame) => frame.type === 'delta' && frame.base === delta.sequence,
+  )
   first.socket.close()
   await once(first.socket, 'close')
   const second = await open()
@@ -436,13 +443,14 @@ it('pushes small deltas and replays updates after reconnect without a second bas
     JSON.stringify({ type: 'resume', epoch: baseline.epoch, sequence: baseline.sequence }),
   )
   expect(await second.wait('delta')).toEqual(delta)
-  await second.wait('heartbeat')
-  expect(second.frames.some((f) => f.type === 'snapshot')).toBe(false)
+  const heartbeat = await second.wait('heartbeat')
+  expect(second.frames).toEqual([delta, final, heartbeat])
+  expect(heartbeat.sequence).toBe(delta.sequence + 1)
   second.frames.length = 0
   second.socket.send(
     JSON.stringify({ type: 'resume', epoch: 'old-server', sequence: baseline.sequence }),
   )
-  expect((await second.wait('snapshot')).sequence).toBe(delta.sequence)
+  expect((await second.wait('snapshot')).sequence).toBe(heartbeat.sequence)
 })
 it('hands off thread selection using the sent cursor without repeating the workspace', async () => {
   const { runtime, open } = await setup()

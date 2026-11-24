@@ -48,8 +48,13 @@ appId: com.dovo.studio
     visible:
       id: Task mobile-task
     timeout: 20000
+- openLink: ${THREAD_LINK}
 - tapOn:
-    id: Task mobile-task
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible: Review this change from your phone.
+    timeout: 20000
 - tapOn:
     id: Message
 - inputText: Installed app smoke request

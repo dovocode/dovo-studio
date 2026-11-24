@@ -18,13 +18,23 @@ type Props = {
   selected?: string
   active: boolean
   onSelect: (path: string) => void
+  onPreviewFolder: (path: string) => void
 }
 
 type BranchProps = Props & Pick<ReturnType<typeof useRuntime>, 'readEffect' | 'connected'>
 
-export function ProjectDirectoryTree(props: Props) {
+export function ProjectDirectoryTree({ directory = '', ...props }: Props & { directory?: string }) {
   const { readEffect, connected } = useRuntime()
-  return <Directory {...props} readEffect={readEffect} connected={connected} path="" depth={0} />
+  return (
+    <Directory
+      key={directory}
+      {...props}
+      readEffect={readEffect}
+      connected={connected}
+      path={directory}
+      depth={0}
+    />
+  )
 }
 
 function Directory({ path, depth, ...props }: BranchProps & { path: string; depth: number }) {
@@ -177,30 +187,41 @@ function FolderEntry({ path, depth, ...props }: BranchProps & { path: string; de
   }, [props.selected, path])
   return (
     <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={uiText('Folder {value0}', { value0: path })}
-        accessibilityState={{ expanded }}
-        onPress={() => {
-          setExpanded((value) => !value)
-          setVisited(true)
-        }}
-        style={{
-          minHeight: 44,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          paddingLeft: 8 + Math.min(depth, 8) * 12,
-          paddingRight: 8,
-          borderRadius: 12,
-        }}
-      >
-        <Icon name={expanded ? 'down' : 'next'} size={12} color={colors.muted} />
-        <Icon name="folder" size={16} color={colors.muted} />
-        <Text numberOfLines={1} style={{ flex: 1 }}>
-          {path.split('/').at(-1)}
-        </Text>
-      </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={uiText('Folder {value0}', { value0: path })}
+          accessibilityState={{ expanded }}
+          onPress={() => {
+            setExpanded((value) => !value)
+            setVisited(true)
+          }}
+          style={{
+            flex: 1,
+            minHeight: 44,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            paddingLeft: 8 + Math.min(depth, 8) * 12,
+            paddingRight: 8,
+            borderRadius: 12,
+          }}
+        >
+          <Icon name={expanded ? 'down' : 'next'} size={12} color={colors.muted} />
+          <Icon name="folder" size={16} color={colors.muted} />
+          <Text numberOfLines={1} style={{ flex: 1 }}>
+            {path.split('/').at(-1)}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={uiText('Preview folder {value0}', { value0: path })}
+          onPress={() => props.onPreviewFolder(path)}
+          style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Icon name="next" size={18} color={colors.muted} />
+        </Pressable>
+      </View>
       <View style={expanded ? undefined : { display: 'none' }}>
         {visited && (
           <Directory {...props} path={path} depth={depth + 1} active={props.active && expanded} />

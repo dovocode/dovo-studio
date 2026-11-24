@@ -520,31 +520,16 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         await page.setViewportSize({ width: 1440, height: 960 })
       }
       if (name === 'conversation') {
-        await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
-        const files = page
-          .getByRole('navigation', { name: 'Thread tools' })
-          .getByRole('button', { name: 'Files', exact: true })
-        await files.hover()
-        await page.getByRole('tooltip', { name: 'Files', exact: true }).waitFor()
-        await page
-          .getByRole('tooltip', { name: 'Files', exact: true })
-          .evaluate(async (element) => {
-            await Promise.all(
-              element.getAnimations({ subtree: true }).map((animation) => animation.finished),
-            )
-          })
-        await page.screenshot({ path: resolve(output, `tools-tooltip-${mode}.png`) })
-        await page.mouse.move(0, 0)
-        await page.keyboard.press('Escape')
-        await page.getByRole('tooltip').waitFor({ state: 'hidden' })
-        await files.focus()
-        assert.equal(await files.evaluate((el) => document.activeElement === el), true)
-        await page.keyboard.press('Tab')
-        await page.getByRole('button', { name: 'Linked projects', exact: true }).waitFor()
-        await page.evaluate(() => document.activeElement?.blur())
-        await page.keyboard.press('Escape')
-        await page.mouse.move(0, 0)
-        await page.waitForFunction(() => !document.querySelector('[role="tooltip"]'))
+        const picker = page.getByRole('button', { name: 'Thread tools', exact: true })
+        const tools = page.getByRole('navigation', { name: 'Thread tools', exact: true })
+        await picker.press('Enter')
+        const files = tools.getByRole('button', { name: 'Files', exact: true })
+        await files.getByText('Files', { exact: true }).waitFor()
+        await page.screenshot({ path: resolve(output, `tools-picker-${mode}.png`) })
+        await files.press('Enter')
+        await tools.waitFor({ state: 'hidden' })
+        await page.getByRole('tab', { name: 'Files', exact: true }).waitFor()
+        await page.getByRole('button', { name: 'Hide right pane', exact: true }).click()
         const browserNavigation = page
           .getByRole('navigation', { name: 'Main navigation', exact: true })
           .getByRole('button', { name: 'Browser', exact: true })
@@ -563,7 +548,21 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         await page.getByRole('tooltip').waitFor({ state: 'hidden' })
       }
       if (name === 'welcome' || name === 'conversation') {
+        const checkMessage = async () => {
+          const message = page.getByText('Make the landing page feel calmer and clearer.', {
+            exact: true,
+          })
+          assert.ok(
+            await message.evaluate((element) => {
+              const { right, top, height } = element.getBoundingClientRect()
+              return element.contains(document.elementFromPoint(right - 8, top + height / 2))
+            }),
+            'Thread info leaves the first message unobstructed by default',
+          )
+        }
+        if (name === 'conversation') await checkMessage()
         await page.setViewportSize({ width: 1100, height: 960 })
+        if (name === 'conversation') await checkMessage()
         await page.screenshot({ path: resolve(output, `${name}-compact-${mode}.png`) })
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
         await page.setViewportSize({ width: 1440, height: 960 })

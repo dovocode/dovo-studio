@@ -174,10 +174,8 @@ it('rejects absent, ambiguous and concurrent exact-text edits without losing unr
     const result = await code(
       `await tools.edit({path:'hello.txt', oldText:${JSON.stringify(oldText)}, newText:'other'})`,
     )
-    expect(result).toMatchObject({
-      isError: true,
-      content: [expect.objectContaining({ text: expect.stringMatching(/exactly once/) })],
-    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).toMatchObject({ text: expect.stringMatching(/exactly once/) })
   }
   expect(await readFile(file, 'utf8')).toBe('original\nbanana\n')
   const result = execution(
@@ -206,6 +204,7 @@ it('returns already printed results with the error when a later step fails', asy
   const partial = result.content[1]
   expect(partial?.type === 'text' && JSON.parse(partial.text)).toEqual({
     calls: 1,
+    callOutcomes: { completed: [1], unconfirmed: [] },
     output: [[{ terminalId: terminal?.id }]],
   })
 

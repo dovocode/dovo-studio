@@ -235,8 +235,14 @@ export function createServices(
       policy,
       refreshProviderPath,
     ),
-    approvals = new Approvals(activity, store, preferences),
-    questions = new Questions(activity, store),
+    approvals = new Approvals(activity, store, preferences, (taskId, requestId) => {
+      const task = store.get().tasks.find((item) => item.id === taskId)
+      if (task) activity.remoteMcpEvents.needsInput(task, requestId, 'approval')
+    }),
+    questions = new Questions(activity, store, (taskId, requestId) => {
+      const task = store.get().tasks.find((item) => item.id === taskId)
+      if (task) activity.remoteMcpEvents.needsInput(task, requestId, 'question')
+    }),
     tickets = new SocketTickets()
   store.setTaskSettlingGuard((ids) => {
     const pending = questions.list().find((question) => ids.has(question.taskId))

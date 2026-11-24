@@ -587,6 +587,16 @@ export const turnCheckpointSchema = mutableStruct({
   // Older runtimes saved this tree before Undo. Keep it available after backup review.
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
+const providerStartupStepSchema = Schema.Literals([
+  'starting',
+  'initializing',
+  'opening-session',
+  'resuming-session',
+  'connecting-tools',
+  'sending-prompt',
+])
+export type ProviderStartupStep = typeof providerStartupStepSchema.Type
+
 export const turnSchema = mutableStruct({
   /** Latest provider-owned retry, replaced in place within this execution. */
   providerRetry: Schema.optional(providerRetrySchema),
@@ -778,6 +788,7 @@ export const taskSchema = mutableStruct({
       subagentInputs: Schema.optional(mutableArray(subagentNotificationSchema)),
       turnSettings: Schema.optional(turnSettingsSchema),
       promptAccepted: Schema.Boolean,
+      providerStartup: Schema.optional(providerStartupStepSchema),
     }),
   ),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),

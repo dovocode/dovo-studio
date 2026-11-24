@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { runToolCode } from './code-runtime.js'
 import { CodeResults } from './code-results.js'
 
@@ -87,7 +87,8 @@ it('reports the recovery ID when a retained preview cannot fit in the guest', as
   })
   await expect(execution).rejects.toThrow(/read_tool_result.*resultId/)
   const message = await execution.catch((error: Error) => error.message)
-  const resultId = /[0-9a-f-]{36}/.exec(String(message))?.[0]
+  if (typeof message !== 'string') throw new Error('Expected a failed call')
+  const resultId = /[0-9a-f-]{36}/.exec(message)?.[0]
   expect(store.read('thread', { resultId }, 0).text).toBe(JSON.stringify(value).slice(0, 8192))
 })
 it('propagates nested failures and supports explicit recovery', async () => {
@@ -147,12 +148,30 @@ it('bounds output and wall time independently of tool waits', async () => {
   await expect(
     runToolCode({ signal, code: `print('x'.repeat(5*1024*1024))`, call: async () => ({}) }),
   ).rejects.toThrow('output limit')
-  await expect(
-    runToolCode({
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const execution = runToolCode({
       signal,
       timeoutMs: 20,
-      code: `await tools.dovo.todos({})`,
-      call: async () => new Promise(() => {}),
-    }),
-  ).rejects.toThrow('timed out')
+      code: `await tools.dovo.first({}); await tools.dovo.second({})`,
+      call: async ({ name }) => {
+        if (name === 'first') return {}
+        markStarted()
+        return new Promise(() => {})
+      },
+    })
+    const outcome = execution.catch((error: unknown) => error)
+    await started
+    await vi.advanceTimersByTimeAsync(20)
+    expect(await outcome).toMatchObject({
+      message: expect.stringContaining('timed out'),
+      callOutcomes: { completed: [1], unconfirmed: [2] },
+    })
+  } finally {
+    vi.useRealTimers()
+  }
 })

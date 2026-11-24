@@ -701,6 +701,7 @@ export class TaskTurnRunner {
               ...t.runAttempt,
               inputMessageIds: currentMessages.map((m) => m.id),
               promptAccepted: false,
+              providerStartup: 'starting',
             },
             checkoutBranch: branch,
             error: undefined,
@@ -860,6 +861,7 @@ export class TaskTurnRunner {
                   ...t.runAttempt,
                   inputMessageIds: currentMessages.map((m) => m.id),
                   promptAccepted: true,
+                  providerStartup: undefined,
                 },
                 subagents: t.subagents?.map((record) =>
                   record.completion === 'queued' &&
@@ -1324,6 +1326,17 @@ export class TaskTurnRunner {
                 attachments,
                 sessionId,
                 signal: controller.signal,
+                onStartup: (step) => {
+                  if (!acceptsProviderEvents() || promptAccepted) return
+                  const task = this.store.taskSummary(id)
+                  const attempt = task.runAttempt
+                  if (task.activeRunId !== turnId || !attempt || attempt.providerStartup === step)
+                    return
+                  this.store.updateTask(id, (current) => ({
+                    ...current,
+                    runAttempt: { ...attempt, providerStartup: step },
+                  }))
+                },
                 onPromptAccepted: acceptPrompt,
                 onQuestions: (prompt) => {
                   meaningfulEvent = true
@@ -2081,6 +2094,7 @@ export class TaskTurnRunner {
             (t) => ({
               ...t,
               runPhase: 'finalizing',
+              runAttempt: t.runAttempt && { ...t.runAttempt, providerStartup: undefined },
               activity: 'Saving changes',
               consumedMessageIds: [
                 ...new Set([
@@ -2171,6 +2185,7 @@ export class TaskTurnRunner {
                     ...t,
                     status: 'review',
                     runPhase: 'finalizing',
+                    runAttempt: t.runAttempt && { ...t.runAttempt, providerStartup: undefined },
                     restartRecovery: { kind: 'turn', automatic: false },
                     activity: undefined,
                     queuePaused: true,
@@ -2210,6 +2225,7 @@ export class TaskTurnRunner {
               this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 runPhase: 'finalizing',
+                runAttempt: t.runAttempt && { ...t.runAttempt, providerStartup: undefined },
                 activity: 'Saving changes',
                 queuePaused: true,
                 turns: t.turns?.map((turn) =>

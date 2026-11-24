@@ -22,13 +22,18 @@ it('rejects expired, credential-bearing and local-only invitations', () => {
     expect(() => pairingInvitationUrl({ ...invitation, address })).toThrow(/address|HTTP/)
 })
 it('rejects unrelated QR codes and missing or malformed pairing fields', () => {
-  for (const url of [
-    'https://example.com',
-    'dovo://other',
-    'dovo://pair?address=http://100.90.80.70:8787',
-    'not a URL',
-  ])
-    expect(() => parsePairingInvitation(url)).toThrow(/pairing|HTTP|Invalid URL|digit/)
+  for (const url of ['https://example.com', 'dovo://other', 'not a URL'])
+    expect(() => parsePairingInvitation(url)).toThrow('This is not a Dovo pairing link.')
+  expect(() => parsePairingInvitation('dovo://pair?address=http://100.90.80.70:8787')).toThrow(
+    'Enter the eight-digit pairing code from your computer.',
+  )
+  for (const peer of ['{bad', '{}', '']) {
+    const url = new URL(pairingInvitationUrl(invitation))
+    url.searchParams.set('peer', peer)
+    expect(() => parsePairingInvitation(url.toString())).toThrow(
+      'Invalid internet pairing invitation',
+    )
+  }
 })
 
 it('normalizes manual LAN and VPN addresses while preserving optional HTTPS', () => {

@@ -53,17 +53,29 @@ export function pairingInvitationUrl(value: PairingInvitation) {
   return `dovo://pair?${new URLSearchParams({ address: checked.address, code: checked.code, expiresAt: checked.expiresAt, ...(checked.peer ? { peer: JSON.stringify(checked.peer) } : {}) })}`
 }
 export function parsePairingInvitation(url: string, now = Date.now()) {
-  const link = new URL(url)
+  let link: URL
+  try {
+    link = new URL(url)
+  } catch {
+    throw new Error('This is not a Dovo pairing link.')
+  }
   if (link.protocol !== 'dovo:' || link.hostname !== 'pair')
     throw new Error('This is not a Dovo pairing link.')
+  const rawPeer = link.searchParams.get('peer')
+  let peer: PeerConfig | undefined
+  if (rawPeer !== null) {
+    try {
+      peer = decode(peerConfigSchema, JSON.parse(rawPeer))
+    } catch {
+      throw new Error('Invalid internet pairing invitation')
+    }
+  }
   return pairingInvitation(
     {
       address: link.searchParams.get('address') ?? '',
       code: link.searchParams.get('code') ?? '',
       expiresAt: link.searchParams.get('expiresAt') ?? '',
-      ...(link.searchParams.has('peer')
-        ? { peer: decode(peerConfigSchema, JSON.parse(link.searchParams.get('peer')!)) }
-        : {}),
+      ...(peer ? { peer } : {}),
     },
     now,
   )

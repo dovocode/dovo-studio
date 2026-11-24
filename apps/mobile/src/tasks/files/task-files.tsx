@@ -2,7 +2,7 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { ProjectSpreadsheet } from './project-spreadsheet'
 import { isSpreadsheet } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Image, ScrollView, View } from 'react-native'
+import { Alert, Image, ScrollView, View, useWindowDimensions } from 'react-native'
 import { filePreviewSchema, markdownMediaKind, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { ProjectFileBrowser } from './project-file-browser'
@@ -52,6 +52,10 @@ export function TaskFiles({
   const { styles, colors } = useTheme()
   const [checkoutId, setCheckoutId] = useState(draft?.checkoutId ?? '')
   const [selected, setSelected] = useState(draft?.path ?? '')
+  const [folder, setFolder] = useState('')
+  const { width } = useWindowDimensions()
+  const splitPreview = !!folder && !!selected && width >= 760
+  const treeVisible = !selected || splitPreview
   const [focusedLine, setFocusedLine] = useState<number>()
   const [fullRead, setFullRead] = useState(!!draft)
   const [tablePreviewKey, setTablePreviewKey] = useState('')
@@ -228,6 +232,7 @@ export function TaskFiles({
             onChange={(value) =>
               discardThen(() => {
                 setCheckoutId(value)
+                setFolder('')
                 setSelected('')
                 setFocusedLine(undefined)
                 setFullRead(false)
@@ -239,7 +244,7 @@ export function TaskFiles({
           {!!selected && (
             <Action
               secondary
-              label={uiText('Browse files')}
+              label={splitPreview ? uiText('Close file preview') : uiText('Browse files')}
               disabled={saving}
               onPress={() => discardThen(() => setSelected(''))}
             />
@@ -261,200 +266,225 @@ export function TaskFiles({
           </Text>
         )}
       </View>
-      <View style={selected ? { display: 'none' } : { flex: 1, minHeight: 0 }}>
-        <ProjectFileBrowser
-          key={owner}
-          taskId={task.id}
-          checkoutId={checkoutId}
-          revision={revision}
-          selected={selected}
-          active={!selected}
-          onSelect={(path, line) => {
-            setSelected(path)
-            setFocusedLine(line)
-            setFullRead(false)
-          }}
-        />
-      </View>
-      {!!selected && (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.content, { gap: 12 }]}
+      <View style={{ flex: 1, minHeight: 0, flexDirection: splitPreview ? 'row' : 'column' }}>
+        <View
+          style={
+            !treeVisible
+              ? { display: 'none' }
+              : splitPreview
+                ? { width: '35%', minHeight: 0, borderEndWidth: 1, borderColor: colors.border }
+                : { flex: 1, minHeight: 0 }
+          }
         >
-          <Text selectable style={{ color: colors.text, fontWeight: '600' }}>
-            {selected}
-          </Text>
-          {delimitedText && !editing && (
-            <Action
-              secondary
-              label={sheetPreview ? uiText('Text view') : uiText('Table preview')}
-              onPress={() => setTablePreviewKey(sheetPreview ? '' : tableKey)}
-            />
-          )}
-          {!!file?.error && (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {file.error}
+          <ProjectFileBrowser
+            key={JSON.stringify([owner, folder])}
+            taskId={task.id}
+            checkoutId={checkoutId}
+            revision={revision}
+            selected={selected}
+            active={treeVisible}
+            folder={folder}
+            onPreviewFolder={(path) =>
+              discardThen(() => {
+                setFolder(path)
+                setSelected('')
+                setFocusedLine(undefined)
+                setFullRead(false)
+              })
+            }
+            onSelect={(path, line) => {
+              if (path === selected && line === focusedLine) return
+              discardThen(() => {
+                setSelected(path)
+                setFocusedLine(line)
+                setFullRead(false)
+              })
+            }}
+          />
+        </View>
+        {!!selected && (
+          <ScrollView
+            style={{ flex: 1, minWidth: 0 }}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.content, { gap: 12 }]}
+          >
+            <Text selectable style={{ color: colors.text, fontWeight: '600' }}>
+              {selected}
             </Text>
-          )}
-          {!!saveError && (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {saveError}
-            </Text>
-          )}
-          {editing && <DraftStorageNotice persistence={draftPersistence} />}
-          {!file && connected && !editing && !sheetPreview && (
-            <Text style={styles.muted}>
-              <InterfaceText>{'Loading file…'}</InterfaceText>
-            </Text>
-          )}
-          {editing ? (
-            <>
-              <Field
-                label={uiText('File contents')}
-                value={editing.contents}
-                editable={!saving && !editLimit}
-                multiline
-                autoCorrect={false}
-                autoCapitalize="none"
-                style={{ minHeight: 300, fontFamily: 'monospace', textAlignVertical: 'top' }}
-                onChangeText={(contents) => onDraftChange({ ...editing, contents })}
+            {delimitedText && !editing && (
+              <Action
+                secondary
+                label={sheetPreview ? uiText('Text view') : uiText('Table preview')}
+                onPress={() => setTablePreviewKey(sheetPreview ? '' : tableKey)}
               />
-              <View style={[styles.row, { gap: 8 }]}>
-                <Action
-                  label={saving ? uiText('Saving…') : uiText('Save file')}
-                  disabled={!connected || saving || readOnly || editLimit || !dirty}
-                  onPress={() => void save()}
-                />
-                <Action
-                  secondary
-                  label={uiText('Cancel editing')}
-                  disabled={saving}
-                  onPress={() => discardThen(() => {})}
-                />
-              </View>
-              <Text style={styles.muted}>
-                <InterfaceText>
-                  {
-                    'Saves only if the file still matches the version you opened. Refresh to load changes from disk.'
-                  }
-                </InterfaceText>
+            )}
+            {!!file?.error && (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {file.error}
               </Text>
-              {editLimit && (
-                <Text style={styles.muted}>
-                  <InterfaceText>
-                    {'A complete file read is required to continue editing.'}
-                  </InterfaceText>
-                </Text>
-              )}
-            </>
-          ) : sheetPreview ? (
-            <ProjectSpreadsheet
-              key={JSON.stringify([owner, selected])}
-              taskId={task.id}
-              checkoutId={checkoutId || undefined}
-              path={selected}
-              revision={revision}
-            />
-          ) : (
-            <>
-              {file?.contents !== undefined && (
-                <>
+            )}
+            {!!saveError && (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {saveError}
+              </Text>
+            )}
+            {editing && <DraftStorageNotice persistence={draftPersistence} />}
+            {!file && connected && !editing && !sheetPreview && (
+              <Text style={styles.muted}>
+                <InterfaceText>{'Loading file…'}</InterfaceText>
+              </Text>
+            )}
+            {editing ? (
+              <>
+                <Field
+                  label={uiText('File contents')}
+                  value={editing.contents}
+                  editable={!saving && !editLimit}
+                  multiline
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  style={{ minHeight: 300, fontFamily: 'monospace', textAlignVertical: 'top' }}
+                  onChangeText={(contents) => onDraftChange({ ...editing, contents })}
+                />
+                <View style={[styles.row, { gap: 8 }]}>
+                  <Action
+                    label={saving ? uiText('Saving…') : uiText('Save file')}
+                    disabled={!connected || saving || readOnly || editLimit || !dirty}
+                    onPress={() => void save()}
+                  />
                   <Action
                     secondary
-                    label={uiText('Edit file')}
-                    disabled={!connected || readOnly || editLimit}
-                    onPress={() =>
-                      onDraftChange({
-                        path: selected,
-                        checkoutId,
-                        contents: file.contents ?? '',
-                        expected: file.contents ?? '',
-                      })
-                    }
+                    label={uiText('Cancel editing')}
+                    disabled={saving}
+                    onPress={() => discardThen(() => {})}
                   />
-                  {editLimit && (
-                    <Text style={styles.muted}>
-                      {file.size === undefined
-                        ? uiText('Update the runtime for bounded, editable file previews.')
-                        : uiText('Read-only preview · {value0} bytes total.', {
-                            value0: file.size,
-                          })}
-                    </Text>
-                  )}
-                  {editLimit && file.size !== undefined && file.size <= 1024 * 1024 && (
+                </View>
+                <Text style={styles.muted}>
+                  <InterfaceText>
+                    {
+                      'Saves only if the file still matches the version you opened. Refresh to load changes from disk.'
+                    }
+                  </InterfaceText>
+                </Text>
+                {editLimit && (
+                  <Text style={styles.muted}>
+                    <InterfaceText>
+                      {'A complete file read is required to continue editing.'}
+                    </InterfaceText>
+                  </Text>
+                )}
+              </>
+            ) : sheetPreview ? (
+              <ProjectSpreadsheet
+                key={JSON.stringify([owner, selected])}
+                taskId={task.id}
+                checkoutId={checkoutId || undefined}
+                path={selected}
+                revision={revision}
+              />
+            ) : (
+              <>
+                {file?.contents !== undefined && (
+                  <>
                     <Action
                       secondary
-                      label={uiText('Load complete file to edit')}
-                      onPress={() => setFullRead(true)}
+                      label={uiText('Edit file')}
+                      disabled={!connected || readOnly || editLimit}
+                      onPress={() =>
+                        onDraftChange({
+                          path: selected,
+                          checkoutId,
+                          contents: file.contents ?? '',
+                          expected: file.contents ?? '',
+                        })
+                      }
                     />
-                  )}
-                  {(file.hasMore || file.contents.length > visibleContents.length) &&
-                    visibleContents.includes('\n') && (
+                    {editLimit && (
+                      <Text style={styles.muted}>
+                        {file.size === undefined
+                          ? uiText('Update the runtime for bounded, editable file previews.')
+                          : uiText('Read-only preview · {value0} bytes total.', {
+                              value0: file.size,
+                            })}
+                      </Text>
+                    )}
+                    {editLimit && file.size !== undefined && file.size <= 1024 * 1024 && (
                       <Action
                         secondary
-                        label={uiText('Next lines')}
-                        onPress={() => {
-                          setFocusedLine(
-                            (file.startLine ?? 1) + (visibleContents.match(/\n/g)?.length ?? 0),
-                          )
-                          setFullRead(false)
-                        }}
+                        label={uiText('Load complete file to edit')}
+                        onPress={() => setFullRead(true)}
                       />
                     )}
-                  {!!focusedLine && (
-                    <View
-                      style={{ gap: 6 }}
-                      accessibilityLabel={uiText('Selected line {value0}', { value0: focusedLine })}
-                    >
+                    {(file.hasMore || file.contents.length > visibleContents.length) &&
+                      visibleContents.includes('\n') && (
+                        <Action
+                          secondary
+                          label={uiText('Next lines')}
+                          onPress={() => {
+                            setFocusedLine(
+                              (file.startLine ?? 1) + (visibleContents.match(/\n/g)?.length ?? 0),
+                            )
+                            setFullRead(false)
+                          }}
+                        />
+                      )}
+                    {!!focusedLine && (
+                      <View
+                        style={{ gap: 6 }}
+                        accessibilityLabel={uiText('Selected line {value0}', {
+                          value0: focusedLine,
+                        })}
+                      >
+                        <Text style={styles.muted}>
+                          <InterfaceText values={{ value0: focusedLine }}>
+                            {'Search result · line {value0}'}
+                          </InterfaceText>
+                        </Text>
+                        <CodeBlock
+                          content={file.contents
+                            .split('\n')
+                            .slice(
+                              Math.max(0, focusedLine - (file.startLine ?? 1) - 5),
+                              focusedLine - (file.startLine ?? 1) + 6,
+                            )
+                            .map(
+                              (line, index) =>
+                                `${Math.max(0, focusedLine - (file.startLine ?? 1) - 5) + index + (file.startLine ?? 1) === focusedLine ? '→' : ' '} ${Math.max(0, focusedLine - (file.startLine ?? 1) - 5) + index + (file.startLine ?? 1)}  ${line}`,
+                            )
+                            .join('\n')}
+                          language={fileLanguage(selected)}
+                        />
+                      </View>
+                    )}
+                    <CodeBlock content={visibleContents} language={fileLanguage(selected)} />
+                    {file.contents.length > 200000 && (
                       <Text style={styles.muted}>
-                        <InterfaceText values={{ value0: focusedLine }}>
-                          {'Search result · line {value0}'}
+                        <InterfaceText>
+                          {'Preview limited to the first 200,000 characters.'}
                         </InterfaceText>
                       </Text>
-                      <CodeBlock
-                        content={file.contents
-                          .split('\n')
-                          .slice(
-                            Math.max(0, focusedLine - (file.startLine ?? 1) - 5),
-                            focusedLine - (file.startLine ?? 1) + 6,
-                          )
-                          .map(
-                            (line, index) =>
-                              `${Math.max(0, focusedLine - (file.startLine ?? 1) - 5) + index + (file.startLine ?? 1) === focusedLine ? '→' : ' '} ${Math.max(0, focusedLine - (file.startLine ?? 1) - 5) + index + (file.startLine ?? 1)}  ${line}`,
-                          )
-                          .join('\n')}
-                        language={fileLanguage(selected)}
-                      />
-                    </View>
-                  )}
-                  <CodeBlock content={visibleContents} language={fileLanguage(selected)} />
-                  {file.contents.length > 200000 && (
-                    <Text style={styles.muted}>
-                      <InterfaceText>
-                        {'Preview limited to the first 200,000 characters.'}
-                      </InterfaceText>
-                    </Text>
-                  )}
-                </>
-              )}
-              {!!file?.image && (
-                <Image
-                  accessibilityLabel={selected}
-                  source={{ uri: file.image }}
-                  resizeMode="contain"
-                  style={{ width: '100%', height: 300 }}
-                />
-              )}
-              {!!file?.notice && <Text style={styles.muted}>{file.notice}</Text>}
-              {readOnly && (
-                <Text style={styles.muted}>
-                  <InterfaceText>{'This folder is read-only.'}</InterfaceText>
-                </Text>
-              )}
-            </>
-          )}
-        </ScrollView>
-      )}
+                    )}
+                  </>
+                )}
+                {!!file?.image && (
+                  <Image
+                    accessibilityLabel={selected}
+                    source={{ uri: file.image }}
+                    resizeMode="contain"
+                    style={{ width: '100%', height: 300 }}
+                  />
+                )}
+                {!!file?.notice && <Text style={styles.muted}>{file.notice}</Text>}
+                {readOnly && (
+                  <Text style={styles.muted}>
+                    <InterfaceText>{'This folder is read-only.'}</InterfaceText>
+                  </Text>
+                )}
+              </>
+            )}
+          </ScrollView>
+        )}
+      </View>
     </View>
   )
 }

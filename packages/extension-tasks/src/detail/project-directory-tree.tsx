@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Effect } from 'effect'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import type { ChangedFile, ProjectDirectory } from '@dovo/protocol'
-import { Button, FileChangeCounts, FileTypeIcon } from '@dovo/studio-ui'
-import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
+import { Button, FileChangeCounts, FileTypeIcon, IconButton } from '@dovo/studio-ui'
+import { ChevronRight, Folder, FolderOpen, PanelRightOpen } from 'lucide-react'
 import { fileStats } from '../files/presentation'
 
 type Props = {
@@ -14,16 +15,23 @@ type Props = {
   disabled?: boolean
   changed: ReadonlyMap<string, ChangedFile>
   onSelect: (path: string) => void
+  onPreviewFolder?: (path: string) => void
   active: boolean
 } & ({ taskId: string; terminalId?: never } | { terminalId: string; taskId?: never })
 
 type BranchProps = Props & Pick<ReturnType<typeof useWorkspace>, 'requestEffect' | 'connected'>
 
-export function ProjectDirectoryTree(props: Props) {
+export function ProjectDirectoryTree({ directory = '', ...props }: Props & { directory?: string }) {
   const { requestEffect, connected } = useWorkspace()
   return (
     <nav aria-label="Project folders">
-      <Directory {...props} requestEffect={requestEffect} connected={connected} path="" />
+      <Directory
+        key={directory}
+        {...props}
+        requestEffect={requestEffect}
+        connected={connected}
+        path={directory}
+      />
     </nav>
   )
 }
@@ -168,6 +176,7 @@ function Directory({ path, active, ...props }: BranchProps & { path: string; act
 }
 
 function FolderEntry({ path, active, ...props }: BranchProps & { path: string; active: boolean }) {
+  const uiText = useInterfaceText()
   const [expanded, setExpanded] = useState(() => !!props.selected?.startsWith(`${path}/`))
   const [visited, setVisited] = useState(expanded)
   useEffect(() => {
@@ -177,34 +186,46 @@ function FolderEntry({ path, active, ...props }: BranchProps & { path: string; a
     }
   }, [props.selected, path])
   return (
-    <details
-      open={expanded}
-      onToggle={(event) => {
-        const open = event.currentTarget.open
-        setExpanded(open)
-        if (open) setVisited(true)
-      }}
-    >
-      <summary
-        className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-1.5 text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
-        aria-label={`Folder ${path}`}
-        aria-disabled={props.disabled}
-        onClick={(event) => {
-          if (props.disabled) event.preventDefault()
+    <div className="relative">
+      <details
+        open={expanded}
+        onToggle={(event) => {
+          const open = event.currentTarget.open
+          setExpanded(open)
+          if (open) setVisited(true)
         }}
       >
-        <ChevronRight size={12} className={`shrink-0 ${expanded ? 'rotate-90' : ''}`} />
-        {expanded ? (
-          <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
-        ) : (
-          <Folder size={14} className="shrink-0 text-muted-foreground" />
-        )}
-        <span className="truncate">{path.split('/').at(-1)}</span>
-      </summary>
-      <div className="ml-3 border-l border-border/50 pl-1">
-        {visited && <Directory {...props} path={path} active={active && expanded} />}
-      </div>
-    </details>
+        <summary
+          className={`flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-1.5 text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden ${props.onPreviewFolder ? 'pr-9' : ''}`}
+          aria-label={`Folder ${path}`}
+          aria-disabled={props.disabled}
+          onClick={(event) => {
+            if (props.disabled) event.preventDefault()
+          }}
+        >
+          <ChevronRight size={12} className={`shrink-0 ${expanded ? 'rotate-90' : ''}`} />
+          {expanded ? (
+            <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
+          ) : (
+            <Folder size={14} className="shrink-0 text-muted-foreground" />
+          )}
+          <span className="truncate">{path.split('/').at(-1)}</span>
+        </summary>
+        <div className="ml-3 border-l border-border/50 pl-1">
+          {visited && <Directory {...props} path={path} active={active && expanded} />}
+        </div>
+      </details>
+      {props.onPreviewFolder && (
+        <IconButton
+          label={uiText('Preview folder {value0}', { value0: path })}
+          className="absolute top-0 right-1 size-7"
+          disabled={props.disabled}
+          onClick={() => props.onPreviewFolder?.(path)}
+        >
+          <PanelRightOpen size={14} />
+        </IconButton>
+      )}
+    </div>
   )
 }
 

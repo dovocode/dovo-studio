@@ -37,6 +37,7 @@ import {
   responses,
   taskFailureVersion,
   taskPreparation,
+  providerStartupLabel,
   taskTranscript,
   taskBudgetUsage,
   mutableStruct,
@@ -535,6 +536,7 @@ function TaskDetailContent({
   }, [worktreeThread.error])
   const resume = useAction()
   const preparation = taskPreparation(task)
+  const startupLabel = providerStartupLabel(task)
   const budget = taskBudgetUsage(task)
   const quota = useAction(task.quotaContinuation?.at)
   const retry = useAction(
@@ -1459,7 +1461,7 @@ function TaskDetailContent({
                       retrying={retry.busy || !!task.activeRunId}
                       retryError={retry.error}
                     />
-                  ) : task.status === 'running' && task.runPhase === 'preparing' ? (
+                  ) : startupLabel ? (
                     <View
                       accessibilityRole="text"
                       style={{
@@ -1472,7 +1474,7 @@ function TaskDetailContent({
                     >
                       <ActivityIndicator size="small" color={colors.muted} />
                       <Text style={[styles.muted, { flex: 1 }]}>
-                        <InterfaceText>{'Starting agent…'}</InterfaceText>
+                        <InterfaceText>{startupLabel}</InterfaceText>
                       </Text>
                     </View>
                   ) : null}

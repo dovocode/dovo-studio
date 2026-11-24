@@ -122,6 +122,37 @@ it('retires a live Codex process that does not acknowledge turn start', async ()
   expect(accepted).not.toHaveBeenCalled()
 })
 
+it('reports cold session startup and warm session resume before accepting each prompt', async () => {
+  const f = fixture()
+  const progress: string[] = []
+  const run = {
+    ...f.run,
+    onStartup: (step: Parameters<NonNullable<AgentRun['onStartup']>>[0]) => progress.push(step),
+    onPromptAccepted: () => {
+      if (progress.at(-1) !== 'accepted') progress.push('accepted')
+    },
+  }
+  const turn = async (sessionId?: string) => {
+    f.started.mockClear()
+    const result = f.adapter.run({ ...run, sessionId })
+    await vi.waitFor(() => expect(f.started).toHaveBeenCalledOnce())
+    f.complete('turn')
+    await result
+  }
+  await turn()
+  await turn('thread')
+  expect(f.spawn).toHaveBeenCalledOnce()
+  expect(progress).toEqual([
+    'initializing',
+    'opening-session',
+    'sending-prompt',
+    'accepted',
+    'resuming-session',
+    'sending-prompt',
+    'accepted',
+  ])
+})
+
 it.each([-32600, -32601])(
   'starts without an exit grace wait for optional account error %s',
   async (code) => {

@@ -15,7 +15,7 @@ const mobile = root + 'apps/mobile/src/'
 const stubs = [
   {
     path: 'react-native',
-    contents: `export const TextInput=({value,onChangeText,accessibilityLabel})=><input aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Object.assign({},...[].concat(style??{}))}>{children}</div>;export const ScrollView=View;export const Image=({source,accessibilityLabel})=><img alt={accessibilityLabel} src={source.uri}/>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const SectionList=({sections,renderItem})=><div>{sections.flatMap(section=>section.data.map(item=><div key={item.node.path}>{renderItem({item})}</div>))}</div>;export const Alert={alert:(_title,_body,actions)=>window.confirmDiscard=()=>actions.find(action=>action.text==='Discard').onPress()};`,
+    contents: `export const useWindowDimensions=()=>({width:window.innerWidth});export const TextInput=({value,onChangeText,accessibilityLabel})=><input aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Object.assign({},...[].concat(style??{}))}>{children}</div>;export const ScrollView=View;export const Image=({source,accessibilityLabel})=><img alt={accessibilityLabel} src={source.uri}/>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const SectionList=({sections,renderItem})=><div>{sections.flatMap(section=>section.data.map(item=><div key={item.node.path}>{renderItem({item})}</div>))}</div>;export const Alert={alert:(_title,_body,actions)=>window.confirmDiscard=()=>actions.find(action=>action.text==='Discard').onPress()};`,
   },
   {
     path: '../../runtime/connection/provider',
@@ -257,6 +257,31 @@ try {
     true,
     'Expanding a folder keeps root files visible',
   )
+  await page.setViewportSize({ width: 1000, height: 768 })
+  await page.evaluate(() => window.setConnected(true))
+  await page.getByRole('button', { name: 'Preview folder src', exact: true }).click()
+  const folderFile = page.getByRole('button', { name: 'src/hello.ts', exact: true })
+  await folderFile.click()
+  await page.getByText('export const hello = 1', { exact: true }).waitFor()
+  assert.equal(await folderFile.isVisible(), true, 'Tablets show the folder tree beside the file')
+  await page.evaluate(() => window.setConnected(false))
+  await page.getByText('Reconnect to browse and save files.', { exact: true }).waitFor()
+  assert.equal(await folderFile.isVisible(), true, 'The opened folder remains visible offline')
+  const folderReconnect = page.waitForResponse((response) =>
+    response.url().endsWith('/api/tasks/files/directory'),
+  )
+  await page.evaluate(() => window.setConnected(true))
+  await folderReconnect
+  assert.equal(listRequests.at(-1).directory, 'src', 'Reconnect keeps the selected folder')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.evaluate(() => window.setConnected(true))
+  await folderFile.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Browse files', exact: true }).click()
+  await folderFile.waitFor()
+  await page.getByRole('button', { name: 'Go to parent folder' }).click()
+  await page.getByRole('button', { name: 'latest-file.txt', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Folder src', exact: true }).click()
+  await folderFile.waitFor()
   const beforeReopen = listRequests.length
   await page.getByRole('button', { name: 'Folder src', exact: true }).click()
   await page.getByRole('button', { name: 'src/hello.ts', exact: true }).waitFor({ state: 'hidden' })

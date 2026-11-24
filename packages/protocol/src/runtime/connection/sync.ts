@@ -250,6 +250,7 @@ export const syncInputSchema = Schema.Union([
 export const syncTicketSchema = mutableStruct({
   ticket: Schema.String,
   format: Schema.optional(Schema.Number),
+  resumeHeartbeat: Schema.optional(Schema.Literal(true)),
 })
 export type SyncFrame = Schema.Schema.Type<typeof syncFrameSchema>
 export type SnapshotDelta = Schema.Schema.Type<typeof snapshotDeltaSchema>

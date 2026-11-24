@@ -493,6 +493,30 @@ it('cancels redundant HTTP only after the stream provides a snapshot', async () 
   await vi.advanceTimersByTimeAsync(0)
   expect(f.read).toHaveBeenCalledTimes(2)
 })
+it('keeps a newer HTTP snapshot when the stream finishes reconnecting', async () => {
+  const f = fixture()
+  const events: DesktopSyncEvent[] = []
+  const snapshot = { ...f.snapshot(['thread']), revision: 4, runtimeInstanceId: 'runtime' }
+  f.read.mockResolvedValueOnce(snapshot)
+  f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+  await vi.advanceTimersByTimeAsync(0)
+  const baseline = events.findLast((event) => event.type === 'snapshot')
+  expect(baseline?.snapshot.revision).toBe(4)
+
+  const stream = f.options.get('http://paired.lan:8787')!
+  f.online.add('http://paired.lan:8787')
+  stream.onStatus?.('live')
+  stream.onSnapshot({ ...snapshot, revision: 3 })
+  expect(events.filter((event) => event.type === 'delta')).toEqual([])
+
+  stream.onSnapshot({ ...snapshot, revision: 5 })
+  const update = events.at(-1)
+  if (baseline?.type !== 'snapshot' || update?.type !== 'delta')
+    throw new Error('Expected the next live revision to patch the HTTP baseline')
+  expect(update.base).toBe(baseline.sequence)
+  expect(applySnapshotDelta(baseline.snapshot, update.delta).revision).toBe(5)
+})
+
 it('ignores a late failed HTTP read after the shared stream becomes live', async () => {
   const f = fixture(),
     popout: DesktopSyncEvent[] = []

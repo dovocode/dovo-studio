@@ -366,6 +366,7 @@ export class AccountInternet {
   private async refresh() {
     if (!this.running || !this.state) return
     if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
     const generation = this.generation,
       state = this.state,
       mcpGeneration = this.mcpGeneration
@@ -374,7 +375,7 @@ export class AccountInternet {
       const inbox = decode(
         inboxSchema,
         await this.request(
-          remoteMcp ? '/v1/internet/host?remoteMcp=1' : '/v1/internet/host',
+          remoteMcp ? '/v1/internet/host?remoteMcp=1&mcpEvents=1' : '/v1/internet/host',
           state.grant,
         ),
       )
@@ -394,12 +395,27 @@ export class AccountInternet {
       this.activeRequests = new Set(inbox.active)
       this.removeExcept(this.activeRequests)
       if (remoteMcp && inbox.mcp && !this.mcpWork) {
-        const pending = this.handleRemoteMcp(inbox.mcp.id, state.grant, generation, mcpGeneration)
-          .catch(() => {})
-          .finally(() => {
-            if (this.mcpWork === pending) this.mcpWork = undefined
-          })
-        this.mcpWork = pending
+        const finished = (replied: boolean) => {
+          this.mcpWork = undefined
+          // A timer means the poll loop is idle. An in-flight poll can pick up the next offer.
+          if (
+            replied &&
+            this.timer &&
+            generation === this.generation &&
+            mcpGeneration === this.mcpGeneration &&
+            this.canRunRemoteMcp()
+          )
+            void this.poll()
+        }
+        this.mcpWork = this.handleRemoteMcp(
+          inbox.mcp.id,
+          state.grant,
+          generation,
+          mcpGeneration,
+        ).then(
+          () => finished(true),
+          () => finished(false),
+        )
       }
       // Authentication has its own cadence: signaling setup and broker writes must never
       // consume the short authorization lease. Keep one pass even across disable/re-enable:
@@ -430,15 +446,19 @@ export class AccountInternet {
     const deadline = Date.now() + 12000
     const handler = this.mcp
     if (!handler) return
-    const authorize = () => {
+    const authorizeReply = () => {
       if (
         generation !== this.generation ||
         mcpGeneration !== this.mcpGeneration ||
         !this.running ||
-        Math.min(deadline, this.lease) <= Date.now() ||
         !this.canRunRemoteMcp()
       )
         throw new HttpError(403, 'Remote MCP is disabled on this computer.')
+    }
+    const authorize = () => {
+      authorizeReply()
+      if (Math.min(deadline, this.lease) <= Date.now())
+        throw new HttpError(403, 'Remote MCP authorization expired before the operation.')
     }
     authorize()
     const claim = decode(
@@ -463,7 +483,7 @@ export class AccountInternet {
             : 'The runtime could not complete the Studio operation.',
       }
     }
-    authorize()
+    authorizeReply()
     await this.request('/v1/internet/host/mcp/reply', grant, 'POST', reply)
   }
   private async failed(error: unknown, generation: number) {

@@ -47,6 +47,14 @@ it('withholds a queued call after revocation, rejects foreign claims and admits 
     }
     const lookup = vi.spyOn(store, 'grant').mockReturnValue(grant)
     mailbox.offer(host)
+    expect(mailbox.eventsEnabled(host.installation)).toBe(false)
+    await expect(
+      mailbox.call(
+        grant,
+        { part: 'events', command: { name: 'thread.needs_input' } },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('does not currently offer MCP events')
     const result = mailbox.call(
       grant,
       { part: 'threads', command: { action: 'stop', id: 'thread' } },

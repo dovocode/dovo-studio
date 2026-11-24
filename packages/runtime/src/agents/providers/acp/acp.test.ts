@@ -646,17 +646,22 @@ it('reports a real idle process exit to the current owner after warm-session reu
   const adapter = createAcpAdapter()
   const first = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
   const current = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const startup = vi.fn<NonNullable<AgentRun['onStartup']>>()
   let child: Parameters<NonNullable<AgentRun['onOwnedProcess']>>[0] | undefined
   const input = run(f.cwd, f.launch, {
     taskId: 'rebound',
     onSubagentEvent: first,
+    onStartup: startup,
     onOwnedProcess: (value) => {
       child = value
     },
   })
   try {
     await adapter.run(input.run)
+    expect(startup.mock.calls).toEqual([['initializing'], ['opening-session'], ['sending-prompt']])
+    startup.mockClear()
     await adapter.run({ ...input.run, sessionId: 'session', onSubagentEvent: current })
+    expect(startup.mock.calls).toEqual([['sending-prompt']])
     if (!child) throw new Error('Missing provider process')
     child.kill()
     await vi.waitFor(() =>

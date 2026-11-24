@@ -32,7 +32,10 @@ export function internetApi(
       const organizationRelay = host && (await relay?.(host))
       const current = store.host(token)
       if (!current) throw new RequestError(401, 'Internet access has been revoked')
-      const mcp = url.searchParams.get('remoteMcp') === '1' ? mailbox?.offer(current) : undefined
+      const mcp =
+        url.searchParams.get('remoteMcp') === '1'
+          ? mailbox?.offer(current, url.searchParams.get('mcpEvents') === '1')
+          : undefined
       return json(res, 200, {
         ...inbox,
         ...(organizationRelay ? { organizationRelay } : {}),

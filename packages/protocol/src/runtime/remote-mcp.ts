@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { maxValue, minValue, mutableStruct } from '../shared/schema.js'
+import { isoDateTime, maxValue, minValue, mutableArray, mutableStruct } from '../shared/schema.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 const text = maxValue(minValue(Schema.String, 1), 12000)
@@ -38,10 +38,72 @@ export const remoteMcpAutomationsSchema = Schema.Union([
   mutableStruct({ action: Schema.Literals(['read', 'runs', 'cancel']), id }),
   mutableStruct({ action: Schema.Literal('run'), id, requestId: id }),
 ])
+export const remoteMcpEventsExtension = 'io.modelcontextprotocol/events'
+export const remoteMcpEventsVersion = '2026-07-28'
+export const remoteMcpEventNameSchema = Schema.Literals([
+  'thread.turn_finished',
+  'thread.needs_input',
+])
+export const remoteMcpEventFilterSchema = mutableStruct({
+  threadIds: Schema.optional(maxValue(mutableArray(id), 20)),
+  projectIds: Schema.optional(maxValue(mutableArray(id), 20)),
+})
+export const remoteMcpEventPollSchema = mutableStruct({
+  name: remoteMcpEventNameSchema,
+  arguments: Schema.optional(remoteMcpEventFilterSchema),
+  cursor: Schema.optional(Schema.NullOr(id)),
+  maxEvents: Schema.optional(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100)),
+  ),
+  maxAgeMs: Schema.optional(
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+    ),
+  ),
+})
+export type RemoteMcpEventPoll = typeof remoteMcpEventPollSchema.Type
+
+const threadFields = { threadId: id, projectId: Schema.NullOr(id) }
+export const remoteMcpTurnFinishedSchema = mutableStruct({
+  ...threadFields,
+  turnId: id,
+  outcome: Schema.Literals(['completed', 'failed', 'cancelled']),
+})
+export const remoteMcpNeedsInputSchema = mutableStruct({
+  ...threadFields,
+  requestId: id,
+  kind: Schema.Literals(['question', 'approval']),
+})
+const eventFields = { eventId: id, timestamp: isoDateTime(Schema.String) }
+export const remoteMcpEventSchema = Schema.Union([
+  mutableStruct({
+    ...eventFields,
+    name: Schema.Literal('thread.turn_finished'),
+    data: remoteMcpTurnFinishedSchema,
+  }),
+  mutableStruct({
+    ...eventFields,
+    name: Schema.Literal('thread.needs_input'),
+    data: remoteMcpNeedsInputSchema,
+  }),
+])
+export type RemoteMcpEvent = typeof remoteMcpEventSchema.Type
+export const remoteMcpEventPageSchema = mutableStruct({
+  resultType: Schema.Literal('complete'),
+  events: maxValue(mutableArray(remoteMcpEventSchema), 100),
+  cursor: id,
+  truncated: Schema.Boolean,
+  hasMore: Schema.Boolean,
+  nextPollMs: Schema.Int,
+})
+export type RemoteMcpEventPage = typeof remoteMcpEventPageSchema.Type
+
 export const remoteMcpCommandSchema = Schema.Union([
   mutableStruct({ part: Schema.Literal('discover'), command: remoteMcpDiscoverSchema }),
   mutableStruct({ part: Schema.Literal('threads'), command: remoteMcpThreadsSchema }),
   mutableStruct({ part: Schema.Literal('automations'), command: remoteMcpAutomationsSchema }),
+  mutableStruct({ part: Schema.Literal('events'), command: remoteMcpEventPollSchema }),
 ])
 export type RemoteMcpCommand = typeof remoteMcpCommandSchema.Type
 
@@ -50,7 +112,7 @@ export type RemoteMcpAccess = typeof remoteMcpAccessSchema.Type
 
 export function remoteMcpWrites(input: RemoteMcpCommand) {
   return (
-    input.part !== 'discover' &&
+    (input.part === 'threads' || input.part === 'automations') &&
     ['create', 'send', 'stop', 'resume', 'run', 'cancel'].includes(input.command.action)
   )
 }

@@ -5,11 +5,14 @@ const MAX_BYTES = 4 * 1024 * 1024
 export type CodeCall = { source: string; name: string; server?: string; arguments?: unknown }
 export type CodeExecution = { result: unknown; output: unknown[]; calls: number }
 
+type CallOutcomes = { completed: number[]; unconfirmed: number[] }
+
 export class CodeExecutionError extends Error {
   constructor(
     cause: Error,
     readonly output: unknown[],
     readonly calls: number,
+    readonly callOutcomes: CallOutcomes,
   ) {
     super(cause.message, { cause })
   }
@@ -39,6 +42,7 @@ export async function runToolCode(options: {
   const deferred = new Set<QuickJSDeferredPromise>()
   const ready: Array<() => void> = []
   const output: unknown[] = []
+  const dispatched = new Map<number, keyof CallOutcomes>()
   let outputBytes = 0,
     inputBytes = 0,
     calls = 0,
@@ -65,11 +69,13 @@ export async function runToolCode(options: {
     if (closed) return
     closed = true
     controller.abort(error)
-    rejectExecution(
-      !options.signal.aborted && output.length
-        ? new CodeExecutionError(error, output, calls)
-        : error,
-    )
+    if (options.signal.aborted || (!output.length && !dispatched.size)) {
+      rejectExecution(error)
+      return
+    }
+    const callOutcomes: CallOutcomes = { completed: [], unconfirmed: [] }
+    for (const [number, outcome] of dispatched) callOutcomes[outcome].push(number)
+    rejectExecution(new CodeExecutionError(error, output, calls, callOutcomes))
   }
   const abort = () => stop(new Error('Tool code cancelled. Earlier tool calls may have completed.'))
   options.signal.addEventListener('abort', abort, { once: true })
@@ -157,7 +163,8 @@ export async function runToolCode(options: {
   context
     .newFunction('__call', (value) => {
       if (closed || signal.aborted) throw new Error('Tool code is no longer active')
-      if (++calls > 100 || active >= 8)
+      const number = ++calls
+      if (number > 100 || active >= 8)
         throw new Error('Tool code supports 100 calls and 8 concurrent calls')
       const call: CodeCall = JSON.parse(context.getString(value))
       const promise = context.newPromise()
@@ -177,9 +184,14 @@ export async function runToolCode(options: {
         schedule()
       }
       void Promise.resolve()
-        .then(() => options.call(call, signal))
+        .then(() => {
+          signal.throwIfAborted()
+          dispatched.set(number, 'unconfirmed')
+          return options.call(call, signal)
+        })
         .then(
-          (value) =>
+          (value) => {
+            dispatched.set(number, 'completed')
             enqueue(() => {
               let json = JSON.stringify(value ?? null)
               let bytes = Buffer.byteLength(json)
@@ -215,7 +227,8 @@ export async function runToolCode(options: {
                   .unwrapResult(context.callFunction(parseJson, context.undefined, handle))
                   .consume((value) => promise.resolve(value))
               })
-            }),
+            })
+          },
           (error: unknown) =>
             enqueue(() => {
               context

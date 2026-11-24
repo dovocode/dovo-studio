@@ -43,8 +43,17 @@ export function preparePairingFlow(flow) {
 }
 
 // Fixture-only loopback control; production pairing and its expiry stay intact.
-export async function startPairingControl(pairing) {
+export async function startPairingControl(pairing, recoveryNetwork) {
   const server = createServer((request, response) => {
+    if (
+      request.method === 'POST' &&
+      recoveryNetwork &&
+      (request.url === '/offline' || request.url === '/online')
+    ) {
+      recoveryNetwork.setOnline(request.url === '/online')
+      response.writeHead(200).end()
+      return
+    }
     if (request.method !== 'POST' || request.url !== '/pairing-code') {
       response.writeHead(404).end()
       return

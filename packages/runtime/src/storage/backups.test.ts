@@ -21,6 +21,7 @@ import { rotateRuntimeLog } from './log-rotation'
 import { Devices } from '../auth/devices'
 import { RetrievalPeers } from '../retrieval/peers'
 import { WorkspaceStore } from './workspace'
+import { RemoteMcpEvents } from './remote-mcp-events'
 import type { Task } from '@dovo/protocol'
 import * as backup from './backup'
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -166,6 +167,8 @@ it('removes staged sidecars when verification rejects a completed backup copy', 
 it('verifies committed WAL contents, bounds retention and restores under the runtime lock', async () => {
   const f = await setup()
   f.db.prepare('INSERT INTO documents VALUES (?, ?)').run('fixture', 'original')
+  const eventName = 'thread.turn_finished'
+  const eventCursor = new RemoteMcpEvents(f.db).poll({ name: eventName }).cursor
   const snapshot = await f.backups.create()
   verifyRuntimeBackup(snapshot.path)
   const copy = new Database(snapshot.path, { readonly: true })
@@ -193,6 +196,9 @@ it('verifies committed WAL contents, bounds retention and restores under the run
     expect(restored.prepare('SELECT value FROM documents WHERE id=?').get('fixture')).toEqual({
       value: 'original',
     })
+    const eventPage = new RemoteMcpEvents(restored).poll({ name: eventName, cursor: eventCursor })
+    expect(eventPage.truncated).toBe(true)
+    expect(eventPage.cursor).not.toBe(eventCursor)
   } finally {
     restored.close()
   }
