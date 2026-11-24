@@ -3,17 +3,63 @@ import { createTwoFilesPatch } from 'diff'
 import { isDeepStrictEqual } from 'node:util'
 import {
   botSkillProposalInputSchema,
+  type botSkillSourcesInputSchema,
   botSkillDecisionSchema,
   decode,
+  decodeResult,
   emptyBotResources,
   botResourcesSchema,
   redactCredentialText,
   botSchema,
+  uuidSchema,
+  type Task,
 } from '@dovo/protocol'
+import type { Schema } from 'effect'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
 const receipt = (botId: string, key: string) =>
   `bot-skill-proposal:${botId}:${createHash('sha256').update(key).digest('hex')}`
+function ownsSkillSource(botId: string, source: Pick<Task, 'id' | 'delegation' | 'botJob'>) {
+  return (
+    source.id === botId ||
+    source.delegation?.parentTaskId === botId ||
+    source.botJob?.botId === botId
+  )
+}
+
+export function botSkillSources(
+  s: Services,
+  taskId: string,
+  input: Schema.Schema.Type<typeof botSkillSourcesInputSchema>,
+) {
+  const bot = s.store.taskSummary(taskId)
+  if (!bot.bot || bot.replica || bot.archivedAt)
+    throw new HttpError(403, 'Only this computer’s Bot coordinator can look up skill sources.')
+  const limit = 20
+  const owned = s.store
+    .get()
+    .tasks.filter(
+      (source) => ownsSkillSource(taskId, source) && decodeResult(uuidSchema, source.id).success,
+    )
+  const candidates = input.sourceTaskId
+    ? owned.filter((source) => source.id === input.sourceTaskId)
+    : owned
+  const sources = candidates
+    .flatMap((source) =>
+      s.store
+        .completedTurns(source.id, limit, input.messageId)
+        .filter((turn) => decodeResult(uuidSchema, turn.id).success)
+        .map((turn) => ({
+          sourceTaskId: source.id,
+          sourceTurnId: turn.id,
+          finishedAt: turn.finishedAt ?? turn.startedAt,
+        })),
+    )
+    .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt))
+    .slice(0, limit)
+  return { sources }
+}
+
 export function proposeBotSkill(s: Services, taskId: string, value: unknown) {
   const input = decode(botSkillProposalInputSchema, value)
   const task = s.store.taskSummary(taskId)
@@ -25,17 +71,16 @@ export function proposeBotSkill(s: Services, taskId: string, value: unknown) {
     .get(receipt(taskId, input.key))
   if (typeof existing === 'string') return { id: existing }
   const source = s.store.taskSummary(input.sourceTaskId)
-  const owned =
-    source.id === taskId ||
-    source.delegation?.parentTaskId === taskId ||
-    source.botJob?.botId === taskId
   if (
-    !owned ||
+    !ownsSkillSource(taskId, source) ||
     !s.store
       .task(source.id)
       .turns?.some((turn) => turn.id === input.sourceTurnId && turn.status === 'completed')
   )
-    throw new HttpError(409, 'Choose a completed turn from this Bot or one of its workers.')
+    throw new HttpError(
+      409,
+      'Choose a completed turn from this Bot or one of its workers. Use bot_history with action skill_sources to look up the IDs.',
+    )
   const text = [input.name, input.description, input.content].join('\n')
   if (
     redactCredentialText(text) !== text ||

@@ -6,6 +6,7 @@ import {
   memoryConfigureSchema,
   botMemoryRequestSchema,
   botHistorySearchSchema,
+  botSkillSourcesInputSchema,
   botMemoryConfigureSchema,
   botMemoryClearSchema,
   memoryDeleteSchema,
@@ -15,6 +16,7 @@ import {
   memoryScopeSchema,
   memoryWriteSchema,
 } from '@dovo/protocol'
+import { botSkillSources } from '../../agent-tools/bot-skills.js'
 import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
@@ -27,6 +29,21 @@ export function memoryRoute(request: IncomingMessage, path: string, owner: boole
       const input = yield* serviceResult(body(request, 100_000))
       if (path === '/api/memory/agent/history') {
         if (!owner) throw new HttpError(403, 'Agent memory access requires the runtime owner token')
+        if (
+          input &&
+          typeof input === 'object' &&
+          'action' in input &&
+          input.action === 'skill_sources'
+        ) {
+          const { taskId, ...value } = decode(
+            strictStruct({
+              taskId: botHistorySearchSchema.fields.taskId,
+              ...botSkillSourcesInputSchema.fields,
+            }),
+            input,
+          )
+          return botSkillSources(s, taskId, value)
+        }
         const value = decode(botHistorySearchSchema, input)
         return s.memory.searchBotHistory(value.taskId, value.query)
       }

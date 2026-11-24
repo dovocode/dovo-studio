@@ -1274,6 +1274,11 @@ export class WorkspaceStore {
       ? retained.messages.find((message) => message.id === messageId)
       : this.conversations.message(id, messageId)
   }
+  /** Read completed turn records without loading the conversation. */
+  completedTurns(id: string, limit: number, messageId?: string) {
+    const turnId = messageId === undefined ? undefined : this.taskMessage(id, messageId)?.turnId
+    return this.conversations.completedTurns(id, limit, messageId, turnId)
+  }
   /** One message, with Bot context-reset exclusions, without loading the transcript. */
   contextMessage(id: string, messageId: string) {
     const summary = this.taskSummary(id)

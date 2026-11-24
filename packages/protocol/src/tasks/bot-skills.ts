@@ -1,6 +1,11 @@
 import { Schema } from 'effect'
 import { managedSkillSchema } from '../shared/resources.js'
 import { maxValue, minValue, mutableStruct, uuidSchema } from '../shared/schema.js'
+export const botSkillSourcesInputSchema = mutableStruct({
+  action: Schema.Literal('skill_sources'),
+  sourceTaskId: Schema.optional(uuidSchema),
+  messageId: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
+})
 export const botSkillProposalInputSchema = mutableStruct({
   key: maxValue(minValue(Schema.String, 1), 120),
   sourceTaskId: uuidSchema,

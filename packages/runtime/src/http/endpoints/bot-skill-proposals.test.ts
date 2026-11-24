@@ -14,14 +14,28 @@ it('proposes through real MCP without installing, then applies a reviewed Bot-on
   const f = await setupBotRuntime(),
     s = f.runtime.services
   const { id } = decode(botResultSchema, await (await f.create()).response.json())
+  const messageId = randomUUID()
   await f.request('/api/tasks/message', {
     id,
-    messageId: randomUUID(),
+    messageId,
     text: 'Complete reusable work',
   })
   await waitForRuntime(() => expect(s.store.taskSummary(id).status).toBe('review'))
   const source = s.store.task(id).turns!.at(-1)!
+  const workerTurn = { ...source, id: randomUUID(), assistantId: randomUUID() }
+  const worker = {
+    ...f.draft(),
+    botJob: { botId: id, runId: randomUUID() },
+    turns: [workerTurn],
+  }
+  const foreign = {
+    ...worker,
+    id: randomUUID(),
+    botJob: { botId: randomUUID(), runId: randomUUID() },
+  }
+  s.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, worker, foreign] }))
   let proposalId = ''
+  let proposalFailure: unknown
   f.runtime.run.mockImplementation(async (run) => {
     const config = run.agent.resources?.mcpServers.find((server) => server.name === 'dovo_task')
     if (!config) throw new Error('Missing task tools')
@@ -36,12 +50,44 @@ it('proposes through real MCP without installing, then applies a reviewed Bot-on
         }),
       )
       expect((await client.listTools()).tools.some((t) => t.name === 'propose_skill')).toBe(true)
+      const findSources = async (input: { sourceTaskId?: string; messageId?: string }) => {
+        const result = await client.callTool({
+          name: 'bot_history',
+          arguments: { action: 'skill_sources', ...input },
+        })
+        expect(result.isError).not.toBe(true)
+        const { content } = decode(
+          mutableStruct({
+            content: mutableArray(mutableStruct({ type: Schema.String, text: Schema.String })),
+          }),
+          result,
+        )
+        return decode(
+          mutableStruct({
+            sources: mutableArray(
+              mutableStruct({ sourceTaskId: Schema.String, sourceTurnId: Schema.String }),
+            ),
+          }),
+          JSON.parse(content[0].text),
+        ).sources
+      }
+      const expected = [{ sourceTaskId: id, sourceTurnId: source.id }]
+      const workerCitation = { sourceTaskId: worker.id, sourceTurnId: workerTurn.id }
+      const sources = await findSources({})
+      expect(sources).toHaveLength(2)
+      expect(sources).toEqual(expect.arrayContaining([...expected, workerCitation]))
+      expect(await findSources({ messageId })).toEqual(expected)
+      expect(await findSources({ sourceTaskId: id, messageId: source.assistantId })).toEqual(
+        expected,
+      )
+      expect(await findSources({ sourceTaskId: worker.id })).toEqual([workerCitation])
+      expect(await findSources({ sourceTaskId: foreign.id })).toEqual([])
+      const [citation] = await findSources({ messageId: source.assistantId })
       const answer = await client.callTool({
         name: 'propose_skill',
         arguments: {
           key: 'review-release',
-          sourceTaskId: id,
-          sourceTurnId: source.id,
+          ...citation,
           name: 'release-review',
           description: 'Review a release',
           content: 'Check release status and report verified results.',
@@ -78,6 +124,9 @@ it('proposes through real MCP without installing, then applies a reviewed Bot-on
           )
         ).status,
       ).toBe(403)
+    } catch (error) {
+      proposalFailure = error
+      throw error
     } finally {
       await client.close()
     }
@@ -88,7 +137,8 @@ it('proposes through real MCP without installing, then applies a reviewed Bot-on
     messageId: randomUUID(),
     text: 'Propose the method as a skill',
   })
-  await waitForRuntime(() => expect(proposalId).not.toBe(''))
+  await waitForRuntime(() => expect(proposalId || proposalFailure).toBeTruthy())
+  if (proposalFailure) throw proposalFailure
   expect(s.store.taskSummary(id).bot?.resources?.skills ?? []).toHaveLength(0)
   const bot = s.store.taskSummary(id).bot!
   expect(bot.skillProposals?.[0].patch).toContain('+Check release status')

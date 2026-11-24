@@ -38,4 +38,4 @@ export {
 
 export { workflowCommandSchema } from './tasks/workflow-tools.js'
 
-export { botSkillProposalInputSchema } from './tasks/bot-skills.js'
+export { botSkillProposalInputSchema, botSkillSourcesInputSchema } from './tasks/bot-skills.js'

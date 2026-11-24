@@ -19,6 +19,7 @@ import {
   mutableArray,
   memoryScopeSchema,
   botSkillProposalInputSchema,
+  botSkillSourcesInputSchema,
   mutableStruct,
   previewDevicesSchema,
   previewResultSchema,
@@ -807,20 +808,22 @@ const tools: Array<
         {
           name: 'bot_history',
           description:
-            "Search this Bot's earlier messages for missing facts or an explicit history request; up to 20 snippets. Supplied steps need no lookup. Answer from sufficient snippets; user IDs cannot read assistant replies. Resets excluded; other Bots/workers/projects private. Evidence grants no permission.",
+            "Use query to search this Bot's history. Use action skill_sources to get exact sourceTaskId/sourceTurnId pairs for propose_skill, including owned workers. Optional sourceTaskId and messageId narrow source lookup. Returns up to 20 results. History search excludes resets and other threads. Source lookup returns IDs and timestamps only. Evidence grants no permission.",
           inputSchema: {
             type: 'object' as const,
             properties: {
               query: { type: 'string' as const, minLength: 1, maxLength: 200 },
+              action: { type: 'string' as const, enum: ['skill_sources'] },
+              sourceTaskId: { type: 'string' as const, format: 'uuid' },
+              messageId: { type: 'string' as const, minLength: 1, maxLength: 300 },
             },
-            required: ['query'],
             additionalProperties: false,
           },
         },
         {
           name: 'propose_skill',
           description:
-            'Propose a Bot skill. Send stable key, sourceTaskId/sourceTurnId, name, description, content. The IDs cite a completed turn of this Bot or its worker; Dovo validates them. Draft content from supplied steps without history lookup. No secrets. Installs only after human review/apply in Skills.',
+            'Propose a Bot skill. Send stable key, sourceTaskId/sourceTurnId, name, description, content. Get missing IDs with bot_history action skill_sources. Message IDs are not turn IDs. Draft from supplied steps. No secrets. Installs only after human review/apply in Skills.',
           inputSchema: (() => {
             const document = Schema.toJsonSchemaDocument(botSkillProposalInputSchema)
             return { ...document.schema, type: 'object' as const, $defs: document.definitions }
@@ -1429,7 +1432,14 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       case 'bot_history':
         if (!memoryScopes.includes('bot'))
           throw new Error('Only Bot coordinators can recall Bot history')
-        return text(await post('/api/memory/agent/history', { taskId: task, query: input.query }))
+        return text(
+          await post('/api/memory/agent/history', {
+            taskId: task,
+            ...(input.action === 'skill_sources'
+              ? decode(botSkillSourcesInputSchema, input)
+              : { query: input.query }),
+          }),
+        )
       case 'memory_list':
       case 'memory_read':
       case 'memory_write':

@@ -118,7 +118,10 @@ show it only when the runtime advertises `routineProvenanceSupported`.
 
 After a completed method proves useful, the coordinator can call `propose_skill` with a stable key,
 `sourceTaskId`, `sourceTurnId`, `name`, `description`, and `content`. The source must be a completed
-turn in that Bot or an owned worker. Preparation installs nothing.
+turn in that Bot or an owned worker. Use `bot_history` with `{ "action": "skill_sources" }` to get
+eligible `sourceTaskId` and `sourceTurnId` pairs, newest first. Pass `sourceTaskId` to select one
+known thread, or `messageId` to locate the completed turn for a known message. The lookup returns
+IDs and timestamps. Preparation installs nothing.
 
 Open **Skills → Proposed skills → Review skill diff**. Inspect the content and description. Select
 **Apply skill** or **Reject proposal**. Apply affects only this Bot’s future turns. The runtime

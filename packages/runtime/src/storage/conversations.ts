@@ -73,6 +73,15 @@ export class Conversations {
     const { value } = decode(mutableStruct({ value: Schema.String }), row)
     return decode(messageSchema, JSON.parse(value))
   }
+  completedTurns(taskId: string, limit: number, messageId?: string, turnId?: string) {
+    const rows = this.db
+      .prepare(`SELECT value FROM conversation_items
+        WHERE task_id = ? AND kind = 'turn' AND json_extract(value, '$.status') = 'completed'
+          AND (? IS NULL OR item_id = ? OR json_extract(value, '$.assistantId') = ?)
+        ORDER BY ordinal DESC LIMIT ?`)
+      .all(taskId, messageId ?? null, turnId ?? null, messageId ?? null, limit)
+    return decode(valuesSchema, rows).map(({ value }) => decode(turnSchema, JSON.parse(value)))
+  }
   contextExcluded(
     taskId: string,
     messageId: string,
