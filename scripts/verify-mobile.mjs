@@ -1,6 +1,7 @@
 import { startRuntime } from '../packages/runtime/dist/index.js'
 import { preparePairingFlow, startPairingControl } from './ci/mobile-pairing.mjs'
 import { startMobileRecoveryNetwork } from './ci/mobile-recovery-network.mjs'
+import { runAndroidSmoke } from './ci/android-smoke.mjs'
 import { threadReferenceLink } from '../packages/protocol/dist/index.js'
 import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir, networkInterfaces } from 'node:os'
@@ -312,29 +313,36 @@ try {
     // Its default ~/.maestro directory is hidden and excluded by artifact uploads.
     const diagnostics = resolve('work/mobile-native-smoke')
     await mkdir(diagnostics, { recursive: true })
-    const child = spawn(
-      'maestro',
-      [
-        '--device',
-        device,
-        'test',
-        '--debug-output',
-        join(diagnostics, 'maestro'),
-        '-e',
-        `RUNTIME_ADDRESS=${runtimeAddress}`,
-        '-e',
-        `PAIRING_CONTROL_ADDRESS=${pairingControl.address}`,
-        ...(releaseSmoke
-          ? ['-e', `THREAD_LINK=${threadReferenceLink(runtime.services.runtimeId, 'mobile-task')}`]
-          : []),
-        entrypoint,
-      ],
-      { stdio: 'inherit' },
-    )
-    const codeResult = await new Promise((resolve, reject) => {
-      child.once('error', reject)
-      child.once('exit', resolve)
-    })
+    const runMaestro = (debugOutput) =>
+      new Promise((resolve, reject) => {
+        const child = spawn(
+          'maestro',
+          [
+            '--device',
+            device,
+            'test',
+            '--debug-output',
+            debugOutput,
+            '-e',
+            `RUNTIME_ADDRESS=${runtimeAddress}`,
+            '-e',
+            `PAIRING_CONTROL_ADDRESS=${pairingControl.address}`,
+            ...(releaseSmoke
+              ? [
+                  '-e',
+                  `THREAD_LINK=${threadReferenceLink(runtime.services.runtimeId, 'mobile-task')}`,
+                ]
+              : []),
+            entrypoint,
+          ],
+          { stdio: 'inherit' },
+        )
+        child.once('error', reject)
+        child.once('exit', resolve)
+      })
+    const codeResult = androidRecovery
+      ? await runAndroidSmoke(diagnostics, runMaestro)
+      : await runMaestro(join(diagnostics, 'maestro'))
     if (codeResult !== 0) {
       // Preserve runtime state at failure, before starting another UI driver.
       await writeFile(
