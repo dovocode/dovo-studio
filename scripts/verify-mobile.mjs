@@ -341,7 +341,9 @@ try {
         child.once('exit', resolve)
       })
     const codeResult = androidRecovery
-      ? await runAndroidSmoke(diagnostics, runMaestro)
+      ? await runAndroidSmoke(diagnostics, runMaestro, () =>
+          promisify(execFile)('adb', ['-s', device, 'wait-for-device'], { timeout: 20000 }),
+        )
       : await runMaestro(join(diagnostics, 'maestro'))
     if (codeResult !== 0) {
       // Preserve runtime state at failure, before starting another UI driver.

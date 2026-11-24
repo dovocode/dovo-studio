@@ -80,7 +80,8 @@ restarts the app with the runtime unreachable, and sends the recovered draft onc
 To run that flow with Maestro on a disposable stock Android emulator and the release APK installed,
 build the runtime with `pnpm --filter @dovo/runtime... -r build` and run
 `node scripts/verify-mobile.mjs <emulator-id> --android-recovery`. The flow clears the app data on
-that emulator.
+that emulator. If ADB disconnects during the initial launch, the runner waits for it and starts one
+fresh Maestro session. Failures after launch go straight to the diagnostics.
 
 Task, recovery, and automation integration tests share the bounded budgets in
 `packages/runtime/src/testing/integration.ts` because they run real Git commands. Use state
