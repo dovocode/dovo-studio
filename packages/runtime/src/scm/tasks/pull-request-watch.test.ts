@@ -1694,3 +1694,62 @@ it('backs off a failing PR while healthy watches continue, and explicit refresh 
   await f.s.pullRequestWatch.tick()
   expect(f.read.mock.calls.map(([path]) => path)).toContain(f.f.directory)
 })
+
+it('refreshes only the signalled PR, delivers duplicate review events once and returns to polling on opt-out', async () => {
+  const f = await linkedSetup()
+  await f.watch()
+  await f.linkedWatch()
+  const subscriptionUrl = 'https://api.github.com/event-subscriptions'
+  const body = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = body.writable.getWriter()
+  let signal: AbortSignal | undefined
+  const subscribe = vi.fn<(url: string, authorization: string | null) => void>()
+  const fetchOther = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (input === subscriptionUrl && typeof init?.body === 'string') {
+      const request = JSON.parse(init.body)
+      subscribe(request.resource_url, new Headers(init.headers).get('authorization'))
+      if (request.resource_url === f.linkedUrl) return new Response(null, { status: 403 })
+      return Response.json({ events_url: subscriptionUrl + '/one/events' })
+    }
+    if (input === subscriptionUrl + '/one/events') {
+      signal = init?.signal ?? undefined
+      return new Response(body.readable, { headers: { 'Content-Type': 'text/event-stream' } })
+    }
+    return fetchOther(input, init)
+  })
+  vi.spyOn(f.s.pulls, 'sourceContext').mockImplementation(async (cwd) => ({
+    provider: 'github',
+    repository: cwd === f.f.directory ? 'team/project' : 'team/linked',
+    host: 'github.com',
+    destination: cwd,
+    readerIdentity: 'reader',
+    validate: () => {},
+    github: { host: 'github.com', token: 'test-credential' },
+  }))
+  await f.s.pullRequestWatch.tick()
+  expect(subscribe).not.toHaveBeenCalled()
+  f.read.mockClear()
+  f.s.preferences.save({ enableGithubEventStreams: true })
+  await vi.waitFor(() => expect(f.read).toHaveBeenCalledTimes(3))
+  expect(subscribe.mock.calls).toEqual([
+    [url, 'Bearer test-credential'],
+    [f.linkedUrl, 'Bearer test-credential'],
+  ])
+  f.read.mockClear()
+  f.read.mockResolvedValue(
+    detail({ comments: [comment('old'), comment('review', { kind: 'review' })] }),
+  )
+  const event = 'event: com.github.pull_request.review.submitted.v1\ndata: {}\n\n'
+  await writer.write(new TextEncoder().encode(event + event))
+  await vi.waitFor(() => expect(f.s.store.task(f.taskId).queue).toHaveLength(1))
+  expect(f.read.mock.calls.map(([cwd]) => cwd)).toEqual([f.f.directory])
+  f.s.preferences.save({ enableGithubEventStreams: false })
+  expect(signal?.aborted).toBe(true)
+  await writer.close()
+  f.read.mockClear()
+  await f.s.pullRequestWatch.tick()
+  expect(f.read).toHaveBeenCalledTimes(2)
+  expect(subscribe).toHaveBeenCalledTimes(2)
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+})

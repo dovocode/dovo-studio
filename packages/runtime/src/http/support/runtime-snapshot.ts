@@ -388,6 +388,7 @@ export function runtimeSnapshot(
       linearKeySource,
       linearIssuesSupported: linearKeySource !== 'none' ? true : undefined,
       sparseWorktreesSupported: true,
+      githubEventStreamsSupported: true,
       pullFileLoadingSupported: true,
       usageRetentionSupported: true,
       attachmentDraftCompareSupported: true,

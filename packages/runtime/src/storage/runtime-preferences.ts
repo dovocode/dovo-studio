@@ -216,6 +216,7 @@ export class RuntimePreferences {
     if (!result.outcome) throw new Error('Preferences save produced no outcome')
     const { previous, settings } = result.outcome
     if (
+      previous.enableGithubEventStreams !== settings.enableGithubEventStreams ||
       previous.enablePipelineWatching !== settings.enablePipelineWatching ||
       previous.enablePullRequestWatching !== settings.enablePullRequestWatching ||
       previous.enablePullRequestBabysitting !== settings.enablePullRequestBabysitting

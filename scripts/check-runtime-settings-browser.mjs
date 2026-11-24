@@ -346,6 +346,28 @@ try {
   })
   assert.equal(runtime.services.preferences.get().enableCodeReviews, true)
   await page.getByText('Changes save automatically on this computer.', { exact: true }).waitFor()
+  const streams = page.getByRole('switch', {
+    name: 'GitHub Event Streams (experimental)',
+    exact: true,
+  })
+  assert.equal(await streams.isChecked(), false)
+  for (const enabled of [true, false]) {
+    await streams.click()
+    await page.waitForFunction((expected) => {
+      const control = document.querySelector('[aria-label="GitHub Event Streams (experimental)"]')
+      return !control.disabled && control.getAttribute('aria-checked') === String(expected)
+    }, enabled)
+    assert.equal(runtime.services.preferences.get().enableGithubEventStreams, enabled)
+    assert.equal(runtime.services.preferences.get().enablePullRequestWatching, false)
+  }
+  await page.evaluate(() => {
+    delete window.runtime.snapshot.githubEventStreamsSupported
+    window.show('pulls')
+  })
+  await page
+    .getByText('Update this runtime to use GitHub Event Streams. PR watches use periodic checks.')
+    .waitFor()
+  assert.equal(await streams.isDisabled(), true)
   const care = page.getByRole('switch', { name: 'PR babysitting', exact: true })
   await care.waitFor()
   assert.equal(await care.isChecked(), false)

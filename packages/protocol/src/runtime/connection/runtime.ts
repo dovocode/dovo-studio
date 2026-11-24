@@ -433,6 +433,7 @@ export const snapshotSchema = mutableStruct({
   linearKeySource: Schema.optional(linearKeySourceSchema),
   linearIssuesSupported: Schema.optional(Schema.Literal(true)),
   sparseWorktreesSupported: Schema.optional(Schema.Literal(true)),
+  githubEventStreamsSupported: Schema.optional(Schema.Literal(true)),
   pullFileLoadingSupported: Schema.optional(Schema.Literal(true)),
   usageRetentionSupported: Schema.optional(Schema.Literal(true)),
   /** `POST /api/jobs/dry-run` evaluates a flow with sample data and runs no external steps. */
@@ -839,6 +840,9 @@ export const runtimePreferencesSchema = mutableStruct({
   enableCodeReviews: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Experimental: let agents hand PR feedback monitoring to this runtime. */
   enablePullRequestWatching: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  enableGithubEventStreams: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
   /** Opt-in: maintain linked editing PRs through CI, review feedback and target updates. */

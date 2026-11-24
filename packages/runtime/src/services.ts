@@ -123,7 +123,7 @@ export function createServices(
     db,
     () => {
       store.update((workspace) => workspace)
-      if (preferences.get().enablePullRequestBabysitting) pullRequestWatch.refresh()
+      pullRequestWatch.watchSettingsChanged()
     },
     policy,
   )

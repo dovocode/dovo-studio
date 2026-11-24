@@ -342,7 +342,7 @@ export function RunningTaskPreferences({
 export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?: boolean }) {
   const uiText = useInterfaceText()
 
-  const { runtimeRegistry } = useWorkspace()
+  const { runtimeRegistry, snapshot } = useWorkspace()
   const retrievalHosts = runtimeRegistry.profiles.flatMap((profile) =>
     profile.connection.runtimeId ? [{ id: profile.connection.runtimeId, name: profile.name }] : [],
   )
@@ -463,6 +463,21 @@ export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?:
             checked={value?.enablePullRequestWatching ?? false}
             disabled={disabled}
             onChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="GitHub Event Streams (experimental)"
+          description={
+            snapshot?.githubEventStreamsSupported
+              ? 'Refresh watched GitHub.com PRs when events arrive. Requires GitHub preview access. Periodic checks continue.'
+              : 'Update this runtime to use GitHub Event Streams. PR watches use periodic checks.'
+          }
+        >
+          <Toggle
+            label="GitHub Event Streams (experimental)"
+            checked={value?.enableGithubEventStreams ?? false}
+            disabled={disabled || !snapshot?.githubEventStreamsSupported}
+            onChange={(enableGithubEventStreams) => save({ enableGithubEventStreams })}
           />
         </SettingRow>
         <SettingRow

@@ -532,6 +532,22 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
+                  label={uiText('GitHub Event Streams (experimental)')}
+                  value={value?.enableGithubEventStreams ?? false}
+                  disabled={disabled || !snapshot?.githubEventStreamsSupported}
+                  onValueChange={(enableGithubEventStreams) => save({ enableGithubEventStreams })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  <InterfaceText>
+                    {snapshot?.githubEventStreamsSupported
+                      ? 'Refresh watched GitHub.com PRs when events arrive. Requires GitHub preview access. Periodic checks continue.'
+                      : 'Update this runtime to use GitHub Event Streams. PR watches use periodic checks.'}
+                  </InterfaceText>
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
                   label={uiText('PR babysitting')}
                   value={
                     !!value?.enablePullRequestWatching && !!value?.enablePullRequestBabysitting

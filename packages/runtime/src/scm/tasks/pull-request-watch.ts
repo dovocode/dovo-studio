@@ -25,6 +25,7 @@ import {
 import { z } from 'zod'
 import type { Services } from '../../services.js'
 import { errorMessage, HttpError } from '../../errors.js'
+import { GithubEventStreams } from './github-event-streams.js'
 import { editedLinkedCheckouts } from './edited-linked-checkouts.js'
 import {
   WatchLifecycleCache,
@@ -82,6 +83,7 @@ const stateSchema = z.object({
     .optional(),
 })
 type State = z.infer<typeof stateSchema>
+const resourceKey = (state: State) => JSON.stringify([state.repositoryId, state.url, state.source])
 type CareCheckout = NonNullable<State['careCheckout']>
 type WatchServices = Pick<
   Services,
@@ -130,6 +132,17 @@ export class PullRequestWatch {
   private countsEnabled?: boolean
   private countsCache?: Map<string, { active: number; failures: number }>
   private poller?: ReturnType<typeof startPolling>
+  private nextFullCheck = 0
+  private eventKeys = new Set<string>()
+  private eventTimer?: ReturnType<typeof setTimeout>
+  private streams = new GithubEventStreams((key) => {
+    this.eventKeys.add(key)
+    if (!this.eventTimer)
+      this.eventTimer = setTimeout(() => {
+        this.eventTimer = undefined
+        this.poller?.refresh()
+      }, 250)
+  })
   private busy = false
   private stopped = false
   private retryRequested = false
@@ -245,6 +258,7 @@ export class PullRequestWatch {
           this.db.prepare('DELETE FROM task_pull_watch_stops WHERE task_id=?').run(taskId)
       }
       const watching = new Set<string>()
+      const streamKeys = new Set<string>()
       for (const state of this.readAll()) {
         const task = available.get(state.taskId)
         if (!task || task.archived || task.archivedAt) {
@@ -263,8 +277,19 @@ export class PullRequestWatch {
               state.source,
             ),
           })
-        } else if (state.status === 'watching') watching.add(state.taskId)
+        } else if (state.status === 'watching') {
+          watching.add(state.taskId)
+          const key = resourceKey(state)
+          if (
+            this.streams.has(key) &&
+            !task.example &&
+            !permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents)) &&
+            !(state.carePaused && this.s.preferences.get().enablePullRequestBabysitting)
+          )
+            streamKeys.add(key)
+        }
       }
+      this.streams.retain(streamKeys)
       return watching
     })
   }
@@ -555,6 +580,10 @@ export class PullRequestWatch {
         .run(task.id, state.url)
       this.s.store.updateTask(task.id, (task) => task)
     })
+    if (this.s.preferences.get().enableGithubEventStreams) {
+      this.nextFullCheck = 0
+      this.poller?.refresh()
+    }
     this.s.activity.add('task', task.id, `Watching feedback on PR #${state.number}`)
     return { watches: [watchSummary(state)], failedChecks: failedChecks(detail) }
   }
@@ -713,17 +742,36 @@ export class PullRequestWatch {
       }
     }
   }
-  async tick() {
+  private async updateStream(state: State) {
+    const key = resourceKey(state)
+    try {
+      const scope = state.source
+        ? (await this.s.pulls.watchReader(state.source).context()).scope
+        : await this.s.pulls.sourceContext(this.repository(state.repositoryId).path)
+      if (this.current(state) && this.s.preferences.get().enableGithubEventStreams)
+        this.streams.watch(key, state.url, state.number, scope, (status) =>
+          this.s.activity.add(
+            'task',
+            state.taskId,
+            `GitHub Event Streams unavailable for PR #${state.number} (HTTP ${status}). Periodic PR checks continue.`,
+          ),
+        )
+    } catch {
+      // Account discovery can fail offline. The feedback read owns watch error reporting.
+      this.streams.forget(key)
+    }
+  }
+  async tick(eventKeys?: ReadonlySet<string>) {
     if (this.busy || this.stopped || !this.s.preferences.get().enablePullRequestWatching) return
     this.busy = true
     try {
-      await this.startBabysitting()
+      if (!eventKeys) await this.startBabysitting()
       const reads = new Map<string, Promise<PullDetail>>()
-      const states = this.readAll()
+      const states = this.readAll().filter(
+        (state) => !eventKeys || eventKeys.has(resourceKey(state)),
+      )
       const retryNow = this.retryRequested
-      this.retryRequested = false
-      const resourceKey = (state: State) =>
-        JSON.stringify([state.repositoryId, state.number, state.source])
+      if (!eventKeys) this.retryRequested = false
       const retries = new Map<string, { failures: number; due: number }>()
       for (const state of states) {
         const key = resourceKey(state)
@@ -772,6 +820,14 @@ export class PullRequestWatch {
           const readKey = JSON.stringify([cwd, state.number, state.source])
           let reading = reads.get(readKey)
           if (!reading) {
+            if (
+              !eventKeys &&
+              this.s.preferences.get().enableGithubEventStreams &&
+              state.url.startsWith('https://github.com/')
+            ) {
+              await this.updateStream(state)
+              if (!this.current(state)) continue
+            }
             reading = state.source
               ? this.s.pullCache.feedback(
                   cwd,
@@ -1074,23 +1130,59 @@ export class PullRequestWatch {
       this.busy = false
     }
   }
+  watchSettingsChanged() {
+    const settings = this.s.preferences.get()
+    if (!settings.enablePullRequestWatching || !settings.enableGithubEventStreams) {
+      this.streams.retain(new Set())
+      this.eventKeys.clear()
+      clearTimeout(this.eventTimer)
+      this.eventTimer = undefined
+    }
+    if (settings.enablePullRequestBabysitting) this.refresh()
+    else if (settings.enableGithubEventStreams && settings.enablePullRequestWatching) {
+      this.nextFullCheck = 0
+      this.poller?.refresh()
+    }
+  }
   refresh() {
+    this.nextFullCheck = 0
     this.retryRequested = true
     this.poller?.refresh()
   }
   start() {
     if (this.poller || this.stopped) return
+    const interval = () =>
+      this.s.preferences.get().enablePullRequestBabysitting ? 30_000 : 120_000
+    this.nextFullCheck = Date.now() + interval()
     this.poller = startPolling(
-      Effect.tryPromise(() => this.tick()),
+      Effect.tryPromise(async () => {
+        clearTimeout(this.eventTimer)
+        this.eventTimer = undefined
+        const keys = this.eventKeys
+        this.eventKeys = new Set()
+        if (keys.size && Date.now() < this.nextFullCheck) await this.tick(keys)
+        else {
+          try {
+            await this.tick()
+          } finally {
+            this.nextFullCheck = Date.now() + interval()
+          }
+        }
+      }),
       {
-        interval: () => (this.s.preferences.get().enablePullRequestBabysitting ? 30_000 : 120_000),
-        immediate: this.s.preferences.get().enablePullRequestBabysitting,
+        interval: () => Math.max(0, this.nextFullCheck - Date.now()),
+        immediate:
+          this.s.preferences.get().enablePullRequestBabysitting ||
+          (this.s.preferences.get().enablePullRequestWatching &&
+            this.s.preferences.get().enableGithubEventStreams),
         onError: (error) => console.error('PR feedback watcher failed', error),
       },
     )
   }
   async dispose() {
     this.stopped = true
+    this.streams.retain(new Set())
+    clearTimeout(this.eventTimer)
     await this.poller?.stop()
   }
 }

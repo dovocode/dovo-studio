@@ -127,6 +127,7 @@ export const runtimeSettings: readonly StudioView[] = [
       'Share retrieval with paired computers',
       'Preferred retrieval computer',
       'PR feedback watcher (experimental)',
+      'GitHub Event Streams (experimental)',
       'PR babysitting',
       'Pipeline watcher (experimental)',
     ],
