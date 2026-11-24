@@ -162,6 +162,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
         ?.pulls.find((pull) => pull.number === number)
       const target = parseTarget(url ?? pull?.url ?? '')
       const navigationUrl = target?.navigationUrl ?? url ?? pull?.url
+      const connectionId = source.repository.forge?.connectionId
       setUrlSelection(null)
       setSelectedNavigation(navigationUrl ?? null)
       setSelected({ source: { key: source.key, scope: source.scope }, number })
@@ -175,7 +176,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             runtimeId: source.runtimeId,
             repositoryId: source.repository.id,
             number,
-            connectionId: source.repository.forge?.connectionId,
+            ...(connectionId === undefined ? {} : { connectionId }),
             url: navigationUrl,
             tab:
               destination && destination.tab !== 'review'
