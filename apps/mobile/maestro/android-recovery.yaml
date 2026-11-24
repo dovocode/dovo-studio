@@ -8,10 +8,10 @@ appId: com.dovo.studio
     timeout: 20000
 - evalScript: ${output.pairing = json(http.post(PAIRING_CONTROL_ADDRESS + '/pairing-code', {body:'{}'}).body)}
 - openLink: "${'dovo://pair?address=' + encodeURIComponent(RUNTIME_ADDRESS) + '&code=' + output.pairing.code + '&expiresAt=' + encodeURIComponent(output.pairing.expiresAt)}"
-- extendedWaitUntil:
-    visible:
+- scrollUntilVisible:
+    element:
       id: Pairing options
-    timeout: 15000
+    direction: DOWN
 - tapOn:
     id: Pairing options
 - scrollUntilVisible:
