@@ -1,7 +1,12 @@
 import { createPortal } from 'react-dom'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { runtimeComputerName, taskProjectGroups, preferredProjectEntry } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  taskProjectGroups,
+  preferredProjectEntry,
+  projectOrganizationSections,
+} from '@dovo/protocol'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef, useState } from 'react'
 import { useAppPreferences, useWorkspace, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
@@ -352,15 +357,24 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                   snapshot.workspace.repositories.some(
                     (repository) => repository.kind === 'scratch',
                   ) && <option value="auto-project">Scope</option>}
-                {projectGroups.map((group) => (
-                  <option
-                    key={group.key}
-                    value={group.key}
-                    disabled={!preferredProjectEntry(group.entries, runtimeId)}
-                  >
-                    {group.name}
-                  </option>
-                ))}
+                {projectOrganizationSections(projectGroups).map(({ name, projects }) => {
+                  const options = projects.map((group) => (
+                    <option
+                      key={group.key}
+                      value={group.key}
+                      disabled={!preferredProjectEntry(group.entries, runtimeId)}
+                    >
+                      {group.name}
+                    </option>
+                  ))
+                  return name ? (
+                    <optgroup key={name} label={name}>
+                      {options}
+                    </optgroup>
+                  ) : (
+                    options
+                  )
+                })}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 size-3" />
             </label>

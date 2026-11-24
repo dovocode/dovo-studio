@@ -18,10 +18,14 @@ type Job = {
   complete: (reply: typeof remoteMcpReplySchema.Type) => void
 }
 const leaseMs = 12000
+const needsSkillCheck = (input: RemoteMcpCommand) =>
+  input.part === 'threads' &&
+  input.command.action === 'create' &&
+  !!input.command.requiredSkills?.length
 
 /** Content lives in memory through one MCP request. Installations claim only their own work. */
 export class RemoteMcpMailbox {
-  private seen = new Map<string, { expires: number; events: boolean }>()
+  private seen = new Map<string, { expires: number; events: boolean; requiredSkills: boolean }>()
   private jobs = new Map<string, Job>()
 
   constructor(
@@ -37,14 +41,15 @@ export class RemoteMcpMailbox {
     return this.enabled(installation) && this.seen.get(installation)?.events === true
   }
 
-  offer(host: Host, events = false) {
+  offer(host: Host, events = false, requiredSkills = false) {
     const now = this.now()
     for (const [key, { expires }] of this.seen) if (expires <= now) this.seen.delete(key)
-    this.seen.set(host.installation, { expires: now + leaseMs, events })
+    this.seen.set(host.installation, { expires: now + leaseMs, events, requiredSkills })
     for (const job of this.jobs.values()) {
       if (
         job.installation === host.installation &&
         (job.input.input.part !== 'events' || events) &&
+        (!needsSkillCheck(job.input.input) || requiredSkills) &&
         !job.claimed &&
         this.store.grant(job.input.grantId)
       )
@@ -56,6 +61,8 @@ export class RemoteMcpMailbox {
     const job = this.jobs.get(id)
     if (!job || job.installation !== host.installation || job.claimed)
       throw new RequestError(404, 'MCP request is no longer available.')
+    if (needsSkillCheck(job.input.input) && !this.seen.get(host.installation)?.requiredSkills)
+      throw new RequestError(409, 'Update this computer to check required skills before starting.')
     const grant = this.store.grant(job.input.grantId)
     if (
       !remoteMcpAdmits({
@@ -99,6 +106,8 @@ export class RemoteMcpMailbox {
       throw new RequestError(503, 'This computer does not currently offer MCP events.')
     if (remoteMcpWrites(input) && grant.access !== 'run')
       throw new RequestError(403, 'This app has read-only access.')
+    if (needsSkillCheck(input) && !this.seen.get(grant.installation)?.requiredSkills)
+      throw new RequestError(409, 'Update this computer to check required skills before starting.')
     if (
       this.jobs.size >= 24 ||
       [...this.jobs.values()].filter((job) => job.installation === grant.installation).length >= 4
@@ -106,7 +115,13 @@ export class RemoteMcpMailbox {
       throw new RequestError(429, 'This computer has too many ongoing MCP requests.')
     signal.throwIfAborted()
     const id = secret()
-    const job: RemoteMcpClaim = { id, grantId: grant.id, access: grant.access, input }
+    const job: RemoteMcpClaim = {
+      id,
+      grantId: grant.id,
+      access: grant.access,
+      input,
+      clientName: this.store.client(grant.runtimeId, grant.clientId)?.name,
+    }
     try {
       const reply = await new Promise<typeof remoteMcpReplySchema.Type>((resolve, reject) => {
         const timer = setTimeout(() => abort(), 22000)

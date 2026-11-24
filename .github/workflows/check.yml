@@ -42,6 +42,7 @@ jobs:
         with:
           node: ${{ steps.setup.outputs.node }}
       - run: node scripts/ci/workspace-task.mjs build
+      - run: pnpm test:ci:scripts
       - run: pnpm check
       - run: node scripts/ci/workspace-task.mjs typecheck
       - run: node scripts/check-runtime-sync.mjs
@@ -103,7 +104,6 @@ jobs:
         env:
           DOVO_TEST_TURN_BINARY: /usr/bin/turnserver
         run: node scripts/check-peer-connection-browser.mjs
-      - run: pnpm test:ci:scripts
   # Bounded browser gate for shared hooks that render in both desktop and mobile bundles.
   browser:
     strategy:

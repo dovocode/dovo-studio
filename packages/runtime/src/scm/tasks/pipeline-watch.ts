@@ -58,8 +58,10 @@ const stateSchema = z.object({
     .optional(),
   failed: z.boolean().optional(),
   failedStep: z.object({ name: z.string(), url: z.string() }).optional(),
+  failedJobs: z.array(z.object({ name: z.string(), url: z.string() })).optional(),
   attempt: z.number().int().positive().optional(),
   notifiedStatus: z.string().optional(),
+  notifiedFailure: z.boolean().optional(),
   startedAt: z.string(),
   checkedAt: z.string(),
   lastSuccessAt: z.string().optional(),
@@ -81,6 +83,7 @@ const summary = ({
   taskId: _taskId,
   primaryRepositoryId: _primary,
   notifiedStatus: _notified,
+  notifiedFailure: _notifiedFailure,
   ...state
 }: State) => state
 const attentionRequired = (status: string) => {
@@ -90,12 +93,15 @@ const attentionRequired = (status: string) => {
 
 const actionableStatus = (status: string) =>
   ['danger', 'warning'].includes(pipelineSignal(status).tone)
-const hasFailedPart = (detail: ForgePipelineDetail) =>
-  detail.jobs.some(
+const failedJobs = (detail: ForgePipelineDetail) =>
+  detail.jobs.filter(
     (job) =>
       pipelineSignal(job.status).tone === 'danger' ||
       job.steps?.some((step) => pipelineSignal(step.status).tone === 'danger'),
   )
+
+const failedJobLinks = (jobs: ReturnType<typeof failedJobs>) =>
+  jobs.slice(0, 30).map(({ name, url }) => ({ name: name.slice(0, 300), url }))
 
 function linkedFailedStep(detail: ForgePipelineDetail) {
   for (const job of detail.jobs) {
@@ -449,6 +455,10 @@ export class PipelineWatch {
           if (existing.attempt && detail.run.attempt && detail.run.attempt < existing.attempt)
             throw new HttpError(409, 'Waiting for the current pipeline attempt')
         }
+        const signal = pipelineSignal(detail.run.status)
+        const finished = signal.phase === 'finished'
+        const failures = failedJobs(detail)
+        const failed = signal.tone === 'danger' || (!finished && failures.length > 0)
         return {
           id: randomUUID(),
           taskId: task.id,
@@ -458,10 +468,7 @@ export class PipelineWatch {
           runId: detail.run.id,
           url: detail.run.url,
           sha: detail.run.sha,
-          status:
-            pipelineSignal(detail.run.status).phase === 'finished' || hasFailedPart(detail)
-              ? 'completed'
-              : 'watching',
+          status: finished ? 'completed' : 'watching',
           runStatus: detail.run.status,
           title: detail.run.title.slice(0, 300),
           progress: {
@@ -470,11 +477,14 @@ export class PipelineWatch {
             total: detail.jobs.length,
             partial: !!detail.next,
           },
-          failed: hasFailedPart(detail) || pipelineSignal(detail.run.status).tone === 'danger',
-          failedStep: linkedFailedStep(detail),
+          failed,
+          failedStep: failed ? linkedFailedStep(detail) : undefined,
+          failedJobs: failed ? failedJobLinks(failures) : undefined,
           attempt: detail.run.attempt,
           // Registration returns the current result directly to the agent.
           notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
+          notifiedFailure:
+            failed || (existing?.attempt === detail.run.attempt && existing?.notifiedFailure),
           startedAt: existing?.status === 'watching' ? existing.startedAt : now,
           checkedAt: now,
           lastSuccessAt: now,
@@ -565,14 +575,16 @@ export class PipelineWatch {
           if (detail.run.url !== state.url || detail.run.sha !== state.sha)
             throw new Error('The watched pipeline source changed')
           const signal = pipelineSignal(detail.run.status)
-          const failedPart = hasFailedPart(detail)
-          const finished = signal.phase === 'finished' || failedPart
+          const finished = signal.phase === 'finished'
+          const failures = failedJobs(detail)
+          const failed = signal.tone === 'danger' || (!finished && failures.length > 0)
           if (state.attempt && detail.run.attempt && detail.run.attempt < state.attempt)
             throw new Error('Waiting for the current pipeline attempt')
           const notifiedStatus =
             state.attempt === detail.run.attempt ? state.notifiedStatus : undefined
+          const notifiedFailure = state.attempt === detail.run.attempt && state.notifiedFailure
           const needsAction =
-            (finished && (signal.tone === 'danger' || failedPart)) ||
+            (failed && !notifiedFailure) ||
             (attentionRequired(detail.run.status) && notifiedStatus !== detail.run.status)
           const next: State = {
             ...state,
@@ -585,10 +597,12 @@ export class PipelineWatch {
               total: detail.jobs.length,
               partial: !!detail.next,
             },
-            failed: failedPart || signal.tone === 'danger',
-            failedStep: linkedFailedStep(detail),
+            failed,
+            failedStep: failed ? linkedFailedStep(detail) : undefined,
+            failedJobs: failed ? failedJobLinks(failures) : undefined,
             attempt: detail.run.attempt,
             notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
+            notifiedFailure: failed || notifiedFailure,
             checkedAt: new Date().toISOString(),
             lastSuccessAt: new Date().toISOString(),
             error: undefined,

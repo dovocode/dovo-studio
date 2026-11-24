@@ -177,11 +177,13 @@ pnpm test:studio-tools:browser
 
 Threads and browser tabs share one paste-ready ID format: `studio:<runtime>:thread:<id>` and
 `studio:<runtime>:browser:<id>` (the three-part `studio:<runtime>:<id>` form also works). Users copy
-it from **Copy Studio ID (for agents)** in thread and browser-tab menus (on mobile, remote browser
-tabs have the same action). Passing a full reference as a tool `id` unwraps it and selects its
-computer, so no separate `runtimeId` is needed. If you supply both, they must select the same
-computer. Use thread references with `studio_threads` and browser references with `studio_browsers`.
-Thread lists and browser lists include each item's `reference`.
+it from **Copy Studio ID (for agents)** in thread and browser-tab menus. On mobile, find it in the
+thread header's actions, the thread row's actions or details, the Workspace thread actions, and the
+remote browser tab menu. The thread action works offline when the owning computer's identity is
+saved. A replicated thread copies the original computer and thread ID. Paste the full reference into
+a tool's `id` field to select its computer automatically. If you supply a separate `runtimeId`, both
+must select the same computer. Use thread references with `studio_threads` and browser references
+with `studio_browsers`. Thread lists and browser lists include each item's `reference`.
 
 **UI debugging is local to the machine.** Both UI control and client registration require a loopback
 runtime connection (localhost, 127.0.0.1 or ::1). Remote paired desktop/web clients cannot register

@@ -768,7 +768,7 @@ it('lets paired devices inspect and selectively unlink waiting runs while preser
 })
 
 it.each(['job', 'step'])(
-  'ends the watch and wakes the thread on an early %s failure',
+  'wakes the thread once on an early %s failure and records the final run',
   async (part) => {
     const f = await setup()
     f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
@@ -791,28 +791,39 @@ it.each(['job', 'step'])(
     await f.s.pipelineWatch.tick()
     await f.s.pipelineWatch.tick()
     expect(await f.status()).toMatchObject({
-      watches: [{ status: 'completed', runStatus: 'in_progress' }],
+      watches: [{ status: 'watching', runStatus: 'in_progress' }],
     })
-    expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
     expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
     expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Compilation failed')
-    expect(f.s.pipelineWatch.counts(f.taskId)).toEqual({ active: 0, failures: 1 })
-    expect(new PipelineWatch(f.s.db, f.s).counts(f.taskId)).toEqual({ active: 0, failures: 1 })
+    expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('continues watching this run')
+    expect(f.s.pipelineWatch.counts(f.taskId)).toEqual({ active: 1, failures: 1 })
     expect(f.s.store.taskSummary(f.taskId).watchCounts?.failures).toBe(1)
-    f.read.mockResolvedValue(detail('7', 'in_progress'))
-    await f.watch()
-    expect(f.s.pipelineWatch.counts(f.taskId)).toEqual({ active: 1, failures: 0 })
+    const laterFailure = { id: 'test', name: 'Test', url: detail().run.url + '/job/2' }
+    f.read.mockResolvedValue(
+      detail('7', 'failure', { jobs: [{ ...laterFailure, status: 'failure' }] }),
+    )
+    await new PipelineWatch(f.s.db, f.s).tick()
+    expect(await f.status()).toMatchObject({
+      watches: [
+        {
+          status: 'completed',
+          runStatus: 'failure',
+          failedJobs: [{ name: laterFailure.name, url: laterFailure.url }],
+        },
+      ],
+    })
+    expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
   },
 )
 
-it('returns and finishes an already failed part at registration without duplicate delivery', async () => {
+it('returns an already failed part at registration and keeps the watch without duplicate delivery', async () => {
   const f = await setup()
   f.read.mockResolvedValue(
     detail('7', 'running', {
       jobs: [{ id: 'build', name: 'Build', url: detail().run.url, status: 'failure' }],
     }),
   )
-  expect(await f.watch()).toMatchObject({ watches: [{ status: 'completed' }] })
+  expect(await f.watch()).toMatchObject({ watches: [{ status: 'watching', failed: true }] })
   await f.s.pipelineWatch.tick()
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
 })
@@ -869,7 +880,7 @@ it('reads all job pages for registration and detects early failures beyond the f
   failed = true
   await f.s.pipelineWatch.tick()
   await f.s.pipelineWatch.tick()
-  expect(await f.status()).toMatchObject({ watches: [{ status: 'completed' }] })
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'watching', failed: true }] })
   expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
   expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Late build: failure')
 })

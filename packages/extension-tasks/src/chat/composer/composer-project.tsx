@@ -12,6 +12,7 @@ import {
 import {
   changeTaskAutoProject,
   taskProjectGroups,
+  projectOrganizationSections,
   preferredProjectEntry,
   projectDefaultServer,
 } from '@dovo/protocol'
@@ -178,7 +179,7 @@ export function ComposerProject({
     (group) =>
       group.key !== 'scratch' &&
       group.entries.some(({ repository, source }) =>
-        `${group.name} ${repository.name} ${repository.path} ${repository.gitIdentity ?? ''} ${source.name}`
+        `${group.name} ${group.organization ?? ''} ${repository.name} ${repository.path} ${repository.gitIdentity ?? ''} ${source.name}`
           .toLowerCase()
           .includes(normalizedQuery),
       ),
@@ -440,7 +441,14 @@ export function ComposerProject({
               </button>
             )}
             <div className="max-h-64 overflow-y-auto">
-              {matches.map(projectRow)}
+              {projectOrganizationSections(matches).map(({ name, projects }) => (
+                <div key={name ?? ''}>
+                  {name && (
+                    <h3 className="px-2 pt-2 text-xs font-medium text-muted-foreground">{name}</h3>
+                  )}
+                  {projects.map(projectRow)}
+                </div>
+              ))}
               {!matches.length && (
                 <p role="status" className="p-2 text-xs text-muted-foreground">
                   {query.trim() ? 'No matching projects.' : 'No projects yet.'}

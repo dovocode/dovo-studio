@@ -290,6 +290,7 @@ function RemoteBrowserContent({
             url: target,
             device: result.device,
             previousSessionId: previousBrowserSession(sessionKey),
+            previousEndReason: result.previousEndReason,
           })
           post({
             type: 'presentation',

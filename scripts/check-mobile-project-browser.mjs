@@ -38,7 +38,7 @@ const built = await build({
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
       import {FolderPicker} from './src/tasks/creation/folder-picker';
-      const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
+      const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity,organization:['local','remote','notes'].includes(id)?'Studio Engineering':undefined});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
       const inventory={local:[scratch('scratch'),repo('local','Shared project','host/team/project')],remote:[scratch('remote-scratch'),repo('remote','Shared project','host/team/project'),repo('notes','Remote notes')],empty:[scratch('empty-scratch')]};
       window.choices=[];window.fail=false;
@@ -143,6 +143,7 @@ try {
     assert.ok(serverBounds.x + serverBounds.width <= 320)
   }
   await project.click()
+  await page.getByText('Studio Engineering', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
   assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   assert.equal(

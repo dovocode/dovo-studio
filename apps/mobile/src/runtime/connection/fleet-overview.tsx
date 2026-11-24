@@ -303,11 +303,6 @@ export function FleetOverview({
                 />
                 <Text style={styles.text}>{status(detail)}</Text>
               </View>
-              {detail.connected && (
-                <Text style={styles.muted}>
-                  {connectionType(detail.profile.connection, detail.connected)?.label}
-                </Text>
-              )}
               <Text style={styles.text}>{activity(detail)}</Text>
               {!detail.connected && detail.snapshot && (
                 <Text style={styles.muted}>
@@ -321,9 +316,11 @@ export function FleetOverview({
                   </InterfaceText>
                 </Text>
               )}
-              <Text selectable style={styles.muted}>
-                {detail.profile.connection.address}
-              </Text>
+              {!detail.connected && (
+                <Text selectable style={styles.muted}>
+                  {detail.profile.connection.address}
+                </Text>
+              )}
               <ConnectionProgress entry={detail} />
               {!!detail.error && <Text style={styles.error}>{detail.error}</Text>}
               <View style={styles.separator} />

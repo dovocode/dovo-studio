@@ -1,11 +1,13 @@
 import { Schema, Effect, Struct } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
+import { resourceSettingsSchema } from '../../shared/resources.js'
 import {
   defaultTaskHarness,
   agentSchema,
   taskHarnessSchema,
   projectTaskDefaultsSchema,
   scopedSettingsSchema,
+  organizationNameSchema,
   type Repository,
 } from '../../workspace.js'
 import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
@@ -19,6 +21,15 @@ export const modelPreferencesSchema = Schema.Record(
 )
 export const runtimeDefaultsSchema = mutableStruct({
   scopedSettings: Schema.optional(scopedSettingsSchema),
+  organizations: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      mutableStruct({
+        name: organizationNameSchema,
+        resources: Schema.optional(resourceSettingsSchema),
+      }),
+    ),
+  ),
   globalModelPreferencesUpdatedAt: Schema.optional(Schema.Number),
   globalModelPreferences: Schema.optional(modelPreferencesSchema),
   modelPreferenceOverrides: Schema.optional(modelPreferencesSchema),

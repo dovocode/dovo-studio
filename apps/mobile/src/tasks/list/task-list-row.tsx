@@ -749,6 +749,7 @@ function TaskListRowView({
               testID={`${testID} actions`}
               contentOffsetY={headerTop + titleHeight / 2 - 22}
               task={task}
+              runtimeIdentity={owner.runtimeIdentity}
               actions={actions}
               disabled={disabled}
               onOpen={onOpen}

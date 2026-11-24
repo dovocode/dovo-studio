@@ -1,7 +1,7 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
-import { projectMachineGroups } from '@dovo/protocol'
+import { projectMachineGroups, projectOrganizationSections } from '@dovo/protocol'
 import { Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
@@ -48,7 +48,7 @@ export function ProjectThreadFilter({
   const selected = groups.find((group) => group.key === value)
   const managed = groups.find((group) => group.key === settings)
   const visible = groups.filter((group) =>
-    `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
+    `${group.name} ${group.organization ?? ''} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   )
@@ -178,7 +178,18 @@ export function ProjectThreadFilter({
             </Text>
             {!value && <Icon name="check" size={16} color={colors.muted} />}
           </Pressable>
-          {visible.filter((group) => !group.archived).map(row)}
+          {projectOrganizationSections(visible.filter((group) => !group.archived)).map(
+            ({ name, projects }) => (
+              <View key={name ?? ''}>
+                {name && (
+                  <Text accessibilityRole="header" style={styles.muted}>
+                    {name}
+                  </Text>
+                )}
+                {projects.map(row)}
+              </View>
+            ),
+          )}
           {archived.length > 0 && (
             <Pressable
               accessibilityRole="button"

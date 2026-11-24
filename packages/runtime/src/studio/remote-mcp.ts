@@ -19,8 +19,13 @@ export async function remoteMcpTool(s: Services, claim: RemoteMcpClaim, authoriz
     title: 'External MCP app',
   }
   const scope = forwardedThreadScope(caller.runtimeId, caller.threadId)
+  const name = claim.clientName?.replace(/\s+/g, ' ').trim()
+  const source = {
+    kind: 'system' as const,
+    label: name ? `Remote MCP · ${name}`.slice(0, 100) : 'Remote MCP app',
+  }
   if (input.part === 'threads' && input.command.action === 'create') {
-    const { model, ...request } = input.command
+    const { model, requiredSkills, ...request } = input.command
     return studioTool(
       s,
       scope,
@@ -30,6 +35,9 @@ export async function remoteMcpTool(s: Services, claim: RemoteMcpClaim, authoriz
         ...(model ? { agentOverrides: { model } } : {}),
       },
       authorize,
+      undefined,
+      undefined,
+      { source, requiredSkills },
     )
   }
   const bot =
@@ -44,5 +52,6 @@ export async function remoteMcpTool(s: Services, claim: RemoteMcpClaim, authoriz
     authorize,
     undefined,
     bot ? caller : undefined,
+    { source },
   )
 }

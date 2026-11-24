@@ -20,6 +20,7 @@ import {
 export type TaskListOwner = {
   activeTerminals: number
   profile: RuntimeProfile
+  runtimeIdentity?: string
   runtimeIcon: RuntimeSnapshot['runtimeIcon']
   taskListUndoSupported: boolean
   repository: Repository | undefined
@@ -101,6 +102,7 @@ export function taskListProjection(
         (terminalCounts.get(next.runtimeId)?.get(next.task.id) ?? 0) +
         taskBackgroundTerminalCount(next.task),
       profile: source.profile,
+      runtimeIdentity: source.snapshot?.runtimeId ?? source.profile.connection.runtimeId,
       runtimeIcon: source.snapshot?.runtimeIcon,
       taskListUndoSupported: source.snapshot?.taskListUndoSupported === true,
       repository,
@@ -112,6 +114,7 @@ export function taskListProjection(
       prior &&
       prior.owner.activeTerminals === nextOwner.activeTerminals &&
       prior.owner.profile === nextOwner.profile &&
+      prior.owner.runtimeIdentity === nextOwner.runtimeIdentity &&
       prior.owner.runtimeIcon === nextOwner.runtimeIcon &&
       prior.owner.taskListUndoSupported === nextOwner.taskListUndoSupported &&
       prior.owner.repository === nextOwner.repository &&

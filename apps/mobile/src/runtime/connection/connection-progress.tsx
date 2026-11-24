@@ -1,6 +1,12 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
-import { connectionProgress, type RuntimeOverview } from '@dovo/protocol'
+import {
+  activeRuntimeStreamRoute,
+  connectionProgress,
+  selectedRuntimeRoute,
+  runtimeRouteLabel,
+  type RuntimeOverview,
+} from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useConnectionTypes } from './connection-type'
@@ -16,6 +22,8 @@ export function ConnectionProgress({
 
   const { colors, styles } = useTheme()
   const connectionType = useConnectionTypes()
+  const connection = entry.profile.connection
+  const stream = activeRuntimeStreamRoute(connection)
   return (
     <View style={{ gap: 6 }}>
       <View
@@ -51,7 +59,19 @@ export function ConnectionProgress({
         ))}
       </View>
       {entry.connected && (
-        <Text style={styles.muted}>{connectionType(entry.profile.connection, true)?.label}</Text>
+        <>
+          <Text style={styles.muted}>{connectionType(connection, true)?.label}</Text>
+          <Text selectable style={styles.muted}>
+            {uiText('HTTP requests: {value0}', {
+              value0: runtimeRouteLabel(selectedRuntimeRoute(connection)),
+            })}
+          </Text>
+          <Text selectable style={styles.muted}>
+            {uiText('Live updates: {value0}', {
+              value0: stream ? runtimeRouteLabel(stream) : uiText('HTTP polling'),
+            })}
+          </Text>
+        </>
       )}
     </View>
   )

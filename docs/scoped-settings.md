@@ -72,6 +72,19 @@ The editors show inherited entries that can be copied into the current scope and
 disabled. Hooks override by name across the four scopes; custom-agent hooks still append to the
 resolved project hooks.
 
+In **MCP, skills & hooks**, select a project and enter its **Project organization**. Give other
+projects the same name to group them, including local folders and repositories from different forges
+or GitHub owners. Clear the name and save to remove the project from its group.
+
+Open the organization's resource section to manage its MCP servers, skills, and additional
+`AGENTS.md` instructions. This layer applies after computer settings and before project settings.
+Project and agent tools can override matching names. The additional instructions join the agent's
+instructions on the next turn. Clear the text and save to remove them. Organization assignments and
+resources are saved on the selected computer. Thread project pickers show organization sections. To
+rename a group, open that organization's resource section, edit **Organization name**, and choose
+**Rename organization**. Its assigned projects, MCP servers, skills and instructions stay with the
+group.
+
 Project fallback icon colours and initials use canonical Git identity, so differently named
 checkouts on different computers look the same. Uploaded project icons also synchronize through
 shared project settings; existing local uploads are promoted when the runtime knows their Git

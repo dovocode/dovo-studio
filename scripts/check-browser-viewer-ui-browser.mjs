@@ -405,10 +405,29 @@ try {
       await page.screenshot({ path: '/tmp/dovo-browser-redesign/viewer-session-ended.png' })
       await reopen.click()
       await page.getByText('Connecting to host browser…', { exact: true }).waitFor()
-      await post({ type: 'connect', url: 'ws://fixture/reopened' })
+      await post({ type: 'connect', url: 'ws://fixture/reopened', previousEndReason: 'expired' })
       await page.waitForFunction(
         () => document.querySelector('#sessionState').dataset.state === 'online',
       )
+      await page.evaluate(() =>
+        window.socket.onmessage({
+          data: JSON.stringify({
+            type: 'state',
+            url: 'http://runtime.lan:4310/shared',
+            title: 'Reopened',
+            back: false,
+            forward: false,
+            loading: false,
+            editable: false,
+          }),
+        }),
+      )
+      await page
+        .getByText(
+          'The browser session expired. Reopened in a new browser session. Unsaved changes may be missing.',
+          { exact: true },
+        )
+        .waitFor()
     }
     if (width === 1100) {
       const initialSession = '00000000-0000-4000-8000-000000000001'

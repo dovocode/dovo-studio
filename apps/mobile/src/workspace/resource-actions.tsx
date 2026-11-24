@@ -9,6 +9,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { useTaskLifecycle, chooseSnoozeDuration } from '../tasks/detail/use-task-lifecycle'
+import { useCopyThreadStudioId } from '../tasks/detail/copy-thread-studio-id'
 import { useBrowserWorkspace } from '../browser/browser-workspace'
 import { moveBrowserTab, togglePinnedTab, visitTab } from '../browser/browser-state'
 import { randomUUID } from 'expo-crypto'
@@ -72,13 +73,17 @@ function ThreadActions({
   const uiText = useInterfaceText()
 
   const runtime = useRuntime()
+  const owner = runtime.overviews.find((source) => source.profile.id === item.runtimeId)
   const task =
-    runtime.overviews
-      .find((owner) => owner.profile.id === item.runtimeId)
-      ?.snapshot?.workspace.tasks.find((task) => task.id === item.task.id) ?? item.task
+    owner?.snapshot?.workspace.tasks.find((task) => task.id === item.task.id) ?? item.task
   const lifecycle = useTaskLifecycle(task, item.runtimeId)
+  const copyStudioId = useCopyThreadStudioId(
+    task,
+    owner?.snapshot?.runtimeId ?? owner?.profile.connection.runtimeId,
+  )
   return (
     <Sheet title={item.title} onClose={onClose}>
+      {copyStudioId && <Action secondary {...copyStudioId} />}
       <Action
         secondary
         label={task.pinned ? uiText('Unpin') : uiText('Pin')}

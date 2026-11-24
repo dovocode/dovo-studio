@@ -14,10 +14,12 @@ import { isSnoozed, latestCompletedTaskTurn } from '@dovo/protocol'
 import { useTheme } from '../../ui/theme'
 import { taskSnoozeChoices } from '@dovo/protocol'
 import { useMobilePreferences } from '../../runtime/preferences/app-preferences'
+import { useCopyThreadStudioId } from '../detail/copy-thread-studio-id'
 import type { TaskRowMenuProps } from './task-row-menu'
 
 export function TaskRowMenu({
   task,
+  runtimeIdentity,
   actions,
   testID,
   disabled,
@@ -30,6 +32,7 @@ export function TaskRowMenu({
   const { colors, mode: appearanceMode } = useTheme()
 
   const { taskSnoozeMinutes } = useMobilePreferences()
+  const copyStudioId = useCopyThreadStudioId(task, runtimeIdentity)
   const unavailable = !actions.enabled || actions.busy
   return (
     <Host
@@ -64,6 +67,7 @@ export function TaskRowMenu({
           icon="info"
           onPress={onDetails}
         />
+        {copyStudioId && <NativeMenuButton {...copyStudioId} />}
         {!task.archived && latestCompletedTaskTurn(task) && (
           <>
             <Divider />

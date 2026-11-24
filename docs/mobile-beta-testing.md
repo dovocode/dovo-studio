@@ -156,11 +156,13 @@ node scripts/ci/mobile-native-smoke.mjs
 
 The script owns and deletes only the simulator it creates. Its fixture pairing approval is limited
 to the named test phone; it does not use a user's paired computers or phone. Failure screenshots and
-Maestro diagnostics are retained in the Check run.
+Maestro diagnostics are retained in the Mobile integration run.
 
 The installed iOS and Android CI builds pair with a fixture runtime over HTTP. Each platform has a
 smoke test that cuts both requests and the live stream, restarts the app with a draft, and checks
-that reconnect delivers the draft once through the original pairing.
+that reconnect delivers the draft once through the original pairing. The fixture keeps the saved
+proxy address as its only route, so closing the proxy tests an outage even when route discovery
+could otherwise reach the runtime's upstream listener.
 
 To check a new installed app against an older runtime, build the selected previous Dovo commit in a
 clean separate checkout with `pnpm --filter @dovo/runtime... -r build`. Keep the disposable device

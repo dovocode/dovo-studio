@@ -39,12 +39,27 @@ export const remoteBrowserOpenSchema = mutableStruct({
   profileId: Schema.optional(browserProfileIdSchema),
   url: Schema.optional(maxValue(Schema.String, 4096)),
 })
+export const browserEndReasonSchema = Schema.Literals([
+  'page',
+  'requested',
+  'expired',
+  'context-lost',
+  'crashed',
+])
+export type BrowserEndReason = typeof browserEndReasonSchema.Type
+export const browserSessionEndSchema = mutableStruct({
+  tabKey: Schema.String,
+  at: Schema.Int,
+  reason: browserEndReasonSchema,
+})
+export type BrowserSessionEnd = typeof browserSessionEndSchema.Type
 export const remoteBrowserTicketSchema = mutableStruct({
   ticket: Schema.String,
   host: Schema.String,
   tabId: Schema.optional(Schema.String),
   profileId: Schema.optional(browserProfileIdSchema),
   device: Schema.optional(previewDeviceSchema),
+  previousEndReason: Schema.optional(browserEndReasonSchema),
 })
 const point = {
   x: maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isFinite())), 0), 1920),
@@ -318,9 +333,7 @@ export const remoteBrowserMessageSchema = Schema.Union([
     type: Schema.Literal('closed'),
     byPage: Schema.optional(Schema.Boolean),
     sessionId: Schema.optional(uuidSchema),
-    reason: Schema.optional(
-      Schema.Literals(['page', 'requested', 'expired', 'context-lost', 'crashed']),
-    ),
+    reason: Schema.optional(browserEndReasonSchema),
     message: Schema.String,
   }),
   remoteBrowserDialogSchema,

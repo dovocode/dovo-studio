@@ -1,11 +1,13 @@
 import { createBrowserUploadPicker } from './browser-upload-viewer'
 import { createBrowserCertificateViewer } from './browser-certificate-viewer'
 import { createBrowserDownloads } from './browser-download-viewer'
-import { decode } from './shared/schema.js'
+import { decode, decodeResult } from './shared/schema.js'
 // Browser-only entry point, bundled into a self-contained canvas viewer by build-browser-viewer.mjs.
 import {
   remoteBrowserInputSchema,
   remoteBrowserMessageSchema,
+  browserEndReasonSchema,
+  type BrowserEndReason,
   type RemoteBrowserInput,
 } from './runtime/previews/remote-browser'
 import { decodeBrowserFrame } from './runtime/previews/browser-frames'
@@ -437,7 +439,14 @@ async function decodeImage(blob: Blob) {
     throw error
   }
 }
-function connect(url: string, previousSessionId?: string) {
+const browserEndLabel = {
+  page: 'The page closed itself.',
+  requested: 'The browser session was closed.',
+  expired: 'The browser session expired.',
+  'context-lost': 'The host browser lost this session.',
+  crashed: 'The host browser crashed.',
+} satisfies Record<BrowserEndReason, string>
+function connect(url: string, previousSessionId?: string, previousEndReason?: BrowserEndReason) {
   if (!window.ReactNativeWebView && document.hidden) return
   screenshotReady = false
   const target = new URL(url)
@@ -611,7 +620,11 @@ function connect(url: string, previousSessionId?: string) {
         if (!simulator) {
           if (!receivedState) {
             receivedState = true
-            if (
+            if (previousEndReason && previousEndReason !== 'requested')
+              notice(
+                `${browserEndLabel[previousEndReason]} Reopened in a new browser session. Unsaved changes may be missing.`,
+              )
+            else if (
               priorBrowserSessionId &&
               message.sessionId &&
               priorBrowserSessionId !== message.sessionId
@@ -652,8 +665,8 @@ function connect(url: string, previousSessionId?: string) {
           else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
           enabled(false)
           notice(
-            message.reason === 'expired'
-              ? 'Browser session expired.'
+            message.reason
+              ? browserEndLabel[message.reason]
               : browserSessionEnded
                 ? 'Browser session ended.'
                 : message.message,
@@ -855,7 +868,15 @@ window.addEventListener('message', (event) => {
       configure('device' in message ? message.device : undefined)
       const previousSessionId =
         'previousSessionId' in message ? message.previousSessionId : undefined
-      connect(message.url, typeof previousSessionId === 'string' ? previousSessionId : undefined)
+      const endReason = decodeResult(
+        browserEndReasonSchema,
+        'previousEndReason' in message ? message.previousEndReason : undefined,
+      )
+      connect(
+        message.url,
+        typeof previousSessionId === 'string' ? previousSessionId : undefined,
+        endReason.success ? endReason.data : undefined,
+      )
     } catch {
       notice('Invalid host browser connection.', true)
     }

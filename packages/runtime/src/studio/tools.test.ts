@@ -908,8 +908,11 @@ it('records forwarded routine changes and prompts as agent work and ignores a cl
   expect(thread.status).toBe(200)
   const remote = target.s.store.get().tasks.find((task) => task.title === 'Remote prompt')
   expect(remote && target.s.store.task(remote.id).messages[0]?.source).toEqual({
-    kind: 'system',
-    label: 'Agent on paired computer',
+    kind: 'thread',
+    runtimeId: source.s.runtimeId,
+    runtimeIdentity: source.s.runtimeId,
+    threadId: source.parent.id,
+    title: source.parent.title,
   })
 })
 it('rejects older paired runtimes before attempting an unscoped tool action', async () => {

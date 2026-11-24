@@ -147,15 +147,17 @@ Failed remote navigation retains the session and attempted address so **Reload p
 When the connection drops, the viewer retries on its own and shows **Reconnect** if it needs help.
 While Studio runs, it remembers the last host session for each open Browser tab, including when the
 viewer closes during a tab switch or network outage. It shows a notice if reconnecting opens a fresh
-session. Unsaved changes inside the previous page may be missing. Mobile previews wait for the
-paired computer to reconnect before requesting a new ticket. A stalled frame stream can reconnect
-automatically. After a policy close, switching back to the preview keeps it disconnected until you
-select **Reconnect**. When the host confirms the session ended, choose **Open URL in a new session**
-to open the saved address, or **Open a new session** for a blank tab. These notices leave the
-streamed page at the same size. Reconnecting viewers receive any outstanding JavaScript dialog;
-disconnecting clears the viewer's old dialog. Agent inspection does not expire a session while a
-human viewer is attached. Private desktop preview profiles use memory-only storage, and self-closing
-pages release their native tab entries.
+session, with the previous close reason when the host recorded it. Runtime diagnostics keep the last
+32 non-private session endings across restarts, using only the tab key, time, and reason. Unsaved
+changes inside the previous page may be missing. Mobile previews wait for the paired computer to
+reconnect before requesting a new ticket. A stalled frame stream can reconnect automatically. After
+a policy close, switching back to the preview keeps it disconnected until you select **Reconnect**.
+When the host confirms the session ended, choose **Open URL in a new session** to open the saved
+address, or **Open a new session** for a blank tab. These notices leave the streamed page at the
+same size. Reconnecting viewers receive any outstanding JavaScript dialog; disconnecting clears the
+viewer's old dialog. Agent inspection does not expire a session while a human viewer is attached.
+Private desktop preview profiles use memory-only storage, and self-closing pages release their
+native tab entries.
 
 ## Picture-in-Picture and background pages
 

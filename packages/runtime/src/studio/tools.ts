@@ -4,6 +4,7 @@ import { restorableAutomation } from '@dovo/protocol'
 import { nextQueuedMessage } from '@dovo/protocol'
 import { threadSnapshot } from './thread-snapshot.js'
 import { randomUUID, createHash } from 'node:crypto'
+import { hostname } from 'node:os'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
@@ -288,6 +289,7 @@ export async function studioTool(
   authorize: () => void,
   policy?: StudioPolicy,
   forwardedCaller?: StudioThreadCaller,
+  external?: { source: MessageSource; requiredSkills?: readonly string[] },
 ) {
   const check = () => {
     authorize()
@@ -413,7 +415,7 @@ export async function studioTool(
         harness: command.harness ?? (command.agentId ? undefined : defaults.harness),
         agentOverrides: command.agentOverrides,
       }
-      const agent = resolveTaskAgent(selected, workspace.agents)
+      const agent = resolveTaskAgent(selected, s.store.agentsFor(command.repositoryId))
       if (!agent) throw new HttpError(400, 'Choose an available agent or harness')
       const parentPolicy =
         policy && changeAgentProvider({ ...agent, ...policy.permissions }, agent.provider)
@@ -440,7 +442,7 @@ export async function studioTool(
       }
       withinPolicy(
         s,
-        { ...selected, agentOverrides: overrides },
+        { ...selected, harness: agent, agentOverrides: overrides },
         policy,
         command.allowPermissionIncrease,
       )
@@ -455,16 +457,35 @@ export async function studioTool(
           (caller && !botProjectThread(caller.bot, command.repositoryId)
             ? { runtimeId: caller.runtimeId, threadId: caller.threadId, title: caller.title }
             : undefined)
+        if (external?.requiredSkills?.length) {
+          const resources = s.store.taskResources(
+            { ...selected, repositoryId: command.repositoryId },
+            agent,
+          )
+          const enabled = new Set(
+            resources.skills.filter((skill) => skill.enabled).map((skill) => skill.name),
+          )
+          const missing = [...new Set(external.requiredSkills)].filter((name) => !enabled.has(name))
+          if (missing.length)
+            throw new HttpError(
+              400,
+              `Required skills are unavailable for ${agent.name || agent.provider} on ${hostname()}: ${missing.join(', ')}`,
+            )
+        }
         const task = s.tasks.create({
           title: command.title,
           repositoryId: command.repositoryId,
-          harness: command.harness,
+          harness:
+            command.harness ??
+            (command.agentId && !workspace.agents.some(({ id }) => id === command.agentId)
+              ? decode(taskHarnessSchema, agent)
+              : undefined),
           execution: command.execution,
           worktreeIncludeChanges: command.worktreeIncludeChanges,
           agentOverrides: overrides,
           agentId: command.agentId ?? '',
           objective: command.prompt ?? '',
-          messageSource: agentMessageSource(s, localCaller),
+          messageSource: external?.source ?? agentMessageSource(s, caller),
           spawnParent,
           coordinationDepth: command.coordinationDepth,
         })
@@ -486,6 +507,7 @@ export async function studioTool(
               readOnly: policy.readOnly,
               studioTools: policy.studioTools,
             },
+            requiredSkills: external?.requiredSkills,
           },
           create,
         )
@@ -580,7 +602,7 @@ export async function studioTool(
               }),
               objective: command.text,
               linkedCheckouts: current.pendingLinkedCheckouts ?? current.linkedCheckouts ?? [],
-              messageSource: agentMessageSource(s, caller),
+              messageSource: external?.source ?? agentMessageSource(s, caller),
               coordinationDepth: depth,
               botMention: {
                 runtimeId: s.runtimeId,
@@ -607,7 +629,7 @@ export async function studioTool(
           undefined,
           true,
           undefined,
-          agentMessageSource(s, caller),
+          external?.source ?? agentMessageSource(s, caller),
         ),
       )
     }

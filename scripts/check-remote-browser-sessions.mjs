@@ -32,7 +32,16 @@ const address = server.address()
 if (!address || typeof address === 'string') throw new Error('Missing port')
 let firstListener
 const profileDirectory = await mkdtemp(join(tmpdir(), 'dovo-browser-profiles-check-'))
-let browsers = new RemoteBrowsers(profileDirectory)
+let savedSessionEnds = []
+const sessionHistory = {
+  read: () => structuredClone(savedSessionEnds),
+  save: (entries) => {
+    savedSessionEnds = structuredClone(entries)
+  },
+}
+const startBrowsers = () =>
+  new RemoteBrowsers(profileDirectory, undefined, undefined, sessionHistory)
+let browsers = startBrowsers()
 const dispose = []
 const states = new Map()
 const frames = new Map()
@@ -219,7 +228,7 @@ try {
   await assert.rejects(browsers.input('second', { type: 'status' }), /expired/)
   await browsers.input('other', { type: 'status' })
   await browsers.dispose()
-  browsers = new RemoteBrowsers(profileDirectory)
+  browsers = startBrowsers()
   console.log('Remote browsers: checking navigation recovery')
   const origin = `http://127.0.0.1:${address.port}`
   const unavailable = createServer()
@@ -389,7 +398,7 @@ try {
   )
   await browsers.closeTask('profiles')
   await browsers.dispose()
-  browsers = new RemoteBrowsers(profileDirectory)
+  browsers = startBrowsers()
   await browsers.open('restart-check', 'profiles', 'work', origin + '/profile-state')
   dispose.push(await browsers.attach('restart-check', listener('restart-check')))
   await wait(() => states.get('restart-check')?.title === 'profileLogin=work|work')
@@ -521,10 +530,14 @@ try {
       .slice(-2)
       .map((entry) => Object.keys(entry).sort()),
     [
-      ['at', 'reason'],
-      ['at', 'reason'],
+      ['at', 'reason', 'tabKey'],
+      ['at', 'reason', 'tabKey'],
     ],
   )
+  const restarted = startBrowsers()
+  assert.equal(restarted.previousEndReason(recoveryResource), 'expired')
+  assert.equal(restarted.previousEndReason('unrelated-tab'), undefined)
+  await restarted.dispose()
   console.log(
     'Real Chromium: active/idle capture, authorized input, hidden capture, viewport caps, resize/detail frames, unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
   )

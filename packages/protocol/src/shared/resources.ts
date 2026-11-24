@@ -139,6 +139,7 @@ export const agentHookSchema = superRefine(
 export type AgentHook = Schema.Schema.Type<typeof agentHookSchema>
 export const resourceSettingsSchema = superRefine(
   mutableStruct({
+    additionalInstructions: Schema.optional(maxValue(Schema.String, 32000)),
     hooks: Schema.optional(maxValue(mutableArray(agentHookSchema), 20)),
     mcpServers: maxValue(mutableArray(mcpServerSchema), 30).pipe(
       Schema.withDecodingDefaultType(Effect.sync(() => [])),
@@ -185,7 +186,9 @@ export function mergeResources(
   project?: ResourceSettings,
   agent?: ResourceSettings,
 ): ResourceSettings {
+  const additionalInstructions = agent?.additionalInstructions ?? project?.additionalInstructions
   return {
+    ...(additionalInstructions ? { additionalInstructions } : {}),
     ...(project?.hooks || agent?.hooks
       ? {
           hooks: [

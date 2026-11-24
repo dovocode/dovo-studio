@@ -1052,6 +1052,7 @@ export function route(
               '/api/runtime/preferences/save',
               '/api/agents/defaults/save',
               '/api/agents/settings/save',
+              '/api/agents/settings/organization',
               '/api/agents/settings/sync',
               '/api/agents/setup/save',
               '/api/agents/title-settings/save',
@@ -1374,12 +1375,16 @@ export function route(
         const resourceId = JSON.stringify(
           profileId === 'default' ? [taskId, tabId ?? null] : [taskId, tabId ?? null, profileId],
         )
-        yield* serviceResult(s.browsers.open(resourceId, taskId, profileId, url))
+        const opened = yield* serviceResult(s.browsers.open(resourceId, taskId, profileId, url))
         return yield* serviceResult({
           ticket: s.browserTickets.issue(token, resourceId, taskId),
           tabId,
           profileId,
           host: hostname(),
+          previousEndReason:
+            opened && !isPrivateBrowserProfile(profileId)
+              ? s.browsers.previousEndReason(resourceId)
+              : undefined,
         })
       }
       if (

@@ -109,6 +109,7 @@ import { TerminalPane } from '../../terminal/terminal-pane'
 import { useTaskViewed } from './use-task-viewed'
 import { taskRowStatus } from '../list/task-row-status'
 import { copyText } from '../../ui/content/clipboard'
+import { useCopyThreadStudioId } from './copy-thread-studio-id'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
@@ -503,6 +504,10 @@ function TaskDetailContent({
   const { width } = useWindowDimensions()
   const panes = useTaskPanes()
   const { snapshot, connected, profile, callEffect, activeId, connection } = useRuntime()
+  const copyStudioId = useCopyThreadStudioId(
+    task,
+    snapshot?.runtimeId ?? profile?.connection.runtimeId,
+  )
   const worktreeThread = useAction()
   const [transferring, setTransferring] = useState(false)
   const [continuing, setContinuing] = useState<'choose' | 'machine' | null>(null)
@@ -1118,6 +1123,7 @@ function TaskDetailContent({
                       disabled: !lifecycle.enabled || lifecycle.busy,
                       onPress: lifecycle.togglePinned,
                     },
+                    ...(copyStudioId ? [{ ...copyStudioId, group: 'Thread', overflow: true }] : []),
                     {
                       label: uiText('Regenerate title'),
                       group: 'Advanced',

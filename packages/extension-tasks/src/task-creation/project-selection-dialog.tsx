@@ -1,7 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
-import { pinnedFirst, projectMachineGroups } from '@dovo/protocol'
+import { pinnedFirst, projectMachineGroups, projectOrganizationSections } from '@dovo/protocol'
 import {
   Button,
   Dialog,
@@ -99,6 +99,14 @@ export function ProjectSelectionDialog({
     ],
   )
   const normalizedProjectQuery = projectQuery.trim().toLowerCase()
+  const matchingProjects = projectGroups.flatMap((group) => {
+    const matches = group.entries.filter(({ repository, source }) =>
+      `${group.organization ?? ''} ${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
+        .toLowerCase()
+        .includes(normalizedProjectQuery),
+    )
+    return matches.length ? [{ ...group, matches }] : []
+  })
 
   return (
     <Dialog
@@ -171,78 +179,70 @@ export function ProjectSelectionDialog({
           )}
         <div className="max-h-[55dvh] space-y-3 overflow-y-auto">
           {!noProject &&
-            projectGroups.map((group) => {
-              const matches = group.entries.filter(({ repository, source }) =>
-                `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
-                  .toLowerCase()
-                  .includes(normalizedProjectQuery),
-              )
-              if (!matches.length) return null
-              const preferred =
-                matches.find(
-                  ({ source, repository }) =>
-                    taskCollectionKey(source.runtimeId, repository.id) === suggestedProject &&
-                    source.online &&
-                    !repository.gitIdentityError,
-                ) ??
-                matches.find(
-                  ({ source, repository }) => source.online && !repository.gitIdentityError,
-                )
-              const choice = preferred ?? matches[0]
-              if (choice) {
-                const { source, repository } = choice
-                const deviceCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
-                const onlineCount = new Set(
-                  group.entries
-                    .filter((entry) => entry.source.online)
-                    .map((entry) => entry.runtimeId),
-                ).size
-                return (
-                  <Button
-                    key={group.key}
-                    variant="outline"
-                    disabled={busy || !source.online || !!repository.gitIdentityError}
-                    className="h-auto w-full justify-start gap-3 rounded-lg px-3 py-3 text-left"
-                    onClick={() => onSelect(taskCollectionKey(source.runtimeId, repository.id))}
-                  >
-                    <Folder className="size-5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{group.name}</span>
-                      <span className="mt-1 flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-                        <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-3" />
-                        {deviceCount > 1
-                          ? `${deviceCount} devices · ${onlineCount} online${normalizedProjectQuery && matches.length === 1 ? ` · ${source.name}` : ''}`
-                          : `${source.name}${repository.branch ? ` · ${repository.branch}` : ''}`}
-                      </span>
-                      {!!repository.gitIdentityError && (
-                        <span className="block text-xs text-destructive">
-                          {repository.gitIdentityError}
+            projectOrganizationSections(matchingProjects).map(({ name, projects }) => (
+              <div className="space-y-2" key={name ?? ''}>
+                {name && <h3 className="text-xs font-medium text-muted-foreground">{name}</h3>}
+                {projects.map((group) => {
+                  const { matches } = group
+                  const preferred =
+                    matches.find(
+                      ({ source, repository }) =>
+                        taskCollectionKey(source.runtimeId, repository.id) === suggestedProject &&
+                        source.online &&
+                        !repository.gitIdentityError,
+                    ) ??
+                    matches.find(
+                      ({ source, repository }) => source.online && !repository.gitIdentityError,
+                    )
+                  const choice = preferred ?? matches[0]
+                  if (choice) {
+                    const { source, repository } = choice
+                    const deviceCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
+                    const onlineCount = new Set(
+                      group.entries
+                        .filter((entry) => entry.source.online)
+                        .map((entry) => entry.runtimeId),
+                    ).size
+                    return (
+                      <Button
+                        key={group.key}
+                        variant="outline"
+                        disabled={busy || !source.online || !!repository.gitIdentityError}
+                        className="h-auto w-full justify-start gap-3 rounded-lg px-3 py-3 text-left"
+                        onClick={() => onSelect(taskCollectionKey(source.runtimeId, repository.id))}
+                      >
+                        <Folder className="size-5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">{group.name}</span>
+                          <span className="mt-1 flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                            <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-3" />
+                            {deviceCount > 1
+                              ? `${deviceCount} devices · ${onlineCount} online${normalizedProjectQuery && matches.length === 1 ? ` · ${source.name}` : ''}`
+                              : `${source.name}${repository.branch ? ` · ${repository.branch}` : ''}`}
+                          </span>
+                          {!!repository.gitIdentityError && (
+                            <span className="block text-xs text-destructive">
+                              {repository.gitIdentityError}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    {source.online ? (
-                      <ChevronRight className="size-3.5" />
-                    ) : (
-                      <span className="text-xs">{uiText('Offline')}</span>
-                    )}
-                  </Button>
-                )
-              }
-              return null
-            })}
-          {!noProject &&
-            projectQuery &&
-            !machineSources.some((source) =>
-              source.workspace.repositories.some((repository) =>
-                `${repository.gitIdentity ?? ''} ${repository.name} ${repository.path} ${source.name}`
-                  .toLowerCase()
-                  .includes(normalizedProjectQuery),
-              ),
-            ) && (
-              <p className="px-3 py-4 text-sm text-muted-foreground">
-                No matching projects or devices.
-              </p>
-            )}
+                        {source.online ? (
+                          <ChevronRight className="size-3.5" />
+                        ) : (
+                          <span className="text-xs">{uiText('Offline')}</span>
+                        )}
+                      </Button>
+                    )
+                  }
+                  return null
+                })}
+              </div>
+            ))}
+          {!noProject && projectQuery && !matchingProjects.length && (
+            <p className="px-3 py-4 text-sm text-muted-foreground">
+              No matching projects or devices.
+            </p>
+          )}
           {!noProject &&
             !machineSources.some((source) =>
               source.workspace.repositories.some((repository) => repository.kind !== 'scratch'),

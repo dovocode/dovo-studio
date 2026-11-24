@@ -198,11 +198,13 @@ invalidates older in-flight reads. This watches explicit runs only, never a bran
 Every two minutes, the runtime checks watched runs using the existing forge adapters and caches.
 When a run fails or finishes with an actionable warning, Dovo queues its result once in the same
 thread, with available job context and links. Waiting, blocked, paused and postponed runs also queue
-an update once per status transition while monitoring continues. Failed jobs are prioritized and
-available failed step diagnostics are included. Successful, skipped and cancelled runs finish
-silently. Completion and queue admission commit together. Watches survive turns and runtime
-restarts. Unavailable or stale reads retain progress and expose an error in status. Agents should
-finish their turn after registration instead of keeping a polling loop alive.
+an update once per status transition while monitoring continues. An early failed job or step wakes
+the thread once per attempt. Studio keeps watching through the final run state and returns the final
+failed job links in watch status. Failed jobs are prioritized and available failed step diagnostics
+are included. Successful, skipped and cancelled runs finish silently. Completion and queue admission
+commit together. Watches survive turns and runtime restarts. Unavailable or stale reads retain
+progress and expose an error in status. Agents should finish their turn after registration instead
+of keeping a polling loop alive.
 
 Use `action: status` or `action: stop` with an optional pipeline `url`, or the returned watch
 `repositoryId` and `runIds`, to select runs; omit selectors to select all watches. Finished threads

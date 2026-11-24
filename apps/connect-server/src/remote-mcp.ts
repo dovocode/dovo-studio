@@ -15,6 +15,8 @@ import {
   remoteMcpDiscoverSchema,
   remoteMcpOfferSchema,
   remoteMcpReplySchema,
+  remoteMcpReadThreadsSchema,
+  remoteMcpReadAutomationsSchema,
   remoteMcpThreadsSchema,
 } from '@dovo/protocol'
 import { bearerToken, html, json, readBody, readJson, RequestError } from './http.js'
@@ -46,7 +48,10 @@ const tools = {
   ),
   threads: tool(
     'dovo_threads',
-    'List and read threads. Create an agent thread with a stable requestId. Read progress, send follow-ups with a stable messageId, and stop or resume runs.',
+    'List and read threads. Create with a stable requestId, send follow-ups with a stable messageId, and stop or resume runs. ' +
+      'For create and send, pass the user’s objective and explicit constraints. Use only skills enabled in Dovo Studio for the target agent and project. ' +
+      'Let the receiving agent choose which skills to use. Omit skill names and paths from the calling app’s own environment. ' +
+      'If the user explicitly requires a skill, pass its exact Studio name in requiredSkills. If the check fails, ask the user how to proceed.',
     remoteMcpThreadsSchema,
   ),
   automations: tool(
@@ -56,6 +61,19 @@ const tools = {
   ),
 }
 const byName = new Map(Object.entries(tools).map(([part, tool]) => [tool.name, part]))
+const readOnlyTools = [
+  tools.discover,
+  tool(
+    'dovo_threads',
+    'List threads and read messages or thread snapshots.',
+    remoteMcpReadThreadsSchema,
+  ),
+  tool(
+    'dovo_automations',
+    'List and read automations and their runs.',
+    remoteMcpReadAutomationsSchema,
+  ),
+].map((tool) => ({ ...tool, annotations: { readOnlyHint: true } }))
 
 const redirect = (res: ServerResponse, location: string) => {
   res.writeHead(303, { Location: location })
@@ -391,6 +409,7 @@ export class RemoteMcp {
       res.setHeader('Allow', 'POST')
       return json(res, 405, { error: 'This stateless MCP endpoint accepts POST requests.' })
     }
+    const advertisedTools = grant.access === 'read' ? readOnlyTools : Object.values(tools)
     const body = await readJson(req, 65536)
     const controller = new AbortController()
     const abort = () => controller.abort()
@@ -434,7 +453,7 @@ export class RemoteMcp {
       if (
         await nativeRemoteMcpRequest(req, res, body, {
           eventsEnabled: this.mailbox.eventsEnabled(grant.installation),
-          tools: Object.values(tools),
+          tools: advertisedTools,
           callTool,
           poll: async (command) => {
             const page = await this.mailbox.call(
@@ -457,7 +476,7 @@ export class RemoteMcp {
         enableJsonResponse: true,
       })
       server.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: Object.values(tools),
+        tools: advertisedTools,
       }))
       server.setRequestHandler(CallToolRequestSchema, async ({ params }) => callTool(params))
       await server.connect(transport)

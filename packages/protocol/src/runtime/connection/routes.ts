@@ -1,5 +1,6 @@
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import { isPeerAddress, peerTransportAddress, resolvePeerTransport, peerAddress } from './peer.js'
+import { recordClientAction, type RuntimeRouteFailover } from '../../shared/client-diagnostics.js'
 
 type RouteProbe = {
   controller: AbortController
@@ -8,16 +9,27 @@ type RouteProbe = {
 }
 type Selection = {
   selected?: string
+  reason?: RuntimeRouteFailover['reason']
   checkedAt: number
   retryAt?: number
   probe?: RouteProbe
 }
-type RoutePurpose = 'http' | 'stream'
+type RoutePurpose = RuntimeRouteFailover['purpose']
+export type RuntimeRoute =
+  | { kind: 'saved'; address: string }
+  | { kind: 'alternate'; address: string; reason: RuntimeRouteFailover['reason'] }
+  | { kind: 'connect'; reason?: RuntimeRouteFailover['reason'] }
 let version = 0
 const listeners = new Set<() => void>()
-const publish = () => {
+export const publishRuntimeRouteChange = () => {
   version++
   for (const listener of listeners) listener()
+}
+export function recordRuntimeRouteFailover(purpose: RoutePurpose, route: RuntimeRoute) {
+  if ('reason' in route && route.reason)
+    recordClientAction('connecting', 'connection', {
+      routeFailover: { purpose, reason: route.reason },
+    })
 }
 export const runtimeRouteVersion = () => version
 export function subscribeRuntimeRoutes(listener: () => void) {
@@ -52,7 +64,7 @@ function clearRoutes(id: string) {
   routes.delete(id)
   const changed = internetRoutes.delete(id + 'http') || internetRoutes.has(id + 'stream')
   internetRoutes.delete(id + 'stream')
-  if (saved?.selected || saved?.stream?.selected || changed) publish()
+  if (saved?.selected || saved?.stream?.selected || changed) publishRuntimeRouteChange()
 }
 /** Replace cached routes when the owner accepts new pairing metadata. Discovery is cancelled
  * before any later operation selects an endpoint; already dispatched requests are not replayed. */
@@ -137,6 +149,30 @@ export function runtimeTransportAddress(
   const saved = routes.get(key(connection))
   return (purpose === 'stream' ? saved?.stream?.selected : saved?.selected) ?? connection.address
 }
+/** The selected route for the next request. An established live stream retains its own route. */
+export function selectedRuntimeRoute(
+  connection: RuntimeConnection,
+  purpose: RoutePurpose = 'http',
+): RuntimeRoute {
+  const saved = routes.get(key(connection))
+  const selection = purpose === 'stream' ? saved?.stream : saved
+  const fallback = internetRoutes.get(key(connection) + purpose)
+  if (fallback || isPeerAddress(connection.address))
+    return { kind: 'connect', reason: fallback?.reason }
+  return selection?.selected && selection.reason
+    ? { kind: 'alternate', address: selection.selected, reason: selection.reason }
+    : { kind: 'saved', address: new URL(connection.address).origin }
+}
+export function runtimeRouteLabel(route: RuntimeRoute) {
+  switch (route.kind) {
+    case 'saved':
+      return `Saved address · ${route.address}`
+    case 'alternate':
+      return `Alternate address · ${route.address}`
+    case 'connect':
+      return route.reason ? 'Dovo Connect fallback' : 'Dovo Connect'
+  }
+}
 /** Logical peer identity for the selected route, before its native loopback translation. */
 export function runtimePeerAddress(connection: RuntimeConnection, purpose: RoutePurpose = 'http') {
   return (
@@ -154,7 +190,7 @@ export function invalidateRuntimeRoute(
     runtimeTransportAddress(connection, purpose) !== expectedAddress
   )
     return
-  if (internetRoutes.delete(key(connection) + purpose)) publish()
+  if (internetRoutes.delete(key(connection) + purpose)) publishRuntimeRouteChange()
   const saved = routes.get(key(connection))
   const selection = purpose === 'stream' ? saved?.stream : saved
   if (selection) {
@@ -166,7 +202,7 @@ export function invalidateRuntimeRoute(
 /** Upgrade failures must not displace a working HTTP route. Give a blocked proxy thirty
  * seconds to recover, while the stream can use another verified address of the same runtime. */
 export function failRuntimeStreamingRoute(connection: RuntimeConnection, address: string) {
-  if (internetRoutes.delete(key(connection) + 'stream')) publish()
+  if (internetRoutes.delete(key(connection) + 'stream')) publishRuntimeRouteChange()
   const saved = routes.get(key(connection))
   if (!saved) return
   const candidate = origin(address)
@@ -177,7 +213,7 @@ export function failRuntimeStreamingRoute(connection: RuntimeConnection, address
   if (saved.stream?.selected === candidate) {
     saved.stream.selected = undefined
     saved.stream.checkedAt = 0
-    publish()
+    publishRuntimeRouteChange()
   }
 }
 /** Resolve before sending a request, including mutations. Never replay an uncertain write
@@ -288,17 +324,29 @@ async function probeDirectRoutes(
       const selected = await probe
       if (signal.aborted) throw signal.reason
       if (!selected) continue
-      const changed = selection.selected !== selected
+      const preferred = new URL(connection.address).origin
+      const reason =
+        selected === preferred
+          ? undefined
+          : purpose === 'stream' && saved.streamCooldowns?.has(preferred)
+            ? 'saved-address-stream-failed'
+            : 'saved-address-unreachable'
+      const changed = selection.selected !== selected || selection.reason !== reason
       selection.selected = selected
+      selection.reason = reason
       selection.checkedAt = Date.now()
       selection.retryAt =
         purpose === 'stream' ? Math.min(...(saved.streamCooldowns?.values() ?? [])) : undefined
-      if (changed) publish()
+      if (changed) {
+        if (reason && !internetRoutes.has(key(connection) + purpose))
+          recordRuntimeRouteFailover(purpose, { kind: 'alternate', address: selected, reason })
+        publishRuntimeRouteChange()
+      }
       return selected
     }
     if (selection.selected !== undefined) {
       selection.selected = undefined
-      publish()
+      publishRuntimeRouteChange()
     }
     throw new Error(
       'No verified address for this paired runtime is reachable. Check its LAN or VPN connection.',
@@ -310,7 +358,12 @@ async function probeDirectRoutes(
 
 const internetRoutes = new Map<
   string,
-  { address: string; peerAddress: string; checkedAt: number }
+  {
+    address: string
+    peerAddress: string
+    checkedAt: number
+    reason: RuntimeRouteFailover['reason']
+  }
 >()
 /** Choose the route and its own credential together, before sending anything. A failed
  * mutation is never replayed through the other transport. Explicit LAN/VPN pairing wins. */
@@ -356,7 +409,8 @@ export async function resolveRuntimeEndpoint(
           () => {
             if (internetRoutes.get(id) !== saved) return
             internetRoutes.delete(id)
-            publish()
+            recordRuntimeRouteFailover(purpose, selectedRuntimeRoute(connection, purpose))
+            publishRuntimeRouteChange()
           },
           () => {
             // Unreachable LAN routes are expected while away; retain the fallback.
@@ -369,14 +423,14 @@ export async function resolveRuntimeEndpoint(
       // selected LAN in the meantime. Only subsequent operations switch routes.
       if (internetRoutes.get(id) === saved && saved.address !== address) {
         saved.address = address
-        publish()
+        publishRuntimeRouteChange()
       }
       return { address, token: internet.token }
     }
     try {
       const address = await resolveDirectRoute(connection, signal, purpose)
       checkGeneration()
-      if (internetRoutes.delete(id)) publish()
+      if (internetRoutes.delete(id)) publishRuntimeRouteChange()
       return { address, token: connection.token }
     } catch (error) {
       if (signal.aborted || error instanceof RouteChangedError) throw error
@@ -384,12 +438,18 @@ export async function resolveRuntimeEndpoint(
     }
     const address = await resolvePeerTransport(internet.address, internet.peer, signal)
     checkGeneration()
+    const reason =
+      purpose === 'stream' && routes.get(routeKey)?.streamCooldowns?.size
+        ? 'direct-stream-unavailable'
+        : 'direct-addresses-unreachable'
+    if (!internetRoutes.has(id)) recordRuntimeRouteFailover(purpose, { kind: 'connect', reason })
     internetRoutes.set(id, {
       address,
       peerAddress: internet.address,
       checkedAt: Date.now(),
+      reason,
     })
-    publish()
+    publishRuntimeRouteChange()
     return { address, token: internet.token }
   } finally {
     if (--active.readers === 0 && discoveries.get(routeKey) === active) discoveries.delete(routeKey)

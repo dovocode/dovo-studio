@@ -6,6 +6,8 @@ import { Effect } from 'effect'
 import {
   forgePullIdentity,
   sharedProjectPresentation,
+  projectOrganizationId,
+  studioOrganizations,
   migrateProjectIcons,
   canonicalSharedSettings,
   RUNTIME_PROTOCOL_VERSION,
@@ -267,10 +269,25 @@ export function runtimeSnapshot(
       { concurrency: 4 },
     )
     const currentDefaults = s.defaults.get()
+    const organizations = studioOrganizations(currentDefaults, repositories)
     const enrichedWorkspace = projectWorkspace(
       s,
       storedWorkspace,
-      repositories.map((repository) => sharedProjectPresentation(currentDefaults, repository)),
+      repositories.map((repository) => {
+        const projected = sharedProjectPresentation(currentDefaults, repository)
+        const organizationId = projectOrganizationId(repository)
+        return organizationId
+          ? {
+              ...projected,
+              organizationId:
+                repository.organizationId ??
+                (Object.hasOwn(currentDefaults.organizations ?? {}, organizationId)
+                  ? organizationId
+                  : undefined),
+              organization: organizations.get(organizationId)?.name,
+            }
+          : projected
+      }),
     )
     return yield* serviceResult({
       ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),
@@ -400,6 +417,7 @@ export function runtimeSnapshot(
       persistentTurnModelsSupported: true,
       projectTransfersSupported: true,
       projectOrganizationSupported: true,
+      organizationSettingsSupported: true,
       projectWorktreeTransfersSupported: true,
       threadHandoffsSupported: true,
       messageForkSupported: true,

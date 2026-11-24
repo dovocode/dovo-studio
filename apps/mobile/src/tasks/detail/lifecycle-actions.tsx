@@ -5,20 +5,24 @@ import { isSnoozed, latestCompletedTaskTurn, type Task } from '@dovo/protocol'
 import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 import { chooseSnoozeDuration, useTaskLifecycle } from './use-task-lifecycle'
+import { useCopyThreadStudioId } from './copy-thread-studio-id'
 export function LifecycleActions({
   task,
   allowReadState = false,
   onDeleted,
   runtimeId,
+  runtimeIdentity,
 }: {
   task: Task
   allowReadState?: boolean
   onDeleted?: () => void
   runtimeId?: string
+  runtimeIdentity?: string
 }) {
   const uiText = useInterfaceText()
 
   const { styles } = useTheme()
+  const copyStudioId = useCopyThreadStudioId(task, runtimeIdentity)
 
   const {
     enabled,
@@ -35,6 +39,7 @@ export function LifecycleActions({
   } = useTaskLifecycle(task, runtimeId, onDeleted)
   return (
     <View style={{ gap: 10 }}>
+      {copyStudioId && <Action secondary {...copyStudioId} />}
       {allowReadState && !task.archived && latestCompletedTaskTurn(task) && (
         <Action
           secondary

@@ -1301,7 +1301,12 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               {'{value0} · {value1} queued messages'}
             </InterfaceText>
           </Text>
-          <LifecycleActions task={detail.task} runtimeId={detail.runtimeId} allowReadState />
+          <LifecycleActions
+            task={detail.task}
+            runtimeId={detail.runtimeId}
+            runtimeIdentity={rowData.get(detail.key)?.owner.runtimeIdentity}
+            allowReadState
+          />
           {detail.runtimeId !== activeId && (
             <Action label={uiText('Open task')} onPress={() => openTask(detail)} />
           )}

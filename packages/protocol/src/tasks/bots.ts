@@ -184,7 +184,7 @@ export function applyBotResources(
   const replaced = <T extends { name: string }>(items: readonly T[], mine: readonly T[]) =>
     items.filter((item) => !mine.some((entry) => entry.name === item.name))
   return {
-    ...(inherited.hooks ? { hooks: inherited.hooks } : {}),
+    ...inherited,
     mcpServers: [
       ...replaced(inherited.mcpServers, own.mcpServers).map(off(own.disabledMcpServers)),
       ...own.mcpServers,

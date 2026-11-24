@@ -1,16 +1,55 @@
 import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { WebSocket } from 'ws'
 import { startRuntime } from '../index'
 import * as sessionCookies from '../previews/browser-session-cookies'
 import { RemoteBrowsers } from '../previews/browser'
 import { SocketTickets } from './support/socket-tickets'
-import { decodeBrowserFrame, remoteBrowserMessageSchema } from '@dovo/protocol'
+import {
+  decodeBrowserFrame,
+  remoteBrowserMessageSchema,
+  STUDIO_BROWSER_SCOPE,
+} from '@dovo/protocol'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const close of cleanups.splice(0)) await close()
   vi.restoreAllMocks()
+})
+
+it('returns a saved session ending only for the tab being reopened', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-browser-ends-'))
+  const ownerToken = 'browser-history-token-for-runtime-test'
+  const options = { databasePath: join(directory, 'runtime.db'), ownerToken, port: 0 }
+  const original = await startRuntime(options)
+  const tabKey = JSON.stringify([STUDIO_BROWSER_SCOPE, 'reopen'])
+  original.services.db
+    .prepare('INSERT INTO documents VALUES (?, ?)')
+    .run('browser-session-ends', JSON.stringify([{ tabKey, at: 100, reason: 'expired' }]))
+  await original.close()
+  const restarted = await startRuntime(options)
+  try {
+    const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(true)
+    const call = async (tabId: string) => {
+      const response = await fetch(`http://127.0.0.1:${restarted.port}/api/previews/browser/open`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: STUDIO_BROWSER_SCOPE, tabId }),
+      })
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+    expect(await call('reopen')).toMatchObject({ previousEndReason: 'expired' })
+    expect(await call('another-tab')).not.toHaveProperty('previousEndReason')
+    open.mockResolvedValue(false)
+    expect(await call('reopen')).not.toHaveProperty('previousEndReason')
+  } finally {
+    await restarted.close()
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 it('acknowledges committed profiles after an apply failure and retries without replacing the catalog', async () => {
@@ -47,7 +86,7 @@ it('acknowledges committed profiles after an apply failure and retries without r
 })
 
 it('checks task ownership and credentials before launching, isolates browser tickets, and detaches on revocation', async () => {
-  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(false)
   const detach = vi.fn<() => void>()
   const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(detach)
   const input = vi.spyOn(RemoteBrowsers.prototype, 'input').mockResolvedValue()
@@ -263,7 +302,7 @@ it('rejects expired tickets without keeping bearer credentials reusable', () => 
 })
 
 it('pipelines high-RTT viewers but bounds bytes and contracts when their decoder slows', async () => {
-  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(false)
   const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
   const token = 'adaptive-browser-test-token-at-least-32-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
@@ -405,7 +444,7 @@ it('pipelines high-RTT viewers but bounds bytes and contracts when their decoder
 })
 
 it('does not mistake source pacing for link serialization in a high-RTT window', async () => {
-  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(false)
   const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
   const input = vi.spyOn(RemoteBrowsers.prototype, 'input').mockResolvedValue()
   const token = 'paced-browser-token-at-least-32-characters'
@@ -474,7 +513,7 @@ it('does not mistake source pacing for link serialization in a high-RTT window',
 })
 
 it('bounds a high-RTT window by frame delivery spacing on a narrow link', async () => {
-  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(false)
   const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
   const input = vi.spyOn(RemoteBrowsers.prototype, 'input').mockResolvedValue()
   const token = 'serialized-browser-token-at-least-32-characters'
@@ -565,7 +604,7 @@ it('bounds a high-RTT window by frame delivery spacing on a narrow link', async 
 })
 
 it('isolates remote tabs, binds their tickets to the task, and closes only the requested tab', async () => {
-  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(false)
   const close = vi.spyOn(RemoteBrowsers.prototype, 'close').mockResolvedValue()
   const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
   const visibility = vi.spyOn(RemoteBrowsers.prototype, 'visibility').mockResolvedValue()
@@ -701,7 +740,7 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
 
 it('opens a paired shared-browser session without a thread, preserves its host/profile and requires credentials for selections', async () => {
   const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
-  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue(false)
   const selection = vi
     .spyOn(RemoteBrowsers.prototype, 'selection')
     .mockResolvedValue({ text: 'Selected text', url: 'http://lan.local/', title: 'LAN' })

@@ -43,10 +43,12 @@ it('uses complete cached owner rows at once and never substitutes old shared cop
   const rows = [...taskListProjection([peer, owner], now).values()]
   expect(rows.map(({ row }) => row.task.id)).toEqual(['running', 'untouched'])
   expect(rows[0].row.task.harness?.provider).toBe('claude')
+  expect(rows[0].owner.runtimeIdentity).toBe('owner')
   expect(rows[0].owner.displayProject?.iconOverride).toBe('data:image/png;base64,cmVhbA==')
   const failed = [...taskListProjection([peer, { ...owner, error: 'Timed out' }], now).values()]
   expect(failed.map(({ row }) => row.task.id)).toEqual(['running', 'untouched'])
   expect(failed[0].row.task.harness?.provider).toBe('claude')
+  expect(failed[0].owner.runtimeIdentity).toBe('owner')
   expect(failed[0].owner.displayProject?.iconOverride).toBe('data:image/png;base64,cmVhbA==')
   for (const entries of [
     [peer],
@@ -54,6 +56,18 @@ it('uses complete cached owner rows at once and never substitutes old shared cop
     [{ ...peer, connected: false }],
   ])
     expect(taskListProjection(entries, now).size).toBe(0)
+})
+
+it('retains the saved computer identity until the thread list learns it from a snapshot', () => {
+  const source = overview()
+  source.profile.connection.runtimeId = 'paired-computer'
+  source.snapshot!.runtimeId = undefined
+  const key = JSON.stringify([source.profile.id, 'running'])
+  const previous = taskListProjection([source], now)
+  expect(previous.get(key)?.owner.runtimeIdentity).toBe('paired-computer')
+  const snapshot = { ...source.snapshot!, runtimeId: 'snapshot-computer' }
+  const refreshed = taskListProjection([{ ...source, snapshot }], now, previous)
+  expect(refreshed.get(key)?.owner.runtimeIdentity).toBe('snapshot-computer')
 })
 
 it('retains mobile pill data across native agent payload updates but refreshes visible activity', () => {

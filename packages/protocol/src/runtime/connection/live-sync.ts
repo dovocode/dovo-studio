@@ -2,7 +2,14 @@ import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { randomUUID } from '../../random-uuid.js'
 import { recordClientAction } from '../../shared/client-diagnostics.js'
 import { desktopRuntimeSyncBridge } from './desktop-sync.js'
-import { failRuntimeStreamingRoute, invalidateRuntimeRoute } from './routes.js'
+import {
+  failRuntimeStreamingRoute,
+  invalidateRuntimeRoute,
+  publishRuntimeRouteChange,
+  recordRuntimeRouteFailover,
+  selectedRuntimeRoute,
+  type RuntimeRoute,
+} from './routes.js'
 import { decode } from '../../shared/schema.js'
 import { setRuntimeSnapshotTag } from '../../shared/client.js'
 import {
@@ -19,6 +26,7 @@ import { Effect, Fiber, type Schema } from 'effect'
 type Events = Schema.Schema.Type<typeof activitySchema>['events']
 type Listener = (events: Events) => void
 type Registration = {
+  streamRoute?: RuntimeRoute
   tasks: Map<string, number>
   settled: Set<{ limit: number | undefined }>
   events: Map<string, Events>
@@ -211,6 +219,9 @@ export type RuntimeSyncStatus =
 export function runtimeSyncStatus(connection: RuntimeConnection) {
   return registrations.get(key(connection))?.live?.status()
 }
+export function activeRuntimeStreamRoute(connection: RuntimeConnection) {
+  return registrations.get(key(connection))?.streamRoute
+}
 /** Explicit user recovery also retries endpoints rejected by an earlier runtime/session. */
 export function retryRuntimeSync(connection: RuntimeConnection) {
   registrations.get(key(connection))?.live?.retry()
@@ -225,9 +236,16 @@ export function startRuntimeSync(
     onStatus?: (status: RuntimeSyncStatus) => void
     onError?: (message: string) => void
     onConnection?: (connection: RuntimeConnection) => void
+    onStreamRoute?: (route: RuntimeRoute | undefined) => void
   },
 ) {
   const value = registration(connection)
+  const setStreamRoute = (route: RuntimeRoute | undefined) => {
+    if (value.streamRoute === route) return
+    value.streamRoute = route
+    publishRuntimeRouteChange()
+    options.onStreamRoute?.(route)
+  }
   const bridge = desktopRuntimeSyncBridge()
   if (bridge) {
     const id = randomUUID()
@@ -297,6 +315,11 @@ export function startRuntimeSync(
         online = event.online
         status = event.status
         options.onStatus?.(status)
+      } else if (event.type === 'stream-route') {
+        if (JSON.stringify(value.streamRoute) !== JSON.stringify(event.route)) {
+          if (event.route) recordRuntimeRouteFailover('stream', event.route)
+          setStreamRoute(event.route)
+        }
       } else if (event.type === 'error') {
         online = false
         options.onError?.(event.message)
@@ -351,7 +374,10 @@ export function startRuntimeSync(
         stopped = true
         online = false
         unsubscribe()
-        if (value.live === live) value.live = undefined
+        if (value.live === live) {
+          value.live = undefined
+          setStreamRoute(undefined)
+        }
         value.events.clear()
         for (const compact of value.compactors.values()) compact([])
         if (!value.tasks.size && !value.scopes.size && !value.settled.size)
@@ -585,6 +611,7 @@ export function startRuntimeSync(
     lastWatch = undefined
     socketRoute = undefined
     socketEstablished = false
+    if (value.live === live) setStreamRoute(undefined)
     online = false
     if (healthySince !== undefined && Date.now() - healthySince >= 30000) failures = 0
     healthySince = undefined
@@ -661,6 +688,7 @@ export function startRuntimeSync(
       })
       const selectedRoute = new URL(address)
       selectedRoute.protocol = selectedRoute.protocol === 'wss:' ? 'https:' : 'http:'
+      const streamRoute = selectedRuntimeRoute(connection, 'stream')
       let current: WebSocket
       try {
         current = new WebSocket(address)
@@ -781,6 +809,7 @@ export function startRuntimeSync(
           online = true
           replacingSince = undefined
           socketEstablished = true
+          if (value.live === live) setStreamRoute(streamRoute)
           healthySince ??= Date.now()
           if (Date.now() - healthySince >= 30000) failures = 0
           setStatus('live')

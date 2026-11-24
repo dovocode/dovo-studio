@@ -253,6 +253,7 @@ export type SharedSettingsEntry = Schema.Schema.Type<typeof sharedSettingsEntryS
 export const settingsScopeSchema = Schema.Literals([
   'global',
   'environment',
+  'organization',
   'project',
   'environment-project',
 ])
@@ -261,8 +262,16 @@ export const scopedSettingsSchema = mutableStruct({
   environment: scopedSettingsValueSchema,
   shared: sharedSettingsSchema,
 })
+export const organizationNameSchema = maxValue(
+  minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1),
+  80,
+)
+export const organizationIdSchema = maxValue(minValue(Schema.String, 1), 200)
 export const SCRATCH_PROJECT_ID = 'dovo:scratch'
 export const repositorySchema = mutableStruct({
+  organizationId: Schema.optional(organizationIdSchema),
+  /** Projected display name. Older workspaces also stored this as the membership. */
+  organization: Schema.optional(organizationNameSchema),
   /** Shared display label, projected independently of the local checkout name. */
   sharedName: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   /** Last confirmed identity for presentation while a checkout is unavailable. */

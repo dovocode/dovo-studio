@@ -34,7 +34,11 @@ export function internetApi(
       if (!current) throw new RequestError(401, 'Internet access has been revoked')
       const mcp =
         url.searchParams.get('remoteMcp') === '1'
-          ? mailbox?.offer(current, url.searchParams.get('mcpEvents') === '1')
+          ? mailbox?.offer(
+              current,
+              url.searchParams.get('mcpEvents') === '1',
+              url.searchParams.get('mcpRequiredSkills') === '1',
+            )
           : undefined
       return json(res, 200, {
         ...inbox,

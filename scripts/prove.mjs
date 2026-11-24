@@ -8,7 +8,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { pathToFileURL } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
 
-const USAGE = `Usage: pnpm prove -- [--base <ref>] [--build] <files...>
+const USAGE = `Usage: pnpm prove -- [--base <ref>] [--build] [--build-package <name>] <files...>
 
 Runs the given test files on the merge-base of HEAD and <ref> (default: main), then on
 this checkout. The proof holds when the tests fail on the base and pass here.
@@ -16,6 +16,8 @@ this checkout. The proof holds when the tests fail on the base and pass here.
   --base <ref>  Branch, tag or commit to compare with. Default: main.
   --build       Build @dovo/api and its workspace dependencies in the base worktree
                 first, for tests that import compiled package output.
+  --build-package <name>  Build the named workspace package and its dependencies in the
+                         base worktree. Repeat for more packages.
 
 Pass test helpers or fixtures too if the tests need them. The script copies every
 given file but runs only *.test.* files.
@@ -33,14 +35,19 @@ class SetupError extends Error {}
 class Interrupted extends Error {}
 
 function parseArguments(argv) {
-  /** @type {{ base: string, build: boolean, files: string[] }} */
-  const options = { base: 'main', build: false, files: [] }
+  /** @type {{ base: string, buildPackages: Set<string>, files: string[] }} */
+  const options = { base: 'main', buildPackages: new Set(), files: [] }
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index]
     if (argument === '--') continue
     if (argument === '--help' || argument === '-h') return undefined
-    if (argument === '--build') options.build = true
-    else if (argument === '--base') {
+    if (argument === '--build') options.buildPackages.add('@dovo/api')
+    else if (argument === '--build-package') {
+      const name = argv[++index]
+      if (!name || !/^(?:@[a-z0-9][a-z0-9-]*\/)?[a-z0-9][a-z0-9-]*$/.test(name))
+        throw new SetupError('--build-package needs a workspace package name')
+      options.buildPackages.add(name)
+    } else if (argument === '--base') {
       options.base = argv[++index]
       if (!options.base) throw new SetupError('--base needs a git ref')
     } else if (argument.startsWith('-')) throw new SetupError(`Unknown option ${argument}`)
@@ -233,11 +240,20 @@ export async function prove(argv, { cwd = callerDirectory(), log = console.log }
       process.stderr.write(install.tail.slice(-4000))
       throw new SetupError('pnpm install failed in the base worktree')
     }
-    if (options.build) {
-      log('prove: building @dovo/api and its workspace dependencies in the base worktree...')
-      const build = await run('pnpm', ['--filter', '@dovo/api...', '-r', 'build'], worktree, {
-        quiet: true,
-      })
+    if (options.buildPackages.size) {
+      const packages = [...options.buildPackages]
+      log(`prove: building ${packages.join(', ')} and their dependencies in the base worktree...`)
+      const build = await run(
+        'pnpm',
+        [
+          ...packages.flatMap((name) => ['--filter', `${name}...`]),
+          '--fail-if-no-match',
+          '-r',
+          'build',
+        ],
+        worktree,
+        { quiet: true },
+      )
       if (build.code !== 0) {
         process.stderr.write(build.tail.slice(-4000))
         throw new SetupError('The base build failed')

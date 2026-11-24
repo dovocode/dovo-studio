@@ -3,6 +3,9 @@ import { Disclosure } from '@dovo/studio-ui'
 import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
   resolveScopedSettings,
+  projectOrganizationId,
+  projectOrganizationAssignment,
+  organizationChangeResultSchema,
   sharedProjectKey,
   resourceScopeChoices,
   scopeEditorValue,
@@ -11,6 +14,7 @@ import {
   settingsScopeLabels,
   resourceOrigin,
   type SettingsScope,
+  type Repository,
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { mutableStruct } from '@dovo/protocol'
@@ -39,6 +43,7 @@ import {
   SelectValue,
   SettingSource,
   Switch,
+  Textarea,
   type SettingOrigin,
 } from '@dovo/studio-ui'
 import { McpEditor } from './mcp-editor'
@@ -64,14 +69,40 @@ function ComputerResources({
   repositoryId?: string
 }) {
   const { workspace, snapshot } = useWorkspace()
-  const scopes = resourceScopeChoices(snapshot?.defaults, workspace).filter(
+  const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
+  const organization = projectOrganizationId(repository)
+  const choices = resourceScopeChoices(
+    snapshot?.defaults,
+    workspace,
+    snapshot?.organizationSettingsSupported,
+  )
+  const scopes = choices.filter(
     (entry) =>
       (entry.scope === selectedScope && entry.repository?.id === repositoryId) ||
+      (entry.scope === 'organization' &&
+        (!repositoryId || entry.organizationId === organization)) ||
       (!entry.scope &&
         (selectedScope === 'environment' || selectedScope === 'environment-project')),
   )
   return (
     <div className="space-y-3">
+      {repository && repository.kind !== 'scratch' && snapshot?.organizationSettingsSupported && (
+        <OrganizationNameEditor
+          key={repository.id}
+          name={repository.organization ?? ''}
+          assignment={{
+            repository,
+            organizations: choices.flatMap((entry) =>
+              entry.organizationId ? [{ id: entry.organizationId, name: entry.item.name }] : [],
+            ),
+          }}
+        />
+      )}
+      {repository && snapshot && !snapshot.organizationSettingsSupported && (
+        <p className="text-sm text-muted-foreground">
+          Update this computer to configure Organization settings.
+        </p>
+      )}
       <Disclosure title="How resource overrides work">
         <p className="mt-2">
           Entries set at {settingsScopeLabels[selectedScope]} replace inherited entries with the
@@ -84,49 +115,141 @@ function ComputerResources({
           Add a project or custom agent to manage its resources.
         </p>
       )}
-      {scopes.map(({ item, collection, label, scope, repository, namedAgentId }) => {
-        const resources = decode(resourceSettingsSchema, item.resources ?? {})
-        const total =
-          resources.mcpServers.length + resources.skills.length + (resources.hooks?.length ?? 0)
-        const title = namedAgentId
-          ? `${item.name} profile only`
-          : collection === 'settings'
-            ? 'All agents'
-            : `${label} · ${item.name}`
-        const where =
-          collection === 'settings' && scope
-            ? `${settingsScopeLabels[scope]}${repository ? ` · ${repository.name}` : ''}`
-            : undefined
-        return (
-          <Disclosure
-            key={`${collection}:${scope ?? 'agent'}:${item.id}`}
-            open={(!!scope && !namedAgentId) || total > 0 || undefined}
-            title={
-              <>
-                {title}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {[
-                    where,
-                    count(resources.mcpServers.length, 'MCP server'),
-                    count(resources.skills.length, 'skill'),
-                    count(resources.hooks?.length ?? 0, 'hook'),
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </>
-            }
-          >
-            <ResourceScopeView
-              collection={collection}
-              id={item.id}
-              settingsScope={scope}
-              namedAgentId={namedAgentId}
-              repositoryId={repository?.id}
-            />
-          </Disclosure>
-        )
-      })}
+      {scopes.map(
+        ({ id, item, collection, label, scope, repository, namedAgentId, organizationId }) => {
+          const resources = decode(resourceSettingsSchema, item.resources ?? {})
+          const total =
+            resources.mcpServers.length + resources.skills.length + (resources.hooks?.length ?? 0)
+          const title =
+            scope === 'organization'
+              ? item.name
+              : namedAgentId
+                ? `${item.name} profile only`
+                : collection === 'settings'
+                  ? 'All agents'
+                  : `${label} · ${item.name}`
+          const where =
+            scope === 'organization'
+              ? 'Organization · This computer'
+              : collection === 'settings' && scope
+                ? `${settingsScopeLabels[scope]}${repository ? ` · ${repository.name}` : ''}`
+                : undefined
+          return (
+            <Disclosure
+              key={id}
+              open={(!!scope && !namedAgentId) || total > 0 || undefined}
+              title={
+                <>
+                  {title}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {[
+                      where,
+                      count(resources.mcpServers.length, 'MCP server'),
+                      count(resources.skills.length, 'skill'),
+                      scope !== 'organization' && count(resources.hooks?.length ?? 0, 'hook'),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </>
+              }
+            >
+              {organizationId && (
+                <OrganizationNameEditor name={item.name} organizationId={organizationId} />
+              )}
+              <ResourceScopeView
+                collection={collection}
+                id={item.id}
+                settingsScope={scope}
+                namedAgentId={namedAgentId}
+                repositoryId={repository?.id}
+                organization={scope === 'organization' ? item.name : undefined}
+                organizationId={organizationId}
+              />
+            </Disclosure>
+          )
+        },
+      )}
+    </div>
+  )
+}
+function OrganizationNameEditor(
+  props: { name: string } & (
+    | { assignment: { repository: Repository; organizations: { id: string; name: string }[] } }
+    | { organizationId: string }
+  ),
+) {
+  const { connected, request, refreshRuntime, runtimes, activeRuntimeId } = useWorkspace()
+  const uiText = useInterfaceText()
+  const listId = useId()
+  const [draft, setDraft] = useApplicationState<string | null>(null)
+  const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const assignment = 'assignment' in props ? props.assignment : undefined
+  const value = draft ?? props.name
+  async function save() {
+    setBusy(true)
+    setError('')
+    try {
+      await request(
+        '/api/agents/settings/organization',
+        'assignment' in props
+          ? projectOrganizationAssignment(
+              props.assignment.repository,
+              value,
+              props.assignment.organizations,
+            )
+          : {
+              action: 'rename',
+              organizationId: props.organizationId,
+              before: props.name,
+              name: value,
+            },
+        organizationChangeResultSchema,
+      )
+      const owner = runtimes.find((entry) => entry.profile.id === activeRuntimeId)
+      if (owner) await refreshRuntime(owner.profile)
+      setDraft(null)
+    } catch (cause) {
+      setError(resourceError(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="space-y-2">
+      <FormField label={uiText(assignment ? 'Project organization' : 'Organization name')}>
+        <Input
+          value={value}
+          list={assignment ? listId : undefined}
+          onChange={(event) => setDraft(event.target.value)}
+          maxLength={80}
+          placeholder={assignment ? uiText('No organization') : undefined}
+        />
+      </FormField>
+      {assignment && (
+        <>
+          <datalist id={listId}>
+            {assignment.organizations.map(({ id, name }) => (
+              <option key={id} value={name} />
+            ))}
+          </datalist>
+          <p className="text-xs text-muted-foreground">{uiText('Saved on this computer.')}</p>
+        </>
+      )}
+      <Button
+        disabled={
+          !connected || busy || value.trim() === props.name || (!assignment && !value.trim())
+        }
+        onClick={() => void save()}
+      >
+        {uiText(assignment ? 'Save organization' : 'Rename organization')}
+      </Button>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
@@ -137,10 +260,14 @@ function ResourceScopeView({
   settingsScope,
   repositoryId,
   namedAgentId,
+  organization,
+  organizationId,
 }: {
   namedAgentId?: string
   settingsScope?: SettingsScope
   repositoryId?: string
+  organization?: string
+  organizationId?: string
   collection: 'agents' | 'repositories' | 'settings'
   id: string
 }) {
@@ -172,16 +299,18 @@ function ResourceScopeView({
   >(null)
   const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)
   const [busy, setBusy] = useApplicationState(false)
+  const [instructions, setInstructions] = useApplicationState<string | null>(null)
   const [error, setError] = useApplicationState('')
   const repository = workspace.repositories.find((item) => item.id === repositoryId)
   const scopedValue = settingsScope
-    ? scopeEditorValue(snapshot?.defaults, repository, settingsScope)
+    ? scopeEditorValue(snapshot?.defaults, repository, settingsScope, organizationId)
     : undefined
   const item =
     collection === 'settings'
       ? {
           id,
-          name: repository?.name ?? settingsScopeLabels[settingsScope ?? 'environment'],
+          name:
+            organization ?? repository?.name ?? settingsScopeLabels[settingsScope ?? 'environment'],
           resources: namedAgentId
             ? scopedValue?.agents?.find((agent) => agent.id === namedAgentId)?.resources
             : scopedValue?.resources,
@@ -194,6 +323,7 @@ function ResourceScopeView({
         label: settingsScope
           ? [
               settingsScopeLabels[settingsScope],
+              organization,
               repository?.name,
               namedAgentId &&
                 `${scopedValue?.agents?.find((agent) => agent.id === namedAgentId)?.name ?? 'Agent'} profile`,
@@ -220,6 +350,7 @@ function ResourceScopeView({
           {
             scope: settingsScope,
             repositoryId,
+            organizationId,
             includeAgents: !!namedAgentId,
             projectKey: sharedProjectKey(repository),
             before: scopedValue ?? {},
@@ -281,6 +412,7 @@ function ResourceScopeView({
     (skill) => !settings.skills.some((item) => item.name === skill.name),
   )
   const disabled = !connected || busy
+  const savedInstructions = settings.additionalInstructions ?? ''
   const origin = (kind: 'mcpServers' | 'skills' | 'hooks', name: string): SettingOrigin['source'] =>
     resourceOrigin(snapshot?.defaults, repository, settingsScope ?? 'environment', kind, name)
   return (
@@ -452,14 +584,42 @@ function ResourceScopeView({
               />
             ))}
           </ResourceSection>
-          <HookSettings
-            hooks={settings.hooks ?? []}
-            inherited={inherited?.hooks ?? []}
-            scope={settingsScope}
-            origin={(name) => origin('hooks', name)}
-            disabled={disabled}
-            change={change}
-          />
+          {settingsScope === 'organization' ? (
+            <div className="space-y-2">
+              <FormField label={uiText('Additional AGENTS.md instructions')}>
+                <Textarea
+                  aria-label={uiText('Additional AGENTS.md instructions')}
+                  value={instructions ?? savedInstructions}
+                  onChange={(event) => setInstructions(event.target.value)}
+                  maxLength={32000}
+                  rows={6}
+                />
+              </FormField>
+              <Button
+                disabled={disabled || instructions === null || instructions === savedInstructions}
+                onClick={() => {
+                  void change((value) => ({
+                    ...value,
+                    additionalInstructions: instructions?.trim() || undefined,
+                  })).then(
+                    () => setInstructions(null),
+                    () => {},
+                  )
+                }}
+              >
+                {uiText('Save instructions')}
+              </Button>
+            </div>
+          ) : (
+            <HookSettings
+              hooks={settings.hooks ?? []}
+              inherited={inherited?.hooks ?? []}
+              scope={settingsScope}
+              origin={(name) => origin('hooks', name)}
+              disabled={disabled}
+              change={change}
+            />
+          )}
         </>
       )}
       {catalog && (

@@ -4,10 +4,15 @@ import { LinuxSetupGuide } from './linux-setup-guide'
 import { SavedActions } from './saved-actions'
 import {
   connectionProgress,
-  runtimePeerAddress,
+  activeRuntimeStreamRoute,
+  selectedRuntimeRoute,
+  runtimeRouteLabel,
+  runtimeRouteVersion,
+  subscribeRuntimeRoutes,
   runtimeReachability,
   workspaceRecoveriesSchema,
   type WorkspaceRecovery,
+  type RuntimeConnection,
   runtimeSyncStatus,
   retryRuntimeSync,
   PAIRING_PROTOCOL_VERSION,
@@ -17,7 +22,7 @@ import { ComputerUpdates } from './computer-updates'
 import { Effect } from 'effect'
 import { runtimeRequestEffect } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { Plus, Circle, ChevronDown } from 'lucide-react'
@@ -33,6 +38,25 @@ import {
   DropdownMenu,
   cn,
 } from '@dovo/studio-ui'
+function ConnectionRoutes({ connection }: { connection: RuntimeConnection }) {
+  const uiText = useInterfaceText()
+  const stream = activeRuntimeStreamRoute(connection)
+  return (
+    <div className="break-words text-xs text-muted-foreground">
+      <p>
+        {uiText('HTTP requests: {value0}', {
+          value0: runtimeRouteLabel(selectedRuntimeRoute(connection)),
+        })}
+      </p>
+      <p>
+        {uiText('Live updates: {value0}', {
+          value0: stream ? runtimeRouteLabel(stream) : uiText('HTTP polling'),
+        })}
+      </p>
+    </div>
+  )
+}
+
 export function PairingClient({
   onManage,
   discovered,
@@ -41,6 +65,7 @@ export function PairingClient({
   discovered?: { address: string }
 }) {
   const uiText = useInterfaceText()
+  useSyncExternalStore(subscribeRuntimeRoutes, runtimeRouteVersion, runtimeRouteVersion)
 
   const {
     connect,
@@ -310,20 +335,13 @@ export function PairingClient({
                     ))}
                   </ol>
                 )}
-                {entry.connected && (
-                  <p className="text-xs text-muted-foreground">
-                    {runtimePeerAddress(entry.profile.connection)
-                      ? 'Internet · WebRTC'
-                      : 'Direct · HTTP / HTTPS'}{' '}
-                    ·{' '}
-                    {runtimePeerAddress(entry.profile.connection)
-                      ? 'Encrypted peer connection'
-                      : 'LAN / VPN'}
+                {entry.connected ? (
+                  <ConnectionRoutes connection={entry.profile.connection} />
+                ) : (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {entry.profile.connection.address}
                   </p>
                 )}
-                <p className="truncate text-xs text-muted-foreground">
-                  {entry.profile.connection.address}
-                </p>
                 {!entry.connected && entry.lastSeen && (
                   <p className="text-xs text-muted-foreground">
                     Last connected {new Date(entry.lastSeen).toLocaleString()}

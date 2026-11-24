@@ -36,6 +36,8 @@ export function settingSourceName(
       return 'All projects on all machines'
     case 'environment':
       return `${computer} defaults`
+    case 'organization':
+      return 'Organization'
     case 'project':
       return `${project} project defaults`
     case 'environment-project':

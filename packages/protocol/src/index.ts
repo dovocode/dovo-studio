@@ -261,6 +261,7 @@ export * from './scm/review-session.js'
 export {
   retryRuntimeSync,
   runtimeSyncStatus,
+  activeRuntimeStreamRoute,
   type RuntimeSyncStatus,
 } from './runtime/connection/live-sync.js'
 
@@ -268,6 +269,9 @@ export {
   learnRuntimeRoutes,
   reconcileRuntimeRoutes,
   runtimeTransportAddress,
+  selectedRuntimeRoute,
+  runtimeRouteLabel,
+  type RuntimeRoute,
   runtimePeerAddress,
   runtimeRouteVersion,
   subscribeRuntimeRoutes,

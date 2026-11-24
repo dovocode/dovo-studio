@@ -238,7 +238,8 @@ try {
       },
     })
   }
-  if (releaseSmoke) recoveryNetwork = await startMobileRecoveryNetwork(runtime.port, fixtureHost)
+  if (releaseSmoke)
+    recoveryNetwork = await startMobileRecoveryNetwork(runtime.port, fixtureHost, runtime.services)
   pairingControl = await startPairingControl(runtime.services.pairing, recoveryNetwork)
   const fixtureDeviceName = androidRecovery ? 'Dovo Android test' : 'Dovo simulator test'
   const runtimeAddress = recoveryNetwork

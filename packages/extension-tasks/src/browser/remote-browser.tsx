@@ -193,6 +193,7 @@ export function RemoteBrowser({
         url: target,
         device: result.device,
         previousSessionId: previousBrowserSession(sessionKey),
+        previousEndReason: result.previousEndReason,
       })
     } catch (error) {
       if (generation === version.current)

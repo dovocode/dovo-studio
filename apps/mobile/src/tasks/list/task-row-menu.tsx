@@ -7,6 +7,7 @@ import { useTheme } from '../../ui/theme'
 
 export type TaskRowMenuProps = {
   task: Task
+  runtimeIdentity?: string
   actions: TaskLifecycle
   testID: string
   disabled: boolean

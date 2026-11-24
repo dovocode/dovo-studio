@@ -16,7 +16,9 @@ clients, and rotating refresh tokens.
    settings. The app obtains its credentials when you sign in and approve access with OAuth.
 4. Review the selected computer and the app's callback domain. Choose **Allow read access** or
    **Allow reading and running agents**. The grant covers threads and automations on that computer
-   across its projects.
+   across its projects. Read grants advertise project and agent discovery, thread reads, and
+   automation reads. Run grants also advertise actions that create or steer threads and run or
+   cancel automations.
 5. Choose **Manage connected apps** to revoke an individual app. Choose **Disable remote MCP** to
    pause access for every linked app on this computer. The grants remain saved until you revoke
    them. Disabling Dovo Connect or replacing the installation grant invalidates the old links.
@@ -35,6 +37,13 @@ Use `dovo_discover` for project, agent and model choices. Call `dovo_threads` wi
 select a configured agent ID and model. The runtime applies saved permissions and approvals. Retry
 the same launch arguments and request ID after an uncertain response. A changed request needs a new
 ID.
+
+Pass the user's objective and explicit constraints in new prompts and follow-ups. Let the receiving
+agent choose from the skills enabled in Dovo Studio for that agent and project. Keep skill names and
+paths from the calling app's own environment out of the handoff. For an explicitly required skill,
+pass its exact Studio name in `requiredSkills` on `create`. The runtime checks enabled skills before
+creating the thread. Older runtimes must be updated for this check. Studio labels new Remote MCP
+messages with the connected app's name when available.
 
 Use `snapshot` or `read` to follow progress, `send` with a stable message ID to add a follow-up, and
 `stop` or `resume` to control the run. Sending to a configured Bot uses Studio's Bot conversation
@@ -78,6 +87,10 @@ bash verification/check.sh
 pnpm --filter @dovo/protocol build
 pnpm exec vp test apps/connect-server/src/remote-mcp-admission.test.ts packages/runtime/src/http/remote-mcp.test.ts
 ```
+
+For a regression in the OAuth integration test, build Connect and the runtime in the clean base
+checkout with
+`pnpm prove -- --build --build-package @dovo/connect-server packages/runtime/src/http/remote-mcp.test.ts`.
 
 Lean checks grant and installation binding, the write gate, saved permission selection, and
 at-most-once launch admission for a retained receipt. The generated cases exercise the TypeScript

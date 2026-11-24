@@ -1825,6 +1825,11 @@ export class WorkspaceStore {
       (patch.changes.gitIdentity || patch.changes.gitIdentityError)
     )
       throw new HttpError(400, 'Cannot edit derived project metadata')
+    if (
+      patch.collection === 'repositories' &&
+      (patch.changes.organization || patch.changes.organizationId)
+    )
+      throw new HttpError(400, 'Change the project organization in resource settings.')
     if (patch.collection === 'repositories' && (patch.changes.kind || current.kind === 'scratch'))
       throw new HttpError(400, 'Cannot edit the managed project kind')
     if (

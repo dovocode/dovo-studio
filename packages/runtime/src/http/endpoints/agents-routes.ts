@@ -242,6 +242,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           '/api/agents/settings/read',
           '/api/agents/settings/save',
           '/api/agents/settings/sync',
+          '/api/agents/settings/organization',
         ].includes(path)
       )
         return yield* scopedSettingsRoute(request, path)

@@ -1,5 +1,6 @@
 import {
   createRuntimeClient,
+  activeRuntimeStreamRoute,
   reconcileRuntimeRoutes,
   startRuntimeSync,
   watchRuntimeTask,
@@ -144,11 +145,14 @@ export class RuntimeConnections {
           this.broadcast(owner, { type: 'status', status, online: status === 'live' })
           this.poll(owner)
         },
+        onStreamRoute: (route) => this.broadcast(owner, { type: 'stream-route', route }),
         onWake: () => this.poll(owner),
       })
       this.poll(pool)
     }
     publish({ type: 'status', status: pool.status, online: pool.live.online() })
+    const route = activeRuntimeStreamRoute(pool.connection)
+    if (route) publish({ type: 'stream-route', route })
     if (
       pool.reachable &&
       pool.snapshot &&

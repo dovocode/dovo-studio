@@ -1,7 +1,8 @@
 import sharp from 'sharp'
 import { Effect } from 'effect'
 import { runtimeSnapshot } from '../support/runtime-snapshot'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
+import type { AgentAdapter } from '../../agents/execution/types.js'
 import { randomBytes } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -13,6 +14,9 @@ import {
   defaultTaskHarness,
   builtInAgentPresets,
   mcpServerSchema,
+  resourceSettingsSchema,
+  resourceScopeChoices,
+  snapshotSchema,
   scopedSettingsResultSchema,
   type SettingsScope,
   type ScopedSettingsValue,
@@ -75,6 +79,117 @@ async function fixture() {
     },
   }
 }
+
+it('renames an organization without changing its projects or inherited resources', async () => {
+  const f = await fixture()
+  const folder = await mkdtemp(join(tmpdir(), 'dovo-org-folder-'))
+  const { store, defaults, tasks, agents, db } = f.runtime.services
+  const organization = 'Platform Engineering'
+  const legacyId = 'platform engineering'
+  try {
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        ...workspace.repositories.map((repository) => ({ ...repository, organization })),
+        { id: 'folder', kind: 'folder', name: 'Folder', path: folder, branch: '' },
+      ],
+    }))
+    const assign = (target: { name: string } | { id: string } | null, before: string | null) =>
+      f.call('settings/organization', { action: 'assign', repositoryId: 'folder', before, target })
+    const resources = decode(resourceSettingsSchema, {
+      additionalInstructions: 'Use the organization review process.',
+      mcpServers: [
+        { name: 'tracker', enabled: true, transport: 'http', url: 'https://mcp.example.com' },
+      ],
+      skills: [
+        {
+          name: 'review',
+          enabled: true,
+          description: 'Review changes',
+          content: 'Check the diff.',
+        },
+      ],
+    })
+    db.prepare('INSERT INTO documents VALUES (?, ?)').run(
+      'organization-settings',
+      JSON.stringify({ [legacyId]: { name: organization, resources } }),
+    )
+    // Rewriting the separate defaults document must preserve data from the old format.
+    defaults.save({ ...defaults.get(), organizations: undefined }, false)
+    expect((await assign({ name: organization.toUpperCase() }, null)).status).toBe(200)
+    expect(store.get().repositories.find(({ id }) => id === 'folder')?.organizationId).toBe(
+      legacyId,
+    )
+    const input = { scope: 'organization', organizationId: legacyId }
+    const read = async () =>
+      decode(scopedSettingsResultSchema, await (await f.call('settings/read', input)).json())
+    expect((await read()).value.resources).toEqual(resources)
+    const rename = (name: string, before = organization) =>
+      f.call('settings/organization', {
+        action: 'rename',
+        organizationId: legacyId,
+        name,
+        before,
+      })
+    const renamed = 'Developer Platform'
+    expect((await rename(renamed)).status).toBe(200)
+    expect((await rename(renamed)).status).toBe(200)
+    expect((await rename('Stale edit')).status).toBe(409)
+    const snapshot = decode(
+      snapshotSchema,
+      await (
+        await fetch(`http://127.0.0.1:${f.runtime.port}/api/snapshot`, {
+          headers: { Authorization: `Bearer ${f.token}` },
+        })
+      ).json(),
+    )
+    for (const id of ['project', 'folder'])
+      expect(snapshot.workspace.repositories.find((entry) => entry.id === id)).toMatchObject({
+        organization: renamed,
+        organizationId: legacyId,
+      })
+    expect(resourceScopeChoices(snapshot.defaults, snapshot.workspace, true)).toContainEqual(
+      expect.objectContaining({
+        id: `settings:organization:${legacyId}`,
+        item: expect.objectContaining({ name: renamed, resources }),
+      }),
+    )
+    expect((await read()).value.resources).toEqual(resources)
+    expect((await f.call('settings/save', { ...input, before: {}, after: {} })).status).toBe(409)
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      input.onText('Complete')
+    })
+    vi.spyOn(agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const task = tasks.create({
+      title: 'Organization test',
+      repositoryId: 'folder',
+      agentId: '',
+      execution: 'main',
+      objective: 'Review the checkout.',
+    })
+    expect(store.taskResources(task)).toMatchObject(resources)
+    expect(store.taskResources({ ...task, repositoryId: 'project' })).toMatchObject(resources)
+    await (
+      await tasks.start(task.id)
+    ).done
+    expect(run.mock.calls[0]?.[0].agent.instructions).toContain(resources.additionalInstructions)
+    expect((await assign(null, legacyId)).status).toBe(200)
+    expect(store.taskResources(task).additionalInstructions).toBeUndefined()
+    expect((await assign({ name: organization }, null)).status).toBe(200)
+    const newId = store.get().repositories.find(({ id }) => id === 'folder')?.organizationId
+    expect(newId).toEqual(expect.any(String))
+    expect(newId).not.toBe(legacyId)
+    expect((await rename(organization, renamed)).status).toBe(409)
+    expect(store.taskResources(task).additionalInstructions).toBeUndefined()
+    expect(
+      (await f.call('settings/save', { ...input, before: (await read()).value, after: {} })).status,
+    ).toBe(200)
+    expect((await read()).value).toEqual({})
+  } finally {
+    await f.close()
+    await rm(folder, { recursive: true, force: true })
+  }
+})
 
 it('syncs independently edited names and defaults across clones and retains local checkout labels', async () => {
   const a = await fixture(),

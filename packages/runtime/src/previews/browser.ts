@@ -51,6 +51,8 @@ import {
   type RemoteBrowserInput,
   type RemoteBrowserMessage,
   type RemoteBrowserUpload,
+  type BrowserSessionEnd,
+  type BrowserEndReason,
 } from '@dovo/protocol'
 import { ChromiumInstallation } from './chromium-installation.js'
 import { HttpError, errorMessage } from '../errors.js'
@@ -90,7 +92,6 @@ type QueuedInput = {
   authorize: () => void
   operation?: Promise<void>
 }
-type BrowserEndReason = NonNullable<Extract<RemoteBrowserMessage, { type: 'closed' }>['reason']>
 type Session = {
   id: string
   profileId?: string
@@ -216,7 +217,7 @@ export class RemoteBrowsers {
   >()
   private cookieDirectories = new WeakMap<BrowserContext, string>()
   private closingProfiles = new Map<string, Promise<void>>()
-  private sessionEnds: { at: number; reason: BrowserEndReason }[] = []
+  private sessionEnds: BrowserSessionEnd[]
   private disposed = false
   private installation = new ChromiumInstallation()
   private downloadDirectories = new WeakMap<BrowserContext, Promise<string>>()
@@ -224,7 +225,13 @@ export class RemoteBrowsers {
     private profileDirectory?: string,
     private browserProfiles: () => readonly BrowserProfile[] = () => [],
     private transfers = new BrowserTransferStorage(),
-  ) {}
+    private sessionHistory?: {
+      read(): BrowserSessionEnd[]
+      save(history: BrowserSessionEnd[]): void
+    },
+  ) {
+    this.sessionEnds = sessionHistory?.read().slice(-32) ?? []
+  }
   prepare() {
     void this.installation.ensure().catch((error) => {
       if (!this.disposed) console.error('Could not install Playwright Chromium', error)
@@ -546,9 +553,10 @@ export class RemoteBrowsers {
     profileId = 'default',
     initialUrl?: string,
     isolated = false,
-  ): Promise<void> {
+  ) {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
     let pending = this.sessions.get(taskId)
+    const opened = !pending
     if (!pending) {
       if (this.sessions.size >= 8)
         throw new HttpError(409, 'Close an unused host browser before opening another (maximum 8).')
@@ -567,6 +575,7 @@ export class RemoteBrowsers {
     }
     const session = await pending
     if (!session.listeners.size) this.scheduleClose(taskId, session)
+    return opened
   }
   private async profile(profileId: string, isolated = false, workspace = false) {
     const key = isolated
@@ -961,8 +970,13 @@ export class RemoteBrowsers {
               ? 'page'
               : 'context-lost')
           if (!isolated && !isPrivateBrowserProfile(profileId)) {
-            this.sessionEnds.push({ at: Date.now(), reason })
+            this.sessionEnds.push({ tabKey: taskId, at: Date.now(), reason })
             if (this.sessionEnds.length > 32) this.sessionEnds.shift()
+            try {
+              this.sessionHistory?.save(this.sessionEnds)
+            } catch (error) {
+              console.error('Could not save browser session history', error)
+            }
           }
           this.emit(session, {
             type: 'closed',
@@ -1897,6 +1911,9 @@ export class RemoteBrowsers {
   recentSessionEnds() {
     return this.sessionEnds.map((end) => ({ ...end }))
   }
+  previousEndReason(tabKey: string) {
+    return [...this.sessionEnds].reverse().find((end) => end.tabKey === tabKey)?.reason
+  }
   async close(taskId: string, reason: BrowserEndReason = 'requested') {
     const pending = this.sessions.get(taskId)
     if (!pending) return
@@ -1997,7 +2014,9 @@ export class RemoteBrowsers {
     clearTimeout(this.browserIdle)
     this.browserIdle = undefined
     await this.installation.dispose()
-    const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.close(id)))
+    const results = await Promise.allSettled(
+      [...this.sessions.keys()].map((id) => this.close(id, 'context-lost')),
+    )
     for (const result of results)
       if (result.status === 'rejected')
         console.error('Could not close browser context', result.reason)

@@ -30,6 +30,7 @@ export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{
 export const Platform={OS:'ios'};
 export const Keyboard={dismiss:()=>{}};
 export const Linking={openURL:async url=>{window.externalUrl=url}};
+export const Share={share:async()=>{}};
 export const AccessibilityInfo={announceForAccessibility:message=>window.announcements?.push(message),sendAccessibilityEvent:(node,event)=>{if(event==='focus')node.focus()}};
 export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.style!=='cancel')?.onPress?.()}};
 export const Icon=({name})=><i data-icon={name}/>;
@@ -46,6 +47,10 @@ export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `export * from '${mobile}runtime/preferences/app-preferences.ts';`
 const stubs = [
+  {
+    path: 'expo',
+    contents: `export const requireOptionalNativeModule=()=>({setStringAsync:async text=>{(window.copiedStudioIds??=[]).push(text);return true}});`,
+  },
   {
     path: '../bots/bot-create',
     importer: mobile,
@@ -146,11 +151,6 @@ export const startRuntimeSync=(connection,options)=>{
     path: '../tasks/list/project-thread-filter',
     importer: mobile + 'screens/tasks.tsx',
     contents: `export const ProjectThreadFilter=()=>null;`,
-  },
-  {
-    path: '../tasks/detail/lifecycle-actions',
-    importer: mobile + 'screens/tasks.tsx',
-    contents: `export const LifecycleActions=()=>null;`,
   },
   { path: './settings-controls', importer: mobile + 'screens/tasks.tsx', contents: controls },
   {
@@ -1154,10 +1154,18 @@ try {
   await settled.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-1')
   await page.getByRole('button', { name: 'Task details for Task 1', exact: true }).click()
-  await page
-    .getByRole('dialog', { name: 'Task details' })
-    .getByText('Task 1', { exact: true })
-    .waitFor()
+  const settledDetails = page.getByRole('dialog', { name: 'Task details' })
+  await settledDetails.getByText('Task 1', { exact: true }).waitFor()
+  const copyStudioId = settledDetails.getByRole('button', { name: 'Copy Studio ID (for agents)' })
+  assert.equal(await copyStudioId.count(), 0, 'A legacy snapshot without an identity cannot copy')
+  await page.evaluate(() => {
+    window.snapshot.runtimeId = 'owner-computer'
+    window.publish({})
+  })
+  await copyStudioId.click()
+  await page.waitForFunction(
+    () => window.copiedStudioIds?.at(-1) === 'studio:owner-computer:thread:task-1',
+  )
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
   await page.evaluate(() => window.publish({ 'task-1': { archived: false } }))
   await page.getByTestId('Task task-1 actions').waitFor()
@@ -2232,6 +2240,18 @@ try {
     ),
   )
   await page.getByRole('button', { name: 'Pin Bot', exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.showBotLifecycle({
+      ...window.startupSources.owner.snapshot.workspace.tasks[0],
+      id: 'replica:local-cache',
+      bot: { role: 'Assistant', state: 'active' },
+      replica: { ownerRuntimeId: 'bot-computer', threadId: 'original-bot', ownerName: 'Bot owner' },
+    }),
+  )
+  await page.getByRole('button', { name: 'Copy Studio ID (for agents)' }).click()
+  await page.waitForFunction(
+    () => window.copiedStudioIds?.at(-1) === 'studio:bot-computer:thread:original-bot',
+  )
   for (const name of [
     'Settle task',
     'Reopen task',

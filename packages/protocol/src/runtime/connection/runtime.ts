@@ -466,6 +466,7 @@ export const snapshotSchema = mutableStruct({
   messageForkSupported: Schema.optional(Schema.Literal(true)),
   /** Stores project pin/archive categories and the local-only repository flags. */
   projectOrganizationSupported: Schema.optional(Schema.Literal(true)),
+  organizationSettingsSupported: Schema.optional(Schema.Literal(true)),
   projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),
   projectTransfers: Schema.optional(mutableArray(projectTransferSchema)),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),

@@ -3,6 +3,8 @@ import { mutableStruct } from '../../shared/schema.js'
 import { mergeResources } from '../../shared/resources.js'
 import {
   scopedSettingsValueSchema,
+  organizationIdSchema,
+  organizationNameSchema,
   projectDisplayName,
   settingsScopeSchema,
   sharedSettingsSchema,
@@ -19,7 +21,28 @@ export const scopedSettingsReadSchema = mutableStruct({
   includeAgents: Schema.optional(Schema.Boolean),
   scope: settingsScopeSchema,
   repositoryId: Schema.optional(Schema.String),
+  organizationId: Schema.optional(organizationIdSchema),
 })
+export const organizationChangeSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('assign'),
+    repositoryId: Schema.String,
+    before: Schema.NullOr(organizationIdSchema),
+    target: Schema.NullOr(
+      Schema.Union([
+        mutableStruct({ id: organizationIdSchema }),
+        mutableStruct({ name: organizationNameSchema }),
+      ]),
+    ),
+  }),
+  mutableStruct({
+    action: Schema.Literal('rename'),
+    organizationId: organizationIdSchema,
+    before: organizationNameSchema,
+    name: organizationNameSchema,
+  }),
+])
+export const organizationChangeResultSchema = mutableStruct({ ok: Schema.Literal(true) })
 export const scopedSettingsResultSchema = mutableStruct({
   value: scopedSettingsValueSchema,
   inherited: scopedSettingsValueSchema,
@@ -65,13 +88,47 @@ export function scopeEditorValue(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,
   scope: SettingsScope,
+  organizationId?: string,
 ) {
-  return settingsAtScope(scopeEditorDefaults(runtime), repository, scope)
+  return settingsAtScope(scopeEditorDefaults(runtime), repository, scope, organizationId)
 }
 export function sharedProjectKey(repository: Repository | undefined) {
   return repository?.gitIdentity && !repository.kind && !repository.gitIdentityError
     ? `project:${repository.gitIdentity}`
     : undefined
+}
+export const organizationKey = (name?: string) => name?.trim().toLowerCase() || undefined
+export function projectOrganizationId(repository?: Repository) {
+  if (repository?.kind === 'scratch') return undefined
+  return repository?.organizationId ?? organizationKey(repository?.organization)
+}
+export function studioOrganizations(
+  runtime: RuntimeDefaults | undefined,
+  repositories: readonly Repository[],
+) {
+  const organizations = new Map(Object.entries(runtime?.organizations ?? {}))
+  // A legacy project can have an organization even if no resources were saved for it.
+  for (const repository of repositories) {
+    const id = projectOrganizationId(repository)
+    if (id && !repository.organizationId && repository.organization && !organizations.has(id))
+      organizations.set(id, { name: repository.organization })
+  }
+  return organizations
+}
+export function projectOrganizationAssignment(
+  repository: Repository,
+  name: string,
+  organizations: readonly { id: string; name: string }[],
+): typeof organizationChangeSchema.Type {
+  const id = organizations.find(
+    (entry) => organizationKey(entry.name) === organizationKey(name),
+  )?.id
+  return {
+    action: 'assign',
+    repositoryId: repository.id,
+    before: projectOrganizationId(repository) ?? null,
+    target: id ? { id } : name.trim() ? { name: name.trim() } : null,
+  }
 }
 type Revision = Pick<SharedSettingsEntry, 'updatedAt' | 'changeId'>
 const categories = Struct.keys(scopedSettingsValueSchema.fields)
@@ -226,8 +283,17 @@ export function settingsAtScope(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,
   scope: SettingsScope,
+  organizationId = projectOrganizationId(repository),
 ): ScopedSettingsValue {
   if (scope === 'environment') return environmentSettings(runtime)
+  if (scope === 'organization') {
+    const organizations = runtime?.organizations
+    const resources =
+      organizationId && organizations && Object.hasOwn(organizations, organizationId)
+        ? organizations[organizationId].resources
+        : undefined
+    return resources ? { resources } : {}
+  }
   if (scope === 'environment-project')
     return {
       projectPinned: repository?.pinned,
@@ -247,9 +313,17 @@ export const settingsScopes: readonly SettingsScope[] = [
   'project',
   'environment-project',
 ]
+const resourceSettingsScopes = [
+  'global',
+  'environment',
+  'organization',
+  'project',
+  'environment-project',
+] as const satisfies readonly SettingsScope[]
 export const settingsScopeLabels: Record<SettingsScope, string> = {
   global: 'All computers & projects',
   environment: 'Computer',
+  organization: 'Organization',
   project: 'Project',
   'environment-project': 'Project on computer',
 }
@@ -282,6 +356,12 @@ export function settingsScopeSummary(
           'Defaults for this project across computers. Project-on-computer overrides keep their own values.',
         storage: 'Shared across paired computers',
       }
+    case 'organization':
+      return {
+        title: `${project} organization`,
+        description: 'Tools and instructions for this organization on this computer.',
+        storage: `Saved on ${computer}`,
+      }
     case 'environment-project':
       return {
         title: `${project} on ${computer}`,
@@ -297,7 +377,7 @@ export function resolveScopedSettings(
   before?: SettingsScope,
 ): ScopedSettingsValue {
   let result: ScopedSettingsValue = {}
-  for (const scope of settingsScopes) {
+  for (const scope of resourceSettingsScopes) {
     if (scope === before) break
     const value = settingsAtScope(runtime, repository, scope)
     result = {
@@ -359,23 +439,34 @@ export function resourceScopeChoices(
     repositories: readonly Repository[]
     agents: readonly import('../../workspace.js').Agent[]
   },
+  organizationsSupported = false,
 ) {
-  const scoped = (scope: SettingsScope, repository?: Repository) => ({
-    id: `settings:${scope}:${repository?.id ?? ''}`,
+  const scoped = (
+    scope: SettingsScope,
+    repository?: Repository,
+    organizationId?: string,
+    name?: string,
+  ) => ({
+    id: `settings:${scope}:${organizationId ?? repository?.id ?? ''}`,
     item: {
-      id: repository?.id ?? scope,
-      name: repository?.name ?? settingsScopeLabels[scope],
-      resources: scopeEditorValue(runtime, repository, scope).resources,
+      id: organizationId ?? repository?.id ?? scope,
+      name: name ?? repository?.name ?? settingsScopeLabels[scope],
+      resources: scopeEditorValue(runtime, repository, scope, organizationId).resources,
     },
     label: settingsScopeLabels[scope],
     collection: 'settings' as const,
     namedAgentId: undefined,
     scope,
     repository,
+    organizationId,
   })
+  const organizations = organizationsSupported
+    ? studioOrganizations(runtime, workspace.repositories)
+    : []
   return [
     scoped('global'),
     scoped('environment'),
+    ...[...organizations].map(([id, { name }]) => scoped('organization', undefined, id, name)),
     ...workspace.repositories.flatMap((repository) => [
       ...(repository.gitIdentity ? [scoped('project', repository)] : []),
       scoped('environment-project', repository),
@@ -394,6 +485,7 @@ export function resourceScopeChoices(
           namedAgentId: item.id,
           scope,
           repository,
+          organizationId: undefined,
         })),
       )
     }),
@@ -405,6 +497,7 @@ export function resourceScopeChoices(
       namedAgentId: undefined,
       scope: undefined,
       repository: undefined,
+      organizationId: undefined,
     })),
   ]
 }
@@ -549,7 +642,7 @@ export function resourceOrigin(
   name: string,
 ) {
   let source: SettingsScope | 'built-in' = 'built-in'
-  for (const level of settingsScopes) {
+  for (const level of resourceSettingsScopes) {
     if (level === before) break
     if (
       settingsAtScope(scopeEditorDefaults(runtime), repository, level).resources?.[kind]?.some(

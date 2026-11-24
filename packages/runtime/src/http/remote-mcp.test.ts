@@ -11,7 +11,14 @@ import { startRuntime } from '../index.js'
 import { remoteMcpTool } from '../studio/remote-mcp.js'
 import type { AgentAdapter } from '../agents/execution/types.js'
 import { McpEventsClient } from '../mcp-events/client.js'
-import { decode, mcpServerSchema, questionPromptSchema } from '@dovo/protocol'
+import {
+  agentPresetSchema,
+  decode,
+  mcpServerSchema,
+  questionPromptSchema,
+  remoteMcpEventsVersion,
+  resourceSettingsSchema,
+} from '@dovo/protocol'
 
 const cleanup: (() => void | Promise<void>)[] = []
 afterEach(async () => {
@@ -63,6 +70,34 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   cleanup.push(runtime.close)
   const { services: s } = runtime
   s.store.update(() => workspace.workspace)
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: {
+        shared: [],
+        environment: {
+          agents: [
+            decode(agentPresetSchema, {
+              ...workspace.workspace.agents[0],
+              id: 'studio-profile',
+              name: 'Studio profile',
+            }),
+          ],
+          resources: decode(resourceSettingsSchema, {
+            skills: [
+              {
+                name: 'review',
+                enabled: true,
+                description: 'Review changes',
+                content: 'Check the diff.',
+              },
+            ],
+          }),
+        },
+      },
+    },
+    false,
+  )
   s.preferences.save({ enableStudioThreads: true, enableStudioAutomations: true })
   const ran = vi.fn<AgentAdapter['run']>(async (run) => {
     run.onText('Remote MCP answer')
@@ -212,11 +247,68 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   })
   cleanup.push(() => client.close())
   await client.connect(transport)
-  expect((await client.listTools()).tools.map(({ name }) => name)).toEqual([
+  const { tools } = await client.listTools()
+  expect(tools.map(({ name }) => name)).toEqual([
     'dovo_discover',
     'dovo_threads',
     'dovo_automations',
   ])
+  const readSignIn = await authorizeBrowser(issuer + '/authorize?' + params.toString())
+  const readConsent = await browser(
+    '/mcp/approve',
+    readSignIn.cookie,
+    new URLSearchParams({ access: 'read' }),
+  )
+  const readCode = new URL(readConsent.headers.get('location')!).searchParams.get('code')!
+  const readToken = await (
+    await request(issuer + '/token', {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id,
+        code: readCode,
+        code_verifier: verifier,
+        redirect_uri: callback,
+        resource,
+      }),
+    })
+  ).json()
+  const readClient = new Client({ name: 'read-only-assistant', version: '1' })
+  cleanup.push(() => readClient.close())
+  await readClient.connect(
+    new StreamableHTTPClientTransport(new URL(resource), {
+      requestInit: { headers: { Authorization: 'Bearer ' + readToken.access_token } },
+    }),
+  )
+  const readTools = (await readClient.listTools()).tools
+  expect(readTools.map(({ name }) => name)).toEqual(tools.map(({ name }) => name))
+  expect(JSON.stringify(readTools)).not.toMatch(/"(create|send|stop|resume|run|cancel)"/)
+  expect(readTools.every(({ annotations }) => annotations?.readOnlyHint === true)).toBe(true)
+  const nativeList = await request(resource, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + readToken.access_token,
+      'Content-Type': 'application/json',
+      'Mcp-Protocol-Version': remoteMcpEventsVersion,
+      'Mcp-Method': 'tools/list',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { _meta: { 'io.modelcontextprotocol/protocolVersion': remoteMcpEventsVersion } },
+    }),
+  })
+  expect(await nativeList.json()).toMatchObject({ result: { tools: readTools } })
+  const threadGuidance = tools.find(({ name }) => name === 'dovo_threads')?.description
+  expect(JSON.stringify(tools.find(({ name }) => name === 'dovo_threads')?.inputSchema)).toContain(
+    '"create"',
+  )
+  expect(threadGuidance).toContain(
+    'Use only skills enabled in Dovo Studio for the target agent and project',
+  )
+  expect(threadGuidance).toContain('Omit skill names and paths from the calling app')
+  expect(threadGuidance).toContain('explicitly requires a skill')
   const eventsClient = (accessToken: string) =>
     new McpEventsClient(
       decode(mcpServerSchema, {
@@ -244,7 +336,7 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   expect(inputAtStart.events).toEqual([])
   const call = async (arguments_: Record<string, unknown>) => {
     const response = await client.callTool({ name: 'dovo_threads', arguments: arguments_ })
-    expect(response).not.toMatchObject({ isError: true })
+    if (response.isError) throw new Error(JSON.stringify(response.content))
     return JSON.parse((response.content as { text: string }[])[0].text)
   }
   const completed = await Promise.all(
@@ -272,8 +364,9 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
     action: 'create',
     title: 'External launch',
     repositoryId: 'repo',
-    agentId: 'agent',
+    agentId: 'studio-profile',
     prompt: 'Read the project and respond.',
+    requiredSkills: ['review'],
     requestId: 'external-launch-1',
     start: true,
   }
@@ -287,6 +380,19 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   })
   expect(escalation.isError).toBe(true)
   expect(ran).not.toHaveBeenCalled()
+  const before = s.store.get().tasks.length
+  const missing = await client.callTool({
+    name: 'dovo_threads',
+    arguments: {
+      ...launch,
+      requestId: 'external-missing-skill',
+      requiredSkills: ['missing-studio-skill'],
+    },
+  })
+  expect(missing.isError).toBe(true)
+  expect(JSON.stringify(missing.content)).toContain('missing-studio-skill')
+  expect(s.store.get().tasks).toHaveLength(before)
+  expect(ran).not.toHaveBeenCalled()
   const admitted = await call(launch)
   expect(admitted.startError).toBeUndefined()
   expect(admitted.id).toBeTruthy()
@@ -294,6 +400,10 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   expect(retried.id).toBe(admitted.id)
   expect(s.store.get().tasks.filter((task) => task.title === launch.title)).toHaveLength(1)
   expect(s.store.task(admitted.id).agentOverrides?.permission).toBe('ask')
+  expect(s.store.task(admitted.id).messages[0]?.source).toEqual({
+    kind: 'system',
+    label: 'Remote MCP · Fixture AI',
+  })
   expect(ran).toHaveBeenCalledTimes(1)
   expect(JSON.stringify(await call({ action: 'read', id: admitted.id }))).toContain(
     'Remote MCP answer',
@@ -373,7 +483,8 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   ).toBe(401)
   const page = await (await browser('/mcp/manage', management.cookie)).text()
   expect(page).toContain(resource)
-  const field = /<input[^>]+name="grant"[^>]*>/.exec(page)?.[0] ?? ''
+  const runForm = /<form[^>]*>[^<]*<p>[^<]*Read and run<\/p>[\s\S]*?<\/form>/.exec(page)?.[0] ?? ''
+  const field = /<input[^>]+name="grant"[^>]*>/.exec(runForm)?.[0] ?? ''
   const grant = /value="([a-zA-Z0-9_-]+)"/.exec(field)?.[1]
   expect(grant).toBeTruthy()
   expect(
@@ -387,33 +498,10 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   await expect(
     eventsClient(rotated.access_token).poll(turnFinished, turnPoll, signal()),
   ).rejects.toThrow('Authorize this MCP connection')
-  const readSignIn = await authorizeBrowser(issuer + '/authorize?' + params.toString())
-  const readConsent = await browser(
-    '/mcp/approve',
-    readSignIn.cookie,
-    new URLSearchParams({ access: 'read' }),
-  )
-  const readCode = new URL(readConsent.headers.get('location')!).searchParams.get('code')!
-  const readToken = await (
-    await request(issuer + '/token', {
-      method: 'POST',
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id,
-        code: readCode,
-        code_verifier: verifier,
-        redirect_uri: callback,
-        resource,
-      }),
-    })
-  ).json()
-  const readClient = new Client({ name: 'read-only-assistant', version: '1' })
-  cleanup.push(() => readClient.close())
-  await readClient.connect(
-    new StreamableHTTPClientTransport(new URL(resource), {
-      requestInit: { headers: { Authorization: 'Bearer ' + readToken.access_token } },
-    }),
-  )
+  for (const arguments_ of [{ action: 'list' }, { action: 'read', id: admitted.id }]) {
+    const result = await readClient.callTool({ name: 'dovo_threads', arguments: arguments_ })
+    expect(result.isError).not.toBe(true)
+  }
   expect((await readClient.callTool({ name: 'dovo_threads', arguments: launch })).isError).toBe(
     true,
   )

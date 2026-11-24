@@ -88,6 +88,7 @@ import { Jobs } from './jobs/jobs.js'
 import { SocketTickets } from './http/support/socket-tickets.js'
 import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
+import { browserSessionEndSchema, decode, mutableArray } from '@dovo/protocol'
 import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
 import { errorMessage, HttpError } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
@@ -730,6 +731,22 @@ export function createServices(
       db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-profiles'),
       () => preferences.get().browserProfiles,
       browserTransfers,
+      {
+        read: () => {
+          const saved = db
+            .prepare("SELECT value FROM documents WHERE id='browser-session-ends'")
+            .pluck()
+            .get()
+          return typeof saved === 'string'
+            ? decode(mutableArray(browserSessionEndSchema), JSON.parse(saved))
+            : []
+        },
+        save: (history) => {
+          db.prepare(
+            'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+          ).run('browser-session-ends', JSON.stringify(history))
+        },
+      },
     ),
     browserTickets: new SocketTickets(),
     checkouts,

@@ -10,7 +10,7 @@ export const remoteMcpDiscoverSchema = mutableStruct({
   agentId: Schema.optional(id),
 })
 
-export const remoteMcpThreadsSchema = Schema.Union([
+const remoteThreadReads = [
   mutableStruct({ action: Schema.Literal('list'), query: Schema.optional(id), before: cursor }),
   mutableStruct({ action: Schema.Literal('read'), id, before: cursor }),
   mutableStruct({
@@ -19,6 +19,12 @@ export const remoteMcpThreadsSchema = Schema.Union([
     messageId: id,
     offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   }),
+  mutableStruct({ action: Schema.Literal('snapshot'), id }),
+] as const
+export const remoteMcpReadThreadsSchema = Schema.Union(remoteThreadReads)
+const isRemoteThreadRead = Schema.is(remoteMcpReadThreadsSchema)
+export const remoteMcpThreadsSchema = Schema.Union([
+  ...remoteThreadReads,
   mutableStruct({
     action: Schema.Literal('create'),
     title: id,
@@ -26,16 +32,23 @@ export const remoteMcpThreadsSchema = Schema.Union([
     agentId: Schema.optional(id),
     model: Schema.optional(id),
     prompt: text,
+    requiredSkills: Schema.optional(maxValue(mutableArray(id), 20)),
     requestId: id,
     start: Schema.Boolean,
   }),
   mutableStruct({ action: Schema.Literal('send'), id, text, messageId: id }),
-  mutableStruct({ action: Schema.Literals(['stop', 'resume', 'snapshot']), id }),
+  mutableStruct({ action: Schema.Literals(['stop', 'resume']), id }),
 ])
 
-export const remoteMcpAutomationsSchema = Schema.Union([
+const remoteAutomationReads = [
   mutableStruct({ action: Schema.Literal('list') }),
-  mutableStruct({ action: Schema.Literals(['read', 'runs', 'cancel']), id }),
+  mutableStruct({ action: Schema.Literals(['read', 'runs']), id }),
+] as const
+export const remoteMcpReadAutomationsSchema = Schema.Union(remoteAutomationReads)
+const isRemoteAutomationRead = Schema.is(remoteMcpReadAutomationsSchema)
+export const remoteMcpAutomationsSchema = Schema.Union([
+  ...remoteAutomationReads,
+  mutableStruct({ action: Schema.Literal('cancel'), id }),
   mutableStruct({ action: Schema.Literal('run'), id, requestId: id }),
 ])
 export const remoteMcpEventsExtension = 'io.modelcontextprotocol/events'
@@ -111,10 +124,9 @@ export const remoteMcpAccessSchema = Schema.Literals(['read', 'run'])
 export type RemoteMcpAccess = typeof remoteMcpAccessSchema.Type
 
 export function remoteMcpWrites(input: RemoteMcpCommand) {
-  return (
-    (input.part === 'threads' || input.part === 'automations') &&
-    ['create', 'send', 'stop', 'resume', 'run', 'cancel'].includes(input.command.action)
-  )
+  if (input.part === 'threads') return !isRemoteThreadRead(input.command)
+  if (input.part === 'automations') return !isRemoteAutomationRead(input.command)
+  return false
 }
 
 export function remoteMcpAdmits(input: {
@@ -133,6 +145,7 @@ export const remoteMcpOfferSchema = mutableStruct({ id })
 export const remoteMcpClaimSchema = mutableStruct({
   id,
   grantId: id,
+  clientName: Schema.optional(maxValue(Schema.String, 150)),
   access: remoteMcpAccessSchema,
   input: remoteMcpCommandSchema,
 })

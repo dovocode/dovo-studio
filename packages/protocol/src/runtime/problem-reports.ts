@@ -2,7 +2,12 @@ import { Schema } from 'effect'
 import { maxValue, minValue, mutableArray, mutableStruct, refine } from '../shared/schema.js'
 import { taskSchema, type Task } from '../workspace.js'
 import type { RuntimeOverview } from './connection/runtime-fleet.js'
-import { diagnosticMessage, recentClientActions } from '../shared/client-diagnostics.js'
+import {
+  diagnosticMessage,
+  recentClientActions,
+  routeFailoverReasons,
+  routePurposes,
+} from '../shared/client-diagnostics.js'
 
 /** The public repository a triage agent reads for the running commit. */
 export const PROBLEM_REPORT_REPOSITORY = 'dovocode/dovo-studio'
@@ -89,6 +94,12 @@ export const problemReportClientActionSchema = mutableStruct({
     'connection',
     'other',
   ]),
+  routeFailover: Schema.optional(
+    mutableStruct({
+      purpose: Schema.Literals(routePurposes),
+      reason: Schema.Literals(routeFailoverReasons),
+    }),
+  ),
   durationMs: Schema.optional(
     Schema.Number.pipe(
       Schema.check(Schema.isFinite()),

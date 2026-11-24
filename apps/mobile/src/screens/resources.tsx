@@ -4,6 +4,9 @@ import { HookSettings } from '../resources/hook-settings'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
 import {
   resolveScopedSettings,
+  projectOrganizationId,
+  projectOrganizationAssignment,
+  organizationChangeResultSchema,
   sharedProjectKey,
   resourceScopeChoices,
   scopeEditorValue,
@@ -11,6 +14,7 @@ import {
   scopedSettingsResultSchema,
   resourceOrigin,
   type SettingsScope,
+  type Repository,
 } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -31,7 +35,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { runClientEffect } from '@dovo/client-runtime'
 import { SettingsSheet as Sheet } from './settings-theme'
 import { SettingsGroup, SettingsRow } from './settings-group'
-import { SettingsAction as Action } from './settings-controls'
+import { SettingsAction as Action, SettingsField } from './settings-controls'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
@@ -67,14 +71,19 @@ function ComputerResources({
   const scopes = resourceScopeChoices(
     snapshot?.defaults,
     snapshot?.workspace ?? { repositories: [], agents: [] },
+    snapshot?.organizationSettingsSupported,
   )
+  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
+  const organization = projectOrganizationId(repository)
   const visibleScopes = scopes.filter(
     (entry) =>
       (entry.scope === selectedScope && entry.repository?.id === repositoryId) ||
+      (entry.scope === 'organization' &&
+        (!repositoryId || entry.organizationId === organization)) ||
       (!entry.scope &&
         (selectedScope === 'environment' || selectedScope === 'environment-project')),
   )
-  const current = scopes.find((scope) => scope.id === selected)
+  const current = visibleScopes.find((scope) => scope.id === selected)
   return (
     <View
       style={{
@@ -88,6 +97,23 @@ function ComputerResources({
           }
         </InterfaceText>
       </Text>
+      {repository && repository.kind !== 'scratch' && snapshot?.organizationSettingsSupported && (
+        <OrganizationNameEditor
+          key={repository.id}
+          name={repository.organization ?? ''}
+          assignment={{
+            repository,
+            organizations: scopes.flatMap((scope) =>
+              scope.organizationId ? [{ id: scope.organizationId, name: scope.item.name }] : [],
+            ),
+          }}
+        />
+      )}
+      {repository && snapshot && !snapshot.organizationSettingsSupported && (
+        <Text style={styles.muted}>
+          {uiText('Update this computer to configure Organization settings.')}
+        </Text>
+      )}
       <SettingsGroup
         title={connected ? uiText('Tools at this scope') : uiText('Saved tools · Offline')}
       >
@@ -98,16 +124,17 @@ function ComputerResources({
             <SettingsRow
               key={scope.id}
               title={scope.item.name}
-              subtitle={uiText(
-                '{value0} · {value1} MCP · {value2} skills · {value3} hooks{value4}',
-                {
-                  value0: scope.label,
-                  value1: resources.mcpServers.length,
-                  value2: resources.skills.length,
-                  value3: resources.hooks?.length ?? 0,
-                  value4: names.length ? ` · ${names.join(', ')}` : '',
-                },
-              )}
+              subtitle={
+                scope.scope === 'organization'
+                  ? uiText('Organization · This computer')
+                  : uiText('{value0} · {value1} MCP · {value2} skills · {value3} hooks{value4}', {
+                      value0: scope.label,
+                      value1: resources.mcpServers.length,
+                      value2: resources.skills.length,
+                      value3: resources.hooks?.length ?? 0,
+                      value4: names.length ? ` · ${names.join(', ')}` : '',
+                    })
+              }
               icon={scope.repository ? 'folder' : 'chat'}
               last={index === visibleScopes.length - 1}
               onPress={() => setSelected(scope.id)}
@@ -132,6 +159,67 @@ function ComputerResources({
     </View>
   )
 }
+function OrganizationNameEditor(
+  props: { name: string } & (
+    | { assignment: { repository: Repository; organizations: { id: string; name: string }[] } }
+    | { organizationId: string }
+  ),
+) {
+  const uiText = useInterfaceText()
+  const { styles } = useTheme()
+  const { connected, callEffect, refresh } = useRuntime()
+  const { act, busy, error } = useAction()
+  const [draft, setDraft] = useApplicationState<string | null>(null)
+  const assignment = 'assignment' in props
+  const value = draft ?? props.name
+  return (
+    <View style={styles.card}>
+      <SettingsField
+        label={uiText(assignment ? 'Project organization' : 'Organization name')}
+        placeholder={assignment ? uiText('No organization') : undefined}
+        value={value}
+        onChangeText={setDraft}
+        maxLength={80}
+      />
+      {assignment && <Text style={styles.muted}>{uiText('Saved on this computer.')}</Text>}
+      <Action
+        label={uiText(assignment ? 'Save organization' : 'Rename organization')}
+        disabled={
+          !connected || busy || value.trim() === props.name || (!assignment && !value.trim())
+        }
+        onPress={() =>
+          act(async () => {
+            await runClientEffect(
+              callEffect(
+                '/api/agents/settings/organization',
+                'assignment' in props
+                  ? projectOrganizationAssignment(
+                      props.assignment.repository,
+                      value,
+                      props.assignment.organizations,
+                    )
+                  : {
+                      action: 'rename',
+                      organizationId: props.organizationId,
+                      before: props.name,
+                      name: value,
+                    },
+                organizationChangeResultSchema,
+              ),
+            )
+            await refresh()
+            setDraft(null)
+          })
+        }
+      />
+      {!!error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      )}
+    </View>
+  )
+}
 function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
   const uiText = useInterfaceText()
 
@@ -141,6 +229,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
     { act, busy, error } = useAction()
   const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)
   const [saved, setSaved] = useApplicationState(false)
+  const [instructions, setInstructions] = useApplicationState<string | null>(null)
   const [editing, setEditing] = useApplicationState<
     | {
         kind: 'mcp'
@@ -158,9 +247,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
   const scopes = resourceScopeChoices(
     snapshot?.defaults,
     snapshot?.workspace ?? { repositories: [], agents: [] },
+    snapshot?.organizationSettingsSupported,
   )
   const scope = scopes.find((item) => item.id === scopeId)
   const resources = decode(resourceSettingsSchema, scope?.item.resources ?? {})
+  const savedInstructions = resources.additionalInstructions ?? ''
   const inherited = scope?.scope
     ? resolveScopedSettings(scopeEditorDefaults(snapshot?.defaults), scope.repository, scope.scope)
         .resources
@@ -172,12 +263,18 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
         if (!scope) return yield* Effect.fail(new Error('Choose a project or custom agent'))
         const next = decode(resourceSettingsSchema, update(resources))
         if (scope.scope) {
-          const value = scopeEditorValue(snapshot?.defaults, scope.repository, scope.scope)
+          const value = scopeEditorValue(
+            snapshot?.defaults,
+            scope.repository,
+            scope.scope,
+            scope.organizationId,
+          )
           yield* callEffect(
             '/api/agents/settings/save',
             {
               scope: scope.scope,
               repositoryId: scope.repository?.id,
+              organizationId: scope.organizationId,
               includeAgents: !!scope.namedAgentId,
               projectKey: sharedProjectKey(scope.repository),
               before: value,
@@ -236,6 +333,9 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
         </Text>
       ) : (
         <>
+          {scope.organizationId && (
+            <OrganizationNameEditor name={scope.item.name} organizationId={scope.organizationId} />
+          )}
           {inherited && (
             <View style={{ gap: 8 }}>
               <Text style={styles.title}>
@@ -405,22 +505,49 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               </View>
             ))}
           </View>
-          <HookSettings
-            hooks={resources.hooks ?? []}
-            inherited={inherited?.hooks ?? []}
-            disabled={!connected || busy}
-            scope={scope.scope}
-            origin={(name) =>
-              resourceOrigin(
-                snapshot?.defaults,
-                scope.repository,
-                scope.scope ?? 'environment',
-                'hooks',
-                name,
-              )
-            }
-            save={save}
-          />
+          {scope.scope === 'organization' ? (
+            <View style={styles.card}>
+              <SettingsField
+                label={uiText('Additional AGENTS.md instructions')}
+                value={instructions ?? savedInstructions}
+                onChangeText={setInstructions}
+                maxLength={32000}
+                multiline
+              />
+              <Action
+                label={uiText('Save instructions')}
+                disabled={
+                  !connected || busy || instructions === null || instructions === savedInstructions
+                }
+                onPress={() =>
+                  act(async () => {
+                    await save((value) => ({
+                      ...value,
+                      additionalInstructions: instructions?.trim() || undefined,
+                    }))
+                    setInstructions(null)
+                  })
+                }
+              />
+            </View>
+          ) : (
+            <HookSettings
+              hooks={resources.hooks ?? []}
+              inherited={inherited?.hooks ?? []}
+              disabled={!connected || busy}
+              scope={scope.scope}
+              origin={(name) =>
+                resourceOrigin(
+                  snapshot?.defaults,
+                  scope.repository,
+                  scope.scope ?? 'environment',
+                  'hooks',
+                  name,
+                )
+              }
+              save={save}
+            />
+          )}
           <View style={styles.card}>
             <Text style={styles.title}>{uiText('Skills')}</Text>
             <View style={styles.row}>

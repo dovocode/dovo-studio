@@ -375,7 +375,9 @@ export class AccountInternet {
       const inbox = decode(
         inboxSchema,
         await this.request(
-          remoteMcp ? '/v1/internet/host?remoteMcp=1&mcpEvents=1' : '/v1/internet/host',
+          remoteMcp
+            ? '/v1/internet/host?remoteMcp=1&mcpEvents=1&mcpRequiredSkills=1'
+            : '/v1/internet/host',
           state.grant,
         ),
       )

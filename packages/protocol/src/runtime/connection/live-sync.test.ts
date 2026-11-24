@@ -16,6 +16,8 @@ import { snapshotSchema } from './runtime.js'
 import { decode } from '../../shared/schema.js'
 import { runtimeRequest } from '../../shared/client.js'
 import { runtimeTransportAddress } from './routes.js'
+import * as liveRoutes from './live-sync.js'
+import * as routes from './routes.js'
 import { Schema } from 'effect'
 import { recentClientActions } from '../../shared/client-diagnostics.js'
 const stopped: Array<() => void> = []
@@ -474,6 +476,21 @@ it.each(['error', 'close', 'timeout', 'silent-open', 'constructor'])(
     expect(runtimeTransportAddress(connection)).toBe(connection.address)
     expect(runtimeTransportAddress(connection, 'stream')).toBe(connection.alternateAddresses[1])
     expect(connection.address).toBe(`http://route-${failure}-proxy.local`)
+    expect(routes.selectedRuntimeRoute(connection)).toEqual({
+      kind: 'saved',
+      address: connection.address,
+    })
+    expect(liveRoutes.activeRuntimeStreamRoute(connection)).toEqual({
+      kind: 'alternate',
+      address: connection.alternateAddresses[1],
+      reason: 'saved-address-stream-failed',
+    })
+    expect(recentClientActions()).toContainEqual(
+      expect.objectContaining({
+        category: 'connection',
+        routeFailover: { purpose: 'stream', reason: 'saved-address-stream-failed' },
+      }),
+    )
   },
 )
 
@@ -1242,6 +1259,20 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
     category: 'connection',
   })
   expect(runtimeSyncOnline(connection, 'author')).toBe(true)
+  const streamRoute = {
+    kind: 'alternate',
+    address: 'http://desktop-vpn.local',
+    reason: 'saved-address-stream-failed',
+  } as const
+  receive?.({ type: 'stream-route', route: streamRoute })
+  expect(liveRoutes.activeRuntimeStreamRoute(connection)).toEqual(streamRoute)
+  expect(recentClientActions().at(-1)).toMatchObject({
+    category: 'connection',
+    routeFailover: { purpose: 'stream', reason: streamRoute.reason },
+  })
+  expect(JSON.stringify(recentClientActions().at(-1))).not.toContain(streamRoute.address)
+  receive?.({ type: 'stream-route' })
+  expect(liveRoutes.activeRuntimeStreamRoute(connection)).toBeUndefined()
   receive?.({ type: 'activity', scope: 'author', events: [] })
   expect(activity).toHaveBeenCalledWith([])
   const baseline = decode(snapshotSchema, {

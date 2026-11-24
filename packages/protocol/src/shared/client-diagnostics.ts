@@ -165,12 +165,24 @@ export type ClientActionCategory =
   | 'settings'
   | 'connection'
   | 'other'
+export const routeFailoverReasons = [
+  'saved-address-unreachable',
+  'saved-address-stream-failed',
+  'direct-addresses-unreachable',
+  'direct-stream-unavailable',
+] as const
+export const routePurposes = ['http', 'stream'] as const
+export type RuntimeRouteFailover = {
+  purpose: (typeof routePurposes)[number]
+  reason: (typeof routeFailoverReasons)[number]
+}
 export type ClientActionEntry = {
   at: string
   action: ClientAction
   category: ClientActionCategory
   durationMs?: number
   status?: number
+  routeFailover?: RuntimeRouteFailover
 }
 const actions: ClientActionEntry[] = []
 const actionNames = new Set<ClientAction>([
@@ -198,11 +210,12 @@ const categoryNames = new Set<ClientActionCategory>([
 export function recordClientAction(
   action: ClientAction,
   category: ClientActionCategory,
-  details: { durationMs?: number; status?: number } = {},
+  details: Pick<ClientActionEntry, 'durationMs' | 'status' | 'routeFailover'> = {},
 ) {
   if (!actionNames.has(action) || !categoryNames.has(category)) return
   const durationMs = details.durationMs
   const status = details.status
+  const failover = details.routeFailover
   actions.push({
     at: new Date().toISOString(),
     action,
@@ -213,12 +226,22 @@ export function recordClientAction(
     ...(status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599
       ? { status }
       : {}),
+    ...(failover &&
+    routePurposes.includes(failover.purpose) &&
+    routeFailoverReasons.includes(failover.reason)
+      ? { routeFailover: { purpose: failover.purpose, reason: failover.reason } }
+      : {}),
   })
   if (actions.length > 100) actions.splice(0, actions.length - 100)
 }
 export function recentClientActions(): ClientActionEntry[] {
   const since = Date.now() - 30 * 60000
-  return actions.filter((entry) => Date.parse(entry.at) >= since).map((entry) => ({ ...entry }))
+  return actions
+    .filter((entry) => Date.parse(entry.at) >= since)
+    .map((entry) => ({
+      ...entry,
+      ...(entry.routeFailover && { routeFailover: { ...entry.routeFailover } }),
+    }))
 }
 
 export function clientRequestCategory(path: string): ClientActionCategory {

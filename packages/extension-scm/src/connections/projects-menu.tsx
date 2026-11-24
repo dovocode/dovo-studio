@@ -1,6 +1,11 @@
 import { ProjectFolderDrop } from './project-folder-drop'
 import { runtimeComputerName } from '@dovo/protocol'
-import { pinnedFirst, projectMachineGroups, projectOrganization } from '@dovo/protocol'
+import {
+  pinnedFirst,
+  projectMachineGroups,
+  projectOrganization,
+  projectOrganizationSections,
+} from '@dovo/protocol'
 import { ProjectOrganizationSettings, TaskDefaultSettings } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
@@ -128,6 +133,7 @@ export function ProjectsMenu({
         return {
           key: repository.key,
           name: repository.kind === 'scratch' ? 'No Project' : repository.name,
+          organization: repository.kind === 'scratch' ? undefined : repository.organization,
           entries,
           ...projectOrganization(entries),
         }
@@ -153,7 +159,7 @@ export function ProjectsMenu({
   })
   const matchesQuery = (group: (typeof projectGroups)[number]) =>
     group.entries.some(({ repository: repo }) =>
-      `${group.name} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
+      `${group.name} ${group.organization ?? ''} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
     )
@@ -363,7 +369,18 @@ export function ProjectsMenu({
                 All projects
                 {!value && <Check className="ml-auto size-3.5 text-muted-foreground" />}
               </Button>
-              {visibleGroups.filter((group) => !group.archived).map(projectRow)}
+              {projectOrganizationSections(visibleGroups.filter((group) => !group.archived)).map(
+                ({ name, projects }) => (
+                  <div key={name ?? ''}>
+                    {name && (
+                      <h3 className="px-2 pt-2 text-xs font-medium text-muted-foreground">
+                        {name}
+                      </h3>
+                    )}
+                    {projects.map(projectRow)}
+                  </div>
+                ),
+              )}
               {archivedGroups.length > 0 && (
                 <Button
                   variant="ghost"

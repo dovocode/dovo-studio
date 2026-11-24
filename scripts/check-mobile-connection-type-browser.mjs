@@ -31,7 +31,7 @@ const stubs = [
   },
   {
     path: '@dovo/protocol',
-    contents: `export * from '${root}packages/protocol/src/index.ts';export const runtimeSyncStatus=()=>window.liveUpdates?'live':undefined;`,
+    contents: `import {selectedRuntimeRoute} from '${root}packages/protocol/src/index.ts';export * from '${root}packages/protocol/src/index.ts';export const runtimeSyncStatus=()=>window.liveUpdates?'live':undefined;export const activeRuntimeStreamRoute=connection=>window.liveUpdates?selectedRuntimeRoute(connection,'stream'):undefined;`,
   },
   {
     path: '../../shell/navigation',
@@ -129,11 +129,9 @@ try {
   await page.getByRole('button', { name: /dovo-agent, Online, Dovo Connect/ }).click()
   const relayLabels = page.getByRole('dialog').getByText('Dovo Connect · TURN', { exact: true })
   await relayLabels.first().waitFor()
-  assert.equal(
-    await relayLabels.count(),
-    2,
-    'Summary and connection progress show the active route',
-  )
+  assert.equal(await relayLabels.count(), 1, 'Connection progress retains the TURN transport label')
+  await label('HTTP requests: Dovo Connect fallback')
+  await label('Live updates: HTTP polling')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.evaluate(() => window.changeRoute('custom'))
   await label('Custom relay · TURN')
@@ -156,6 +154,10 @@ try {
     await window.resolveConnection('stream')
   })
   await label('Private · LAN / VPN · Live updates: Dovo Connect · TURN')
+  await page.getByRole('button', { name: /dovo-agent, Online, Private/ }).click()
+  await label('HTTP requests: Saved address · http://vpn.test')
+  await label('Live updates: Dovo Connect fallback')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.evaluate(async () => {
     window.lan = true
     await window.resolveConnection('stream')

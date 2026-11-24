@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import {
   runtimeComputerName,
   taskProjectGroups,
+  projectOrganizationSections,
   preferredProjectEntry,
   projectDefaultServer,
   type Repository,
@@ -99,7 +100,7 @@ export function FolderPicker({
       !chatOnly &&
       group.key !== 'scratch' &&
       group.entries.some(({ repository, source }) =>
-        `${group.name} ${repository.path} ${repository.gitIdentity ?? ''} ${runtimeComputerName(source)}`
+        `${group.name} ${group.organization ?? ''} ${repository.path} ${repository.gitIdentity ?? ''} ${runtimeComputerName(source)}`
           .toLowerCase()
           .includes(query.trim().toLowerCase()),
       ),
@@ -482,7 +483,16 @@ export function FolderPicker({
                   onChangeText={setQuery}
                 />
               )}
-              {matches.map(projectRow)}
+              {projectOrganizationSections(matches).map(({ name, projects }) => (
+                <View key={name ?? ''}>
+                  {name && (
+                    <Text accessibilityRole="header" style={styles.muted}>
+                      {name}
+                    </Text>
+                  )}
+                  {projects.map(projectRow)}
+                </View>
+              ))}
               {!chatOnly && !matches.length && (
                 <Text style={styles.muted}>
                   {query.trim() ? uiText('No matching projects.') : uiText('No projects yet.')}

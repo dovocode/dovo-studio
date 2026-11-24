@@ -169,6 +169,13 @@ connections; it does not infer the presence of a VPN from an IP address.
 
 ## Connection health and diagnostics
 
+Open **Devices & runtime** and inspect the connected computer. **HTTP requests** and **Live
+updates** show their routes separately. A route can use the saved address, a verified alternate
+LAN/VPN address, or Dovo Connect. Live updates show **HTTP polling** while the stream is
+unavailable. When you include the recent client action timeline in a problem report, route failovers
+include the affected transport and why it switched. Those entries contain no addresses or
+credentials.
+
 In desktop **Settings → Devices & runtime → Runtime readiness & recovery**, expand **Internet
 connection diagnostics**. It shows signaling availability and the latest 20 connection attempts,
 including setup stage, observed direct or TURN route, round-trip time, candidate counts and the

@@ -4,7 +4,19 @@ export const agentsExtension = defineStudioExtension(
   [
     {
       id: 'resources',
-      settingsFields: ['MCP servers', 'Skills', 'Agent loop hooks'],
+      settingsFields: [
+        'MCP servers',
+        'Skills',
+        'Agent loop hooks',
+        'Project organization',
+        'Organization name',
+        'Additional AGENTS.md instructions',
+      ],
+      settingsFieldRequirements: {
+        'Project organization': 'Choose a project on an updated computer.',
+        'Organization name': 'Choose a project with an organization or open the computer scope.',
+        'Additional AGENTS.md instructions': 'Open an organization on the selected computer.',
+      },
       navigationGroup: 'settings',
       settingsScope: 'inherited',
       title: 'MCP, skills & hooks',

@@ -1,4 +1,4 @@
-import { mergeSharedSettings, sharedProjectKey } from './scoped-settings.js'
+import { mergeSharedSettings, organizationKey, sharedProjectKey } from './scoped-settings.js'
 import type { RuntimeDefaults } from './runtime-setup.js'
 import type { Repository } from '../../workspace.js'
 
@@ -113,6 +113,13 @@ export function projectMachineGroups<T extends ProjectEntry>(
       identity: sharedProjectKey(group.entries[0].repository)
         ? group.entries[0].repository.gitIdentity
         : undefined,
+      organization: group.entries.every(
+        ({ repository }) =>
+          organizationKey(repository.organization) ===
+          organizationKey(group.entries[0].repository.organization),
+      )
+        ? group.entries[0].repository.organization
+        : undefined,
       ...(group.entries[0].repository.kind === 'scratch'
         ? { pinned: false, archived: false }
         : projectOrganization(group.entries)),
@@ -129,6 +136,7 @@ export function taskProjectGroups<T extends ProjectEntry>(entries: readonly T[])
           {
             key: 'scratch',
             name: 'No Project',
+            organization: undefined,
             entries: scratch,
             identity: undefined,
             pinned: false,
@@ -140,6 +148,22 @@ export function taskProjectGroups<T extends ProjectEntry>(entries: readonly T[])
       (group) => !group.archived,
     ),
   ]
+}
+
+export function projectOrganizationSections<T extends { organization?: string }>(
+  projects: readonly T[],
+) {
+  const sections = new Map<string | undefined, { name?: string; projects: T[] }>()
+  for (const project of projects) {
+    const key = organizationKey(project.organization)
+    let section = sections.get(key)
+    if (!section) {
+      section = { name: project.organization, projects: [] }
+      sections.set(key, section)
+    }
+    section.projects.push(project)
+  }
+  return [...sections.values()]
 }
 
 export function projectDefaultServer(

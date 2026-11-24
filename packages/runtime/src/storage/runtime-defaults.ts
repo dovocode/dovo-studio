@@ -9,6 +9,7 @@ import {
   sharedSettingsEntrySchema,
   mergeSharedSettings,
   initializeScopedSettings,
+  type RuntimeDefaults as RuntimeDefaultsValue,
   type SharedSettingsEntry,
   type TaskHarness,
 } from '@dovo/protocol'
@@ -26,11 +27,13 @@ const defaultsCache = new WeakMap<
 >()
 let revision = 0
 function readDefaults(db: Database.Database) {
-  const row = decode(
-    Schema.UndefinedOr(mutableStruct({ value: Schema.String })),
-    db.prepare('SELECT value FROM documents WHERE id = ?').get('runtime-defaults'),
-  )
-  return decode(runtimeDefaultsSchema, row ? JSON.parse(row.value) : {})
+  const read = db.prepare('SELECT value FROM documents WHERE id = ?').pluck()
+  const defaults = read.get('runtime-defaults')
+  const organizations = read.get('organization-settings')
+  return decode(runtimeDefaultsSchema, {
+    ...(typeof defaults === 'string' ? JSON.parse(defaults) : {}),
+    organizations: typeof organizations === 'string' ? JSON.parse(organizations) : undefined,
+  })
 }
 
 /** Shared runtime preferences; task copies stay stable when these defaults change. */
@@ -112,6 +115,14 @@ export class RuntimeDefaults {
     // Callers historically receive an independent settings object.
     return structuredClone(this.cached().value)
   }
+  saveOrganizations(organizations: NonNullable<RuntimeDefaultsValue['organizations']>) {
+    this.db
+      .prepare(
+        'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+      )
+      .run('organization-settings', JSON.stringify(organizations))
+    defaultsCache.delete(this.db)
+  }
   save(value: unknown, configure = true) {
     const settings = decode(runtimeDefaultsSchema, value)
     validateDefaultHarness(settings.harness)
@@ -141,7 +152,11 @@ export class RuntimeDefaults {
         )
         .run(
           'runtime-defaults',
-          JSON.stringify({ ...settings, configured: configure || settings.configured }),
+          JSON.stringify({
+            ...settings,
+            organizations: undefined,
+            configured: configure || settings.configured,
+          }),
         )
     })()
     defaultsCache.delete(this.db)

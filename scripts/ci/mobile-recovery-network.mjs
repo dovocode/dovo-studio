@@ -1,7 +1,7 @@
 import { connect, createServer } from 'node:net'
 
-/** Cut both HTTP requests and live streams without disturbing the emulator's UI driver. */
-export async function startMobileRecoveryNetwork(runtimePort, host = '127.0.0.1') {
+/** Cut HTTP and live streams while the fixture client uses its saved proxy address. */
+export async function startMobileRecoveryNetwork(runtimePort, host, services) {
   let online = true
   const clients = new Set()
   const server = createServer((client) => {
@@ -24,6 +24,10 @@ export async function startMobileRecoveryNetwork(runtimePort, host = '127.0.0.1'
     server.once('error', reject)
     server.listen(0, host, resolve)
   })
+  // The paired client learns alternate routes from snapshots and verifies them via /health.
+  // Advertising the upstream port lets it bypass the outage the fixture just introduced.
+  const runtimeAddresses = services.runtimeAddresses
+  services.runtimeAddresses = () => []
   function setOnline(value) {
     online = value
     if (!online) for (const client of clients) client.destroy()
@@ -31,11 +35,15 @@ export async function startMobileRecoveryNetwork(runtimePort, host = '127.0.0.1'
   return {
     port: server.address().port,
     setOnline,
-    close() {
+    async close() {
       setOnline(false)
-      return new Promise((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      )
+      try {
+        await new Promise((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        )
+      } finally {
+        services.runtimeAddresses = runtimeAddresses
+      }
     },
   }
 }

@@ -115,6 +115,12 @@ it('previews redacted client stacks and bounded category-only actions only when 
         status: 503,
         durationMs: 50,
       },
+      {
+        at: '2026-11-17T12:00:01Z',
+        action: 'connecting',
+        category: 'connection',
+        routeFailover: { purpose: 'stream', reason: 'saved-address-stream-failed' },
+      },
     ],
   }
   const response = await f.request('/api/problem-reports/preview', input)
@@ -122,6 +128,7 @@ it('previews redacted client stacks and bounded category-only actions only when 
   const included = decode(problemReportPreviewSchema, await response.json()).attachment?.text ?? ''
   expect(included).toContain('## Recent client actions')
   expect(included).toContain('request-failed')
+  expect(included).toContain('saved-address-stream-failed')
   expect(included).toContain('app.ts:12')
   expect(included).not.toContain(environmentSecret)
   expect(included).not.toContain('/home/dominic/')

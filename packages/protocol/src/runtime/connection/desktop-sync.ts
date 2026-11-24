@@ -9,6 +9,7 @@ import {
 import { connectionSchema, type RuntimeSnapshot, type RuntimeConnection } from './runtime.js'
 import type { activitySchema } from '../../automation/activity.js'
 import type { RuntimeSyncStatus } from './live-sync.js'
+import type { RuntimeRoute } from './routes.js'
 import type { SnapshotDelta } from './sync.js'
 const id = maxValue(minValue(Schema.String, 1), 300)
 export const desktopSyncSubscriptionSchema = mutableStruct({
@@ -41,6 +42,7 @@ export type DesktopSyncEvent =
       tag?: string
     }
   | { type: 'status'; status: RuntimeSyncStatus; online: boolean }
+  | { type: 'stream-route'; route?: RuntimeRoute }
   | { type: 'activity'; scope: string; events: (typeof activitySchema.Type)['events'] }
   | { type: 'error'; message: string }
   | { type: 'connection'; connection: RuntimeConnection }

@@ -12,6 +12,7 @@ import { runtimeRequest } from '../../shared/client.js'
 import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
+import * as routes from './routes.js'
 
 // These assertions cover route addresses; endpoint credential behavior is checked separately.
 const resolveAddress = async (...args: Parameters<typeof resolveRuntimeEndpoint>) =>
@@ -76,6 +77,11 @@ it('verifies alternate identity without credentials and keeps the logical connec
   })
   expect(connection.address).toBe('http://unreachable.local')
   expect(runtimeTransportAddress(connection)).toBe('http://vpn.local')
+  expect(routes.selectedRuntimeRoute(connection)).toEqual({
+    kind: 'alternate',
+    address: 'http://vpn.local',
+    reason: 'saved-address-unreachable',
+  })
 })
 it('never sends a mutation to a different runtime and never replays an uncertain mutation on a fallback', async () => {
   const connection = learnRuntimeRoutes(
@@ -585,7 +591,10 @@ it('does not replay an already dispatched mutation when route metadata changes',
     alternateAddresses: ['http://reconcile-write-old.local'],
   }
   const next = { ...old, alternateAddresses: ['http://reconcile-write-new.local'] }
-  const response = Promise.withResolvers<Response>()
+  let loseResponse!: (error: Error) => void
+  const response = new Promise<Response>((_resolve, reject) => {
+    loseResponse = reject
+  })
   const writes: string[] = []
   vi.stubGlobal(
     'fetch',
@@ -594,13 +603,13 @@ it('does not replay an already dispatched mutation when route metadata changes',
       if (url.pathname === '/health')
         return Response.json({ service: 'dovo-runtime', runtimeId: old.runtimeId })
       writes.push(url.origin)
-      return response.promise
+      return response
     }),
   )
   const pending = runtimeRequest(old, old.address, '/api/tasks/run', {}, Schema.Unknown)
   await vi.waitFor(() => expect(writes).toHaveLength(1))
   reconcileRuntimeRoutes(old, next)
-  response.reject(new Error('Response lost after dispatch'))
+  loseResponse(new Error('Response lost after dispatch'))
   await expect(pending).rejects.toMatchObject({ kind: 'connection' })
   expect(writes).toEqual([old.address])
 })

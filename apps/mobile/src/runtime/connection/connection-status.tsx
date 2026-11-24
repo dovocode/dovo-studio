@@ -360,9 +360,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                 entry={entry}
                 recovering={account?.recovery?.[entry.profile.id]?.pending}
               />
-              <Text selectable style={styles.muted}>
-                {entry.profile.connection.address}
-              </Text>
+              {!entry.connected && (
+                <Text selectable style={styles.muted}>
+                  {entry.profile.connection.address}
+                </Text>
+              )}
               {!!entry.lastSeen && (
                 <Text style={styles.muted}>
                   <InterfaceText values={{ value0: formatDateTime(entry.lastSeen) }}>

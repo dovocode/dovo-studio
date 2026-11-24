@@ -259,7 +259,7 @@ const built = await build({
         window.caches[runtimeId]=cache;
         return {...task,title:'Fresh title',draft:'Fresh draft',messages:[]};
       };
-      const profiles=['a','b'].map(id=>({id,name:id,connection:{address:'http://'+id,token:'mobile-copy-token-for-'+id}}));
+      const profiles=['a','b'].map(id=>({id,name:id,connection:{address:'http://'+id,token:'mobile-copy-token-for-'+id,runtimeId:id+'-computer'}}));
       function App(){
         const [route,setRoute]=useState({href:'/new',params:{},key:0});
         const [activeId,setActiveId]=useState('a');
@@ -439,6 +439,10 @@ try {
     false,
   )
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Copy Studio ID (for agents)', exact: true }).click()
+  await page.waitForFunction(
+    () => window.mobileCopies?.at(-1) === 'studio:a-computer:thread:' + window.created.id,
+  )
   await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await page.getByRole('button', { name: 'Share thread', exact: true }).click()
   await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
@@ -601,8 +605,12 @@ try {
     window.carMode = false
     window.setLinkedProject(false)
   })
-  // The real thread header exposes checkout copying for Git and plain-folder threads.
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Copy Studio ID (for agents)', exact: true }).click()
+  await page.waitForFunction(
+    () => window.mobileCopies?.at(-1) === 'studio:b-computer:thread:' + window.created.id,
+  )
+  // The real thread header exposes checkout copying for Git and plain-folder threads.
   for (const kind of [undefined, 'folder']) {
     await page.evaluate((kind) => window.makeGit('b', kind), kind)
     const copyCheckout = page.getByRole('button', {
@@ -885,7 +893,10 @@ try {
     window.mobileCopies = []
     window.mobileCopyRequests = []
     window.fetch = async (url, init) => {
-      if (new URL(url).pathname !== '/api/tasks/history' || init.method !== 'POST')
+      const { hostname, pathname } = new URL(url)
+      if (hostname === 'a' && pathname === '/health' && init.method === 'GET')
+        return Response.json({ service: 'dovo-runtime', runtimeId: 'a-computer' })
+      if (pathname !== '/api/tasks/history' || init.method !== 'POST')
         throw new Error('Invalid mobile copy request')
       if (new Headers(init.headers).get('Authorization') !== 'Bearer mobile-copy-token-for-a')
         throw new Error('Unauthenticated mobile copy')

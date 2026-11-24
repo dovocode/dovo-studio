@@ -13,7 +13,7 @@ const built = await build({
       import {createTask} from '@dovo/studio-core';
       import {ComposerWorkspace} from '../extension-tasks/src/chat/composer/composer-workspace';
       import {ComposerProject} from '../extension-tasks/src/chat/composer/composer-project';
-      const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
+      const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity,organization:['local','remote','notes'].includes(id)?'Studio Engineering':undefined});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
       window.projectIcon='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
       const inventory={
@@ -156,6 +156,7 @@ try {
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
 
   await trigger.click()
+  await page.getByText('Studio Engineering', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
   assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   assert.equal(
