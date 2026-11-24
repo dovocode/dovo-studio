@@ -13,6 +13,8 @@ export const Text=({children,accessibilityRole,style})=><span role={accessibilit
 export const Pressable=({children,onPress,onLongPress,accessibilityLabel,accessibilityState,testID,style})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} style={window.previewModes?{display:'flex',flexDirection:'column',border:0,boxSizing:'border-box',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}:undefined} onClick={onPress} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{children}</button>;
 export const FlatList=forwardRef(({data,renderItem,keyExtractor,ListEmptyComponent},ref)=>{useImperativeHandle(ref,()=>({scrollToOffset(){}}));return <main>{data.length?data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>):ListEmptyComponent}</main>});
 export const Alert={alert:(title,message)=>window.alerts.push({title,message})};
+export const Share={share:async()=>{throw Error('Unexpected share fallback')}};
+export const AccessibilityInfo={announceForAccessibility:message=>{window.clipboardAnnouncement=message}};
 export const Icon=({name,size,color})=><i data-icon={name} style={window.previewModes?{width:size,height:size,flexShrink:0,background:color,borderRadius:4}:undefined}/>;
 export const ScreenHeader=({title,buttons})=><header><h1>{title}</h1>{buttons.map(button=><button key={button.label} onClick={button.onPress}>{button.label}</button>)}</header>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
@@ -27,6 +29,12 @@ const stubs = [
   { path: '../bots/bot-create', importer: workspace, contents: 'export const CreateBot=()=>null;' },
   { path: 'react-native', contents: controls },
   { path: 'react-native-gesture-handler', contents: controls },
+  {
+    path: 'expo',
+    contents: `export const requireOptionalNativeModule=name=>name==='ExpoClipboard'
+      ? {setStringAsync:async text=>{window.clipboardText=text;return true}}
+      : undefined;`,
+  },
   { path: 'expo-crypto', contents: 'let id=0;export const randomUUID=()=>`page-${++id}`;' },
   {
     path: 'expo-router',
@@ -70,8 +78,12 @@ const stubs = [
   {
     path: '../tasks/list/task-list-row',
     importer: workspace,
-    contents:
-      'export const TaskListRow=({row,thread,commands,showTypeIndicator,density})=><button data-children={thread?.children.map(child=>child.title).join(",")} data-testid={`Workspace thread ${row.task.title}`} data-type-indicator={showTypeIndicator} data-density={density} onClick={()=>commands.open(row.key)}>{row.task.title}</button>;',
+    contents: `export const TaskListRow=({row,thread,commands,showTypeIndicator,density})=><button
+        data-children={thread?.children.map(child=>child.title).join(",")}
+        data-testid={\`Workspace thread \${row.task.title}\`}
+        data-type-indicator={showTypeIndicator} data-density={density}
+        onClick={()=>commands.open(row.key)}
+        onContextMenu={event=>{event.preventDefault();commands.select(row.key)}}>{row.task.title}</button>;`,
   },
   {
     path: '../tasks/list/task-swipe-actions',
@@ -176,6 +188,22 @@ try {
   assert.equal(await page.getByText('Workspace starter', { exact: true }).count(), 0)
   await page.getByTestId('Workspace thread Thread A').click()
   assert.equal(await page.evaluate(() => window.navigations[0][1]), 'same')
+  await page.getByTestId('Workspace thread Thread A').click({ button: 'right' })
+  const threadActions = page.getByRole('dialog', { name: 'Thread A', exact: true })
+  const copyStudioId = threadActions.getByRole('button', { name: 'Copy Studio ID (for agents)' })
+  await threadActions.waitFor()
+  assert.equal(await copyStudioId.count(), 0)
+  await page.evaluate(() => {
+    const owner = window.runtime.overviews[0]
+    window.runtime.overviews = [
+      { ...owner, snapshot: { ...owner.snapshot, runtimeId: 'mac-identity' } },
+    ]
+    window.publish()
+  })
+  await copyStudioId.click()
+  await page.waitForFunction(() => window.clipboardText === 'studio:mac-identity:thread:same')
+  assert.equal(await page.evaluate(() => window.clipboardAnnouncement), 'Studio ID copied.')
+  await threadActions.getByRole('button', { name: 'Close sheet', exact: true }).click()
 
   await page.getByRole('button', { name: 'Workspace filters', exact: true }).click()
   await page.getByLabel('Show', { exact: true }).selectOption('terminal')
@@ -311,7 +339,7 @@ try {
   assert.deepEqual(errors, [])
   assert.deepEqual(await page.evaluate(() => window.alerts), [])
   console.log(
-    'Mobile mixed overview: thread row integration, pinned page order, scope separation, retained filters, computer scope, lifecycle actions pass.',
+    'Mobile mixed overview: thread rows, Studio ID copying, pinned page order, retained filters, computer scope and lifecycle actions passed.',
   )
 } finally {
   await browser.close()
