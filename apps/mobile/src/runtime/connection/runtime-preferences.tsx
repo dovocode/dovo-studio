@@ -538,11 +538,13 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   onValueChange={(enableGithubEventStreams) => save({ enableGithubEventStreams })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  <InterfaceText>
-                    {snapshot?.githubEventStreamsSupported
-                      ? 'Refresh watched GitHub.com PRs when events arrive. Requires GitHub preview access. Periodic checks continue.'
-                      : 'Update this runtime to use GitHub Event Streams. PR watches use periodic checks.'}
-                  </InterfaceText>
+                  {snapshot?.githubEventStreamsSupported
+                    ? uiText(
+                        'Refresh watched GitHub.com PRs when events arrive. Requires GitHub preview access. Periodic checks continue.',
+                      )
+                    : uiText(
+                        'Update this runtime to use GitHub Event Streams. PR watches use periodic checks.',
+                      )}
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
