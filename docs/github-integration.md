@@ -283,19 +283,20 @@ the missing sections are reported and previously cached sections remain availabl
 
 ## GitHub Event Streams (experimental)
 
-Open **Settings → Pull requests & pipelines** for the computer that owns the thread.
-Enable **PR feedback watcher** and **GitHub Event Streams (experimental)**, then watch a
-GitHub.com PR. The second switch defaults to off and applies to existing watches too.
-The runtime uses the watch’s GitHub account, which needs access to GitHub’s Event Streams preview.
+Open **Settings → Pull requests & pipelines** for the computer that owns the thread. Enable **PR
+feedback watcher** and **GitHub Event Streams (experimental)**, then watch a GitHub.com PR. The
+second switch defaults to off and applies to existing watches too. The runtime uses the watch’s
+GitHub account, which needs access to GitHub’s Event Streams preview.
 
-A review, completed check suite, new head commit, merge conflict or PR state change triggers a
-fresh check of the watched PR. The runtime also checks when the stream connects. Regular PR checks
+A review, completed check suite, new head commit, merge conflict or PR state change triggers a fresh
+check of the watched PR. The runtime also checks when the stream connects. Regular PR checks
 continue during outages and cover conversation comments and commit statuses. If GitHub declines the
 subscription, the thread’s activity records the HTTP status and the watch continues polling.
 
 Turn the stream switch off to close the connections and keep the watches. GitHub can reuse the same
-subscription across clients, so Dovo leaves it to expire after 24 hours. Turn the switch back on
-to retry after gaining preview access. [GitHub Event Streams guide](https://docs.github.com/en/integrations/how-tos/using-github-event-streams)
+subscription across clients, so Dovo leaves it to expire after 24 hours. Turn the switch back on to
+retry after gaining preview access.
+[GitHub Event Streams guide](https://docs.github.com/en/integrations/how-tos/using-github-event-streams)
 
 ## PR babysitting
 
