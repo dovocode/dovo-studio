@@ -1,4 +1,4 @@
-export { Workbench } from './workbench'
+export { Workbench, type WorkbenchLocation } from './workbench'
 
 export { TaskLauncherWindow } from './task-launcher-window'
 export { useAppearance } from './appearance'

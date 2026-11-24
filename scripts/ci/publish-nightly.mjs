@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verify } from '../packaging/desktop-release-manifest.mjs'
 
 // Both completion events run this once; either can arrive first. No waiting runner is needed.
 export function publicationPair(runs, sha) {
@@ -11,6 +12,9 @@ export function publicationPair(runs, sha) {
       .filter(
         (run) =>
           run.name === name &&
+          (name !== 'Release' ||
+            run.event !== 'workflow_dispatch' ||
+            run.display_title !== 'Verify release assets') &&
           run.head_sha === sha &&
           (run.head_branch === 'main' ||
             (name === 'Release' && /^v\d+\.\d+\.\d+-nightly\.\d+$/.test(run.head_branch))) &&
@@ -38,26 +42,30 @@ export function validatePublication(manifest, sha, release) {
   )
     throw new Error('Nightly provenance does not match the passing source commit')
 }
-function publishNightly() {
+async function publishNightly() {
   const sha = process.env.SOURCE_SHA
   if (!/^[a-f0-9]{40}$/.test(sha ?? '')) throw new Error('SOURCE_SHA is required')
   const gh = (...args) => execFileSync('gh', args, { encoding: 'utf8' }).trim()
   const repo = process.env.GH_REPO
-  const runs = JSON.parse(
+  let runs = JSON.parse(
     gh('api', `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`),
   ).workflow_runs
-  const candidate = publicationPair(runs, sha)
+  let candidate = publicationPair(runs, sha)
+  while (candidate) {
+    const endpoint = `repos/${repo}/actions/runs/${candidate.id}`
+    const { artifacts } = JSON.parse(gh('api', `${endpoint}/artifacts?per_page=100`))
+    if (artifacts.some(({ name, expired }) => name === 'nightly-publication' && !expired)) break
+    // Verify-only dispatches from before the run-name marker can still be in the run history.
+    const { jobs } = JSON.parse(gh('api', `${endpoint}/jobs?per_page=100`))
+    if (!jobs.some(({ name, conclusion }) => name === 'draft' && conclusion === 'skipped')) {
+      console.log('This release run has no verified nightly to publish.')
+      return
+    }
+    runs = runs.filter(({ id }) => id !== candidate.id)
+    candidate = publicationPair(runs, sha)
+  }
   if (!candidate) {
     console.log('Publication deferred until Check and Release both pass for this exact SHA.')
-    return
-  }
-  const artifacts = JSON.parse(
-    gh('api', `repos/${repo}/actions/runs/${candidate.id}/artifacts?per_page=100`),
-  ).artifacts
-  if (!artifacts.some((artifact) => artifact.name === 'nightly-publication' && !artifact.expired)) {
-    console.log(
-      'This release run has no verified nightly to publish (skipped build or verification only).',
-    )
     return
   }
   const directory = mkdtempSync(join(tmpdir(), 'dovo-nightly-'))
@@ -86,6 +94,7 @@ function publishNightly() {
       console.log('A newer nightly has already been published; leaving this draft untouched.')
       return
     }
+    await verify(manifest.tag, { draftSha: sha })
     gh('release', 'edit', manifest.tag, '--draft=false', '--prerelease', '--latest=false')
     gh('workflow', 'run', 'distribution.yml', '-f', `tag=${manifest.tag}`)
     console.log(`Published ${manifest.tag} from passing source ${sha}.`)
@@ -93,4 +102,4 @@ function publishNightly() {
     rmSync(directory, { recursive: true, force: true })
   }
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) publishNightly()
+if (process.argv[1] === fileURLToPath(import.meta.url)) await publishNightly()

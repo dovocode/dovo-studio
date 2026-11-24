@@ -20,9 +20,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
+      - run: pnpm --filter @dovo/runtime... install --frozen-lockfile --ignore-scripts
       - name: Generate definitions from published assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,6 +40,7 @@ jobs:
             test "$(gh release view --json tagName --jq .tagName)" = "$TAG"
           fi
           gh release download "$TAG" --dir work/release-assets
+          node scripts/packaging/desktop-release-manifest.mjs published "$TAG" "" work/release-assets
           node scripts/packaging/generate-distribution.mjs work/release-assets work/distribution "${TAG#v}"
           cp -R work/distribution/Formula work/distribution/Casks .
           gh release upload "$TAG" work/distribution/mise.toml work/distribution/SHA256SUMS --clobber
@@ -105,10 +108,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
+      - run: pnpm --filter @dovo/runtime... install --frozen-lockfile --ignore-scripts
       - name: Download published Linux server archives
         id: source
         env:
@@ -116,10 +121,25 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release download "$TAG" --pattern 'Dovo-Server*-linux-*.tar.gz' --dir release
-          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          REVISION=$(node scripts/packaging/desktop-release-manifest.mjs published "$TAG" "" release)
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          git fetch --quiet --no-tags --depth 1 origin "$REVISION"
+          if git cat-file -e "$REVISION:apps/api/Dockerfile" 2>/dev/null; then
+            echo 'container=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$TAG predates the runtime container. Homebrew and mise backfill can still run."
+          fi
+      - uses: actions/checkout@v7
+        if: steps.source.outputs.container == 'true'
+        with:
+          ref: ${{ steps.source.outputs.revision }}
+          clean: false
       - uses: docker/setup-qemu-action@v4
+        if: steps.source.outputs.container == 'true'
       - uses: docker/setup-buildx-action@v4
+        if: steps.source.outputs.container == 'true'
       - name: Build linux/amd64 image for checks
+        if: steps.source.outputs.container == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -128,13 +148,16 @@ jobs:
           load: true
           tags: dovo-server:release-check
       - name: Check health, pairing and volume persistence
+        if: steps.source.outputs.container == 'true'
         run: node scripts/packaging/runtime-image-smoke.mjs dovo-server:release-check
       - uses: docker/login-action@v4
+        if: steps.source.outputs.container == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push linux/amd64 and linux/arm64
+        if: steps.source.outputs.container == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .

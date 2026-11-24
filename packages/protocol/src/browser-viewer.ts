@@ -206,6 +206,7 @@ address.oninput = () => {
 let intentionallyClosed = false
 let manualReconnect = false
 let browserSessionEnded = false
+let lastBrowserSessionId: string | undefined
 // Wi-Fi/VPN drops recover on their own; the user only acts after retries run out.
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let retryAttempt = 0
@@ -436,11 +437,16 @@ async function decodeImage(blob: Blob) {
     throw error
   }
 }
-function connect(url: string) {
+function connect(url: string, previousSessionId?: string) {
   if (!window.ReactNativeWebView && document.hidden) return
   screenshotReady = false
   const target = new URL(url)
   if (!['ws:', 'wss:'].includes(target.protocol)) throw new Error('Invalid browser connection')
+  const freshSession = simulator || intentionallyClosed || browserSessionEnded
+  if (freshSession) lastBrowserSessionId = undefined
+  const priorBrowserSessionId = freshSession
+    ? undefined
+    : (lastBrowserSessionId ?? previousSessionId)
   intentionallyClosed = false
   manualReconnect = false
   browserSessionEnded = false
@@ -496,6 +502,8 @@ function connect(url: string) {
   let pendingFrame: Frame | undefined
   let rendering = false
   let hasFrame = false
+  let browserSessionId: string | undefined
+  let receivedState = false
   const acknowledge = (frame: Frame, dropped = false) => {
     if (frame.sequence && next.readyState === WebSocket.OPEN)
       next.send(
@@ -598,7 +606,21 @@ function connect(url: string) {
         linkPreview.hidden = !message.href
         editableFocus(message.editable)
       } else if (message.type === 'state') {
-        if (!simulator) certificate.update(message)
+        if (browserSessionId && message.sessionId && browserSessionId !== message.sessionId) return
+        browserSessionId ??= message.sessionId
+        if (!simulator) {
+          if (!receivedState) {
+            receivedState = true
+            if (
+              priorBrowserSessionId &&
+              message.sessionId &&
+              priorBrowserSessionId !== message.sessionId
+            )
+              notice('Reconnected in a new browser session. Unsaved changes may be missing.')
+          }
+          lastBrowserSessionId = browserSessionId
+          certificate.update(message)
+        }
         reload.setAttribute('aria-busy', String(message.loading))
         nativeTouch = message.touch === true
         primaryModifier = message.primaryModifier
@@ -620,6 +642,8 @@ function connect(url: string) {
         else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
       } else if (message.type === 'error' || message.type === 'closed') {
         if (message.type === 'closed') {
+          if (browserSessionId && message.sessionId && browserSessionId !== message.sessionId)
+            return
           browserSessionEnded = !simulator
           if (window.ReactNativeWebView)
             window.ReactNativeWebView.postMessage(
@@ -628,7 +652,11 @@ function connect(url: string) {
           else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
           enabled(false)
           notice(
-            browserSessionEnded ? 'Browser session ended.' : message.message,
+            message.reason === 'expired'
+              ? 'Browser session expired.'
+              : browserSessionEnded
+                ? 'Browser session ended.'
+                : message.message,
             true,
             browserSessionEnded ? 'reopen' : 'reconnect',
           )
@@ -825,7 +853,9 @@ window.addEventListener('message', (event) => {
   ) {
     try {
       configure('device' in message ? message.device : undefined)
-      connect(message.url)
+      const previousSessionId =
+        'previousSessionId' in message ? message.previousSessionId : undefined
+      connect(message.url, typeof previousSessionId === 'string' ? previousSessionId : undefined)
     } catch {
       notice('Invalid host browser connection.', true)
     }

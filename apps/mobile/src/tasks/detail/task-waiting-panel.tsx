@@ -4,10 +4,15 @@ import { taskHref } from '../../shell/task-route'
 import { useLinkOrigin } from '../../ui/content/link-origin'
 import { useCallback, useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
-import { taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
+import {
+  forgePullTarget,
+  pullRepositoryIdentity,
+  resolveThreadRuntime,
+  taskWaitingSchema,
+  type taskWaitingRequestSchema,
+} from '@dovo/protocol'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { router } from 'expo-router'
-import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
 import { issueHref, jiraIssueHref, pipelineHref } from '../../shell/source-route'
 import { useSheetNavigation } from '../../ui/layout/sheet'
 import { useTaskWaiting } from '@dovo/studio-core'
@@ -171,28 +176,34 @@ export function TaskWaitingPanel({
                 open(item.url, item)
                 return
               }
-              const savedRuntime = item.runtimeIdentity
-                ? (profiles.find((profile) => profile.connection.runtimeId === item.runtimeIdentity)
-                    ?.id ??
-                  overviews.find((entry) => entry.snapshot?.runtimeId === item.runtimeIdentity)
-                    ?.profile.id)
-                : undefined
+              const runtimeId =
+                !item.runtimeId || item.runtimeId === 'local' ? activeId : item.runtimeId
               const owner =
-                savedRuntime ??
-                (!item.runtimeId || item.runtimeId === 'local' ? activeId : item.runtimeId)
+                resolveThreadRuntime(
+                  { runtimeId, runtimeIdentity: item.runtimeIdentity },
+                  profiles,
+                  overviews,
+                )?.id ?? runtimeId
               if (!owner || !activeId) {
                 setLinkError('Connect the owning computer to open this thread')
                 return
               }
               navigateAfterSheet(() =>
                 router.push(
-                  taskHref(owner, item.target, undefined, {
-                    runtimeId: activeId,
-                    taskId,
-                    title:
-                      snapshot?.workspace.tasks.find((task) => task.id === taskId)?.title ??
-                      uiText('Parent thread'),
-                  }),
+                  taskHref(
+                    owner,
+                    item.target,
+                    undefined,
+                    {
+                      runtimeId: activeId,
+                      runtimeIdentity: snapshot?.runtimeId ?? connection?.runtimeId,
+                      taskId,
+                      title:
+                        snapshot?.workspace.tasks.find((task) => task.id === taskId)?.title ??
+                        uiText('Parent thread'),
+                    },
+                    item.runtimeIdentity,
+                  ),
                 ),
               )
             }}

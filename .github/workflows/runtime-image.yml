@@ -25,7 +25,15 @@ jobs:
   # The shared actions restore the dependency, task and dictation caches. No image layer cache is
   # saved: the runtime layer is over 1 GB, changes with every commit and would evict those caches.
   image:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -43,14 +51,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v4
-      - name: Build linux/amd64 image without pushing
+      - name: Build native Linux image without pushing
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.architecture }}
           load: true
           push: false
           tags: dovo-server:ci
-      - name: Check health, pairing and volume persistence
-        run: node scripts/packaging/runtime-image-smoke.mjs dovo-server:ci
+      - name: Check health, pairing and persisted draft
+        env:
+          PREVIOUS_IMAGE: ${{ vars.DOVO_RUNTIME_IMAGE_BASELINE }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          if test -n "$PREVIOUS_IMAGE"; then
+            [[ "$PREVIOUS_IMAGE" =~ ^ghcr\.io/dovocode/dovo-server@sha256:[a-f0-9]{64}$ ]] ||
+              { echo "DOVO_RUNTIME_IMAGE_BASELINE must pin a Dovo runtime image digest"; exit 1; }
+            docker pull --platform "linux/$ARCHITECTURE" "$PREVIOUS_IMAGE"
+            node scripts/packaging/runtime-image-smoke.mjs dovo-server:ci "$PREVIOUS_IMAGE"
+          else
+            node scripts/packaging/runtime-image-smoke.mjs dovo-server:ci
+          fi

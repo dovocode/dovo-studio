@@ -125,6 +125,10 @@ unreadable notification state from the current task and any saved completion. No
 is best effort: provider outages, OS settings, and relay restarts can affect timing. The relay's
 retry cache is in memory; runtime records are durable.
 
+Each delivery pass sends to up to four devices at once. Individual devices keep their own
+notification order and retry delay. A relay request pending for one device no longer holds back
+other devices in the same batch when capacity is available.
+
 ## Build and enable the mobile app
 
 ### Answer questions from a notification

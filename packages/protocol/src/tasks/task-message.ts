@@ -1,7 +1,20 @@
 import { Effect, Schema } from 'effect'
+import { workspaceDraftHash } from '../runtime/connection/workspace-reconciliation.js'
 import { decodeResult, maxValue, minValue, mutableStruct, refine } from '../shared/schema.js'
 import { attachmentIdsSchema } from '../shared/attachments.js'
-import { taskSchema, turnSettingsSchema, type Task } from '../workspace.js'
+import { taskSchema, turnSettingsKey, turnSettingsSchema, type Task } from '../workspace.js'
+
+/** Compare the composer state observed at Send, independently of the text's delivery identity. */
+export function taskDraftIdentity(
+  text: string,
+  attachmentIds: readonly string[],
+  settings: Task['draftTurnSettings'],
+  plan: boolean | undefined,
+) {
+  return workspaceDraftHash(
+    JSON.stringify([text.trim(), [...attachmentIds].sort(), turnSettingsKey(settings), !!plan]),
+  )
+}
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 /** The configuration an unsent draft may carry into a new thread. Every other task field is
@@ -67,6 +80,7 @@ export const taskMessageSchema = refine(
       preserveQueuePause: Schema.optional(Schema.Boolean),
       sendNow: Schema.optional(Schema.Boolean),
       runId: Schema.optional(id),
+      draftIdentity: Schema.optional(minValue(maxValue(Schema.String, 64), 64)),
       selectProject: Schema.optional(Schema.Boolean),
       initialTitle: Schema.optional(
         mutableStruct({

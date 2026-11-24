@@ -215,6 +215,10 @@ times. Expand run details on mobile or open **Runs** beside the desktop canvas. 
 queued work from work that is running, awaiting review, completed, failed or cancelled. An approval
 applies to the displayed step and attempt. Refresh the run after a stale approval.
 
+When a review response is lost, repeat the same decision for the same step and attempt. The runtime
+confirms the saved decision without advancing the current review. An opposite decision for the same
+step and attempt returns a conflict. The saved outcome survives a runtime restart.
+
 Only one run of an automation may be active or waiting for review at a time. Different automations
 can run at the same time. Tasks that use the same checkout share its files and uncommitted changes.
 Use separate worktrees to isolate changes.

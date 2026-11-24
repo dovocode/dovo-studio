@@ -1,4 +1,4 @@
-import { startRuntime } from '../packages/runtime/dist/index.js'
+import { mobileSmokeRuntime } from './ci/mobile-smoke-runtime.mjs'
 import { preparePairingFlow, startPairingControl } from './ci/mobile-pairing.mjs'
 import { startMobileRecoveryNetwork } from './ci/mobile-recovery-network.mjs'
 import { runAndroidSmoke } from './ci/android-smoke.mjs'
@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createServer, request as httpRequest } from 'node:http'
+import { fileURLToPath } from 'node:url'
 
 const device = process.argv[2]
 const androidRecovery = process.argv.includes('--android-recovery')
@@ -30,6 +31,14 @@ const settingsSaves = []
 const jobAttempts = []
 const jobStartIds = []
 if (!device) throw new Error('Pass a simulator or emulator ID with the native app installed')
+const previousCheckout = process.env.DOVO_MOBILE_SMOKE_PREVIOUS_CHECKOUT
+if (previousCheckout && !releaseSmoke)
+  throw new Error('A previous runtime can only be used with the installed mobile smoke flows')
+const { startRuntime } = await mobileSmokeRuntime(
+  fileURLToPath(new URL('../', import.meta.url)),
+  previousCheckout,
+)
+
 const appData = androidRecovery
   ? undefined
   : execFileSync('xcrun', ['simctl', 'get_app_container', device, 'com.dovo.studio', 'data'], {
@@ -229,11 +238,11 @@ try {
       },
     })
   }
-  if (androidRecovery) recoveryNetwork = await startMobileRecoveryNetwork(runtime.port)
+  if (releaseSmoke) recoveryNetwork = await startMobileRecoveryNetwork(runtime.port, fixtureHost)
   pairingControl = await startPairingControl(runtime.services.pairing, recoveryNetwork)
   const fixtureDeviceName = androidRecovery ? 'Dovo Android test' : 'Dovo simulator test'
   const runtimeAddress = recoveryNetwork
-    ? `http://10.0.2.2:${recoveryNetwork.port}`
+    ? `http://${androidRecovery ? '10.0.2.2' : fixtureHost}:${recoveryNetwork.port}`
     : `http://${fixtureHost}:${settingsProxy?.port ?? runtime.port}`
   // Approve only this isolated fixture's explicitly named test device.
   approve = setInterval(() => {
@@ -643,12 +652,21 @@ try {
       )
     if (!first || first.messages.filter((message) => message.role === 'user').length !== 1)
       throw new Error('First send was missing or duplicated')
+    if (
+      task.messages.filter(
+        (message) => message.role === 'user' && message.text === 'iOS recovery draft',
+      ).length !== 1
+    )
+      throw new Error('The recovered iOS draft was missing or duplicated')
+    const devices = runtime.services.devices.list()
+    if (devices.length !== 1 || devices[0].name !== fixtureDeviceName)
+      throw new Error('The iOS app must recover using the original pairing')
   }
   console.log(
     releaseSmoke
       ? androidRecovery
         ? 'Android installed app: HTTP pairing, warm thread link, offline restart, cold thread link, draft recovery and single delivery verified.'
-        : 'Installed native app: HTTP pairing, external thread link, thread send, recalled send, first send, saved draft, navigation and update settings verified.'
+        : 'Installed native app: HTTP pairing, external thread link, thread send, recalled send, first send, offline restart, draft recovery and single delivery, navigation and update settings verified.'
       : settingsOnly
         ? 'Native inline model settings guard Back, Close and edits during a pending save; visible failure retains values and retry persists exactly once.'
         : modesOnly

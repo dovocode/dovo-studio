@@ -50,7 +50,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../../runtime/connection/provider',
       importer: actions,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{messageSetupSupported:window.firstSetupSupported===true,queuePausePreservationSupported:true,directMessageSupported:window.directSupported!==false,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
+      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{messageSetupSupported:window.firstSetupSupported===true,messageDraftIdentitySupported:window.draftIdentitySupported===true,queuePausePreservationSupported:true,directMessageSupported:window.directSupported!==false,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
     },
     {
       path: '../../../runtime/preferences/app-preferences',
@@ -95,6 +95,7 @@ try {
   const first = await page.evaluate(() => window.requests[0])
   assert.equal(first.path, '/api/tasks/message')
   assert.equal(first.input.queueOnly, true)
+  assert.equal(first.input.draftIdentity, undefined)
   assert.equal(await input.isEnabled(), true)
   assert.equal(await input.evaluate((element) => element === document.activeElement), true)
   assert.equal(await page.evaluate(() => !!window.keyboardDismissed), false)
@@ -134,10 +135,14 @@ try {
   assert.equal(await page.evaluate(() => window.requests[2].input.queueOnly), true)
   await page.evaluate(() => window.finish())
   await page.waitForFunction(() => !window.actions.busy)
+  await page.evaluate(() => {
+    window.draftIdentitySupported = true
+  })
   await input.fill('Send explicitly')
   await page.evaluate(() => void window.actions.run(() => window.actions.submit('queue')))
   await page.waitForFunction(() => window.requests.length === 4)
   assert.equal(await page.evaluate(() => window.requests[3].input.queueOnly), undefined)
+  assert.match(await page.evaluate(() => window.requests[3].input.draftIdentity), /^[a-f0-9]{64}$/)
   assert.equal(await page.evaluate(() => window.requests[3].input.preserveQueuePause), undefined)
   await page.evaluate(() => window.finish())
   await page.waitForFunction(() => !window.actions.busy)

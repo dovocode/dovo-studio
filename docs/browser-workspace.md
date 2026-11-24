@@ -99,8 +99,9 @@ Bookmarks, recently closed tabs and browser data on paired computers stay availa
 
 In the Browser workspace, Ctrl/Cmd+L focuses the address bar, Ctrl/Cmd+T opens a tab with the
 current tab's computer and profile, Ctrl/Cmd+W closes it, Ctrl/Cmd+Shift+T reopens the last closed
-tab and Ctrl/Cmd+R reloads. Native page links that open a new window become tabs using the source
-profile.
+tab and Ctrl/Cmd+R reloads. **Open link in new tab**, **Open image in new tab** and **Search
+selection in new tab** open regular tabs even when other links open as previews. Ctrl/Cmd-click
+opens a regular tab in the background. Links use their configured profile or the source profile.
 
 Desktop pages become visible when their DOM is ready, while images and other resources can continue
 loading. Tooltips appear above the page and return keyboard focus after dismissal, unless you click
@@ -144,14 +145,17 @@ sessions.
 
 Failed remote navigation retains the session and attempted address so **Reload page** can retry it.
 When the connection drops, the viewer retries on its own and shows **Reconnect** if it needs help.
-Mobile previews wait for the paired computer to reconnect before requesting a new ticket. A stalled
-frame stream can reconnect automatically. After a policy close, switching back to the preview keeps
-it disconnected until you select **Reconnect**. When the host confirms the session ended, choose
-**Open URL in a new session** to open the saved address, or **Open a new session** for a blank tab.
-These notices leave the streamed page at the same size. Reconnecting viewers receive any outstanding
-JavaScript dialog; disconnecting clears the viewer's old dialog. Agent inspection does not expire a
-session while a human viewer is attached. Private desktop preview profiles use memory-only storage,
-and self-closing pages release their native tab entries.
+While Studio runs, it remembers the last host session for each open Browser tab, including when the
+viewer closes during a tab switch or network outage. It shows a notice if reconnecting opens a fresh
+session. Unsaved changes inside the previous page may be missing. Mobile previews wait for the
+paired computer to reconnect before requesting a new ticket. A stalled frame stream can reconnect
+automatically. After a policy close, switching back to the preview keeps it disconnected until you
+select **Reconnect**. When the host confirms the session ended, choose **Open URL in a new session**
+to open the saved address, or **Open a new session** for a blank tab. These notices leave the
+streamed page at the same size. Reconnecting viewers receive any outstanding JavaScript dialog;
+disconnecting clears the viewer's old dialog. Agent inspection does not expire a session while a
+human viewer is attached. Private desktop preview profiles use memory-only storage, and self-closing
+pages release their native tab entries.
 
 ## Picture-in-Picture and background pages
 
@@ -179,12 +183,14 @@ the site's **Automatic call PiP** permission and a Media Session handler. See
 [Shared-browser APIs](browser-apis.md) for behavior, permissions and compatibility limits.
 
 Call pages and PiP windows keep background rendering enabled. Opening another page preserves active
-call previews as regular tabs. Moving a call to another Studio window reparents its existing native
-view, preserving media tracks and sharing controls. On Linux, document PiP requests a floating
-window on every workspace and reasserts its floating state after show/restore. X11 window-manager
-flags are checked by the native fixture. On Wayland desktops with an available X display, Studio
-uses XWayland by default so the window manager can apply always-on-top controls. Restart Studio
-after updating. Explicit `--ozone-platform`, `--ozone-platform-hint` and
+call previews as regular tabs. Mobile also keeps a link preview as a regular tab when it detects
+active media and you switch to its opener. A paired computer keeps its Browser page while it detects
+active media, even if the viewer is detached. Moving a call to another Studio window reparents its
+existing native view, preserving media tracks and sharing controls. On Linux, document PiP requests
+a floating window on every workspace and reasserts its floating state after show/restore. X11
+window-manager flags are checked by the native fixture. On Wayland desktops with an available X
+display, Studio uses XWayland by default so the window manager can apply always-on-top controls.
+Restart Studio after updating. Explicit `--ozone-platform`, `--ozone-platform-hint` and
 `ELECTRON_OZONE_PLATFORM_HINT` settings take precedence. Pure Wayland systems without XWayland keep
 their native backend; their compositor controls stacking. The backend selection has unit coverage.
 The current local verification host uses X11; a real Wayland desktop still needs a check.
@@ -218,6 +224,11 @@ When you edit a standard form field or editable text in a desktop workspace tab,
 page alive during automatic tab cleanup. This includes edits inside frames. Studio records only that
 an edit occurred. A new top-level document clears this protection. You can still close, snooze or
 settle the tab yourself. Closing Studio also ends the live page.
+
+If a desktop page stops unexpectedly, its tab keeps its address and profile. Use **Reload** to open
+the page again. If a paired computer loses or expires a Browser session, use **Open URL in a new
+session** to reopen that same address on the tab's computer and profile. Websites can still close
+their own sign-in popups.
 
 Links opened as temporary previews retain the original opener beneath them. **Expand preview** and
 **Contract preview** change the same live preview's size. Clicking the visible opener dismisses the

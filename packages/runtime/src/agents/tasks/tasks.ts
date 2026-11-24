@@ -1591,6 +1591,7 @@ export class Tasks {
     initialTitle?: { before: string; after: string },
     preparation: 'ready' | 'accepted' = 'ready',
     mentionRuntimeId?: string,
+    draftIdentity?: string,
   ) {
     return runtimeOperation(() => {
       this.requireExecutionOwner(id)
@@ -1659,6 +1660,7 @@ export class Tasks {
                 initialTitle,
                 queueOnly,
                 source,
+                draftIdentity,
                 reopenSettled: resumePaused,
                 unsnooze: true,
                 clearCompletedTodos: resumePaused && !review,
@@ -1745,9 +1747,19 @@ export class Tasks {
     attachmentIds: string[] = [],
     expectedRunId?: string,
     mentionRuntimeId?: string,
+    draftIdentity?: string,
   ) {
     if (!mentionRuntimeId || !botMentionTargets(text).length)
-      return this.applySteeringEffect(id, messageId, text, attachmentIds, expectedRunId)
+      return this.applySteeringEffect(
+        id,
+        messageId,
+        text,
+        attachmentIds,
+        expectedRunId,
+        false,
+        undefined,
+        draftIdentity,
+      )
     return Effect.tryPromise({
       try: () =>
         this.prepareMentionCopies(
@@ -1762,7 +1774,16 @@ export class Tasks {
       catch: runtimeFailure,
     }).pipe(
       Effect.flatMap((copies) =>
-        this.applySteeringEffect(id, messageId, text, attachmentIds, expectedRunId, false, copies),
+        this.applySteeringEffect(
+          id,
+          messageId,
+          text,
+          attachmentIds,
+          expectedRunId,
+          false,
+          copies,
+          draftIdentity,
+        ),
       ),
     )
   }
@@ -1807,6 +1828,7 @@ export class Tasks {
       head?: string
       repositoryId?: string
     },
+    draftIdentity?: string,
   ) {
     const prepare = () => {
       if (
@@ -1865,7 +1887,7 @@ export class Tasks {
           false,
           false,
           undefined,
-          { steering: true, unsnooze: true, clearCompletedTodos: true },
+          { steering: true, unsnooze: true, clearCompletedTodos: true, draftIdentity },
         )
       )
         return null

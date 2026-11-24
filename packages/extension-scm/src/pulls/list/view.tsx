@@ -175,6 +175,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             runtimeId: source.runtimeId,
             repositoryId: source.repository.id,
             number,
+            connectionId: source.repository.forge?.connectionId,
             url: navigationUrl,
             tab:
               destination && destination.tab !== 'review'

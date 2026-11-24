@@ -225,9 +225,13 @@ const settledFailure = (item: { path: string; method: string }, error: unknown) 
   rejectedPatch(item, error) ||
   (error instanceof RuntimeRequestError &&
     (error.mutationRetired === true ||
-      (['/api/tasks/checklist/clear', '/api/tasks/list-action', '/api/tasks/queue'].includes(
-        item.path,
-      ) &&
+      ([
+        '/api/tasks/checklist/clear',
+        '/api/tasks/list-action',
+        '/api/tasks/queue',
+        '/api/tasks/message',
+        '/api/tasks/steer',
+      ].includes(item.path) &&
         error.mutationRejected === true)))
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({

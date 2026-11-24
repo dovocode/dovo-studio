@@ -249,9 +249,18 @@ try {
   await page.getByTestId('Tab Browser').click()
   await page.getByTestId('Tab Terminal').click()
   assert.deepEqual(await page.evaluate(() => window.nativeSelections), ['browser', 'terminal'])
+  await page.evaluate(() => window.updateFixture({ path: '/terminal' }))
+  await plus.click()
+  await page.evaluate(() =>
+    window.hardwareCommands.onCommand({ nativeEvent: { command: 'newThread' } }),
+  )
+  assert.deepEqual(
+    await page.evaluate(() => window.routes.splice(0)),
+    Array.from({ length: 2 }, () => ({ method: 'push', args: ['/new', { withAnchor: true }] })),
+  )
   await page.evaluate(() => {
     window.nativeSelections = []
-    window.updateFixture({ car: true })
+    window.updateFixture({ path: '/pulls', car: true })
   })
   await page.getByTestId('Tab Browser').waitFor({ state: 'detached' })
   await page.getByTestId('Tab Terminal').waitFor({ state: 'detached' })
@@ -358,8 +367,14 @@ try {
   await page.getByText('Collection content', { exact: true }).waitFor()
   assert.equal(await page.locator('nav button').count(), 2, 'Android keeps Tasks and PRs')
   assert.equal(await page.locator('nav').getByRole('button', { name: 'New thread' }).count(), 0)
+  await page.evaluate(() => window.updateFixture({ terminal: true, path: '/terminal' }))
+  await page.getByTestId('Tab Terminal').waitFor()
   await plus.click()
   assert.equal(await page.evaluate(() => window.routes.length), 3)
+  assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
+    method: 'push',
+    args: ['/new', { withAnchor: true }],
+  })
   await page.evaluate(() => window.updateFixture({ sidebar: true, path: '/thread/a/old' }))
   await page.waitForFunction(
     () =>

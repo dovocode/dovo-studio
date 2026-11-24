@@ -89,6 +89,41 @@ appId: com.dovo.studio
 - assertVisible:
     id: Message
     text: Draft survives navigation
+- evalScript: ${output.offline = http.post(PAIRING_CONTROL_ADDRESS + '/offline', {body:'{}'}).status}
+- assertTrue: ${output.offline == 200}
+- extendedWaitUntil:
+    visible:
+      id: Send when online
+    timeout: 20000
+- tapOn:
+    id: Message
+- eraseText
+- inputText: iOS recovery draft
+- tapOn: Dismiss keyboard
+- assertVisible:
+    id: Message
+    text: iOS recovery draft
+- stopApp
+- openLink: ${THREAD_LINK}
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: Message
+      text: iOS recovery draft
+    timeout: 30000
+- assertVisible:
+    id: Send when online
+- evalScript: ${output.online = http.post(PAIRING_CONTROL_ADDRESS + '/online', {body:'{}'}).status}
+- assertTrue: ${output.online == 200}
+- extendedWaitUntil:
+    visible:
+      id: Send
+    timeout: 90000
+- tapOn:
+    id: Send
+- runFlow: fixture-response.yaml
 - runFlow: back-to-threads.yaml
 - tapOn: New thread
 - extendedWaitUntil:

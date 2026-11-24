@@ -389,6 +389,7 @@ export const snapshotSchema = mutableStruct({
   directMessageSupported: Schema.optional(Schema.Literal(true)),
   /** First title and automatic project selection travel with the durable send. */
   messageSetupSupported: Schema.optional(Schema.Literal(true)),
+  messageDraftIdentitySupported: Schema.optional(Schema.Literal(true)),
   /** The first `/api/tasks/message` can carry its unsent draft as `createTask`. */
   threadStartSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/tasks/search` applies `scope` (project and archive) before its message-hit limit. */

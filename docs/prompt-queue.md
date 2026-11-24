@@ -10,6 +10,10 @@ can be duplicated and reordered before they run. Normal **Send** keeps its exist
 Updated runtimes also preserve pauses made by another client while an automatic addition is in
 flight. Retries keep that intent; **Add and run queue** remains an explicit resume action.
 
+Staging a follow-up checks its message ID without loading the conversation into runtime memory. Both
+current submission receipts and messages saved by older runtimes still prevent duplicate queue
+entries.
+
 To start separate threads, choose **Start in background** from the Start thread composer. On mobile,
 hold **Send** to open this action; tapping **Send** starts the thread normally. After the first
 prompt is confirmed, the thread continues in the task list and a fresh composer keeps your computer,

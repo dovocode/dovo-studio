@@ -90,7 +90,9 @@ type QueuedInput = {
   authorize: () => void
   operation?: Promise<void>
 }
+type BrowserEndReason = NonNullable<Extract<RemoteBrowserMessage, { type: 'closed' }>['reason']>
 type Session = {
+  id: string
   profileId?: string
   uploads: BrowserUploads
   downloads?: BrowserDownloads
@@ -100,6 +102,7 @@ type Session = {
   release: () => Promise<void>
   page: Page
   closing?: boolean
+  closeReason?: BrowserEndReason
   cdp: CDPSession
   pendingInput?: QueuedInput
   statePending: boolean
@@ -213,6 +216,7 @@ export class RemoteBrowsers {
   >()
   private cookieDirectories = new WeakMap<BrowserContext, string>()
   private closingProfiles = new Map<string, Promise<void>>()
+  private sessionEnds: { at: number; reason: BrowserEndReason }[] = []
   private disposed = false
   private installation = new ChromiumInstallation()
   private downloadDirectories = new WeakMap<BrowserContext, Promise<string>>()
@@ -689,9 +693,11 @@ export class RemoteBrowsers {
     try {
       const page = existingPage ?? (await context.newPage())
       createdPage = page
+      const id = randomUUID()
       page.setDefaultTimeout(10000)
       page.setDefaultNavigationTimeout(20000)
       const session: Session = {
+        id,
         profileId,
         uploads: new BrowserUploads(
           (message) => this.emit(session, message),
@@ -705,6 +711,7 @@ export class RemoteBrowsers {
         statePending: false,
         state: {
           type: 'state',
+          sessionId: id,
           url: 'about:blank',
           title: '',
           editable: false,
@@ -930,11 +937,12 @@ export class RemoteBrowsers {
         this.scheduleState(session)
       })
       page.on('crash', () => {
+        session.closeReason = 'crashed'
         this.emit(session, {
           type: 'error',
           message: 'The host browser crashed. Reconnect to start again.',
         })
-        void this.close(taskId).catch((error) => this.report(session, error))
+        void this.close(taskId, 'crashed').catch((error) => this.report(session, error))
       })
       page.once('close', () => {
         void session.uploads.release().catch((error) => this.report(session, error))
@@ -946,12 +954,31 @@ export class RemoteBrowsers {
         clearTimeout(session.interactionTimer)
         this.sessions.delete(taskId)
         this.owners.delete(taskId)
-        this.emit(session, {
-          type: 'closed',
-          byPage: !session.closing,
-          message: 'Host browser session closed. Reconnect to start again.',
-        })
-        session.listeners.clear()
+        const finish = () => {
+          const reason =
+            session.closeReason ??
+            (existingPage && !context.isClosed() && context.browser()?.isConnected()
+              ? 'page'
+              : 'context-lost')
+          if (!isolated && !isPrivateBrowserProfile(profileId)) {
+            this.sessionEnds.push({ at: Date.now(), reason })
+            if (this.sessionEnds.length > 32) this.sessionEnds.shift()
+          }
+          this.emit(session, {
+            type: 'closed',
+            sessionId: session.id,
+            reason,
+            byPage: reason === 'page',
+            message:
+              reason === 'expired'
+                ? 'Host browser session expired. Reconnect to start again.'
+                : 'Host browser session closed. Reconnect to start again.',
+          })
+          session.listeners.clear()
+        }
+        // Chromium reports page closures before the enclosing context or browser disconnect.
+        if (existingPage && !session.closeReason) setImmediate(finish)
+        else finish()
       })
       if (initialUrl) {
         session.state.url = initialUrl
@@ -999,10 +1026,28 @@ export class RemoteBrowsers {
   }
   private scheduleClose(taskId: string, session: Session) {
     clearTimeout(session.idle)
-    session.idle = setTimeout(() => {
-      void this.close(taskId).catch((error) => console.error('Could not close idle browser', error))
+    const timer = setTimeout(() => {
+      void this.expire(taskId, session, timer).catch((error) =>
+        console.error('Could not close idle browser', error),
+      )
     }, idleMs)
-    session.idle.unref()
+    session.idle = timer
+    timer.unref()
+  }
+  private async expire(taskId: string, session: Session, timer: ReturnType<typeof setTimeout>) {
+    const canExpire = () =>
+      session.idle === timer &&
+      !session.listeners.size &&
+      !session.closing &&
+      !session.page.isClosed()
+    if (!canExpire()) return
+    const playing =
+      this.owners.get(taskId) === STUDIO_BROWSER_SCOPE &&
+      (await this.activeMedia(taskId).catch(() => false))
+    if (!canExpire()) return
+    // Mobile unmounts inactive viewers. Keep a playing workspace page even when it has no viewer.
+    if (playing) this.scheduleClose(taskId, session)
+    else await this.closeSession(session, 'expired')
   }
   private async state(session: Session) {
     if (session.page.isClosed()) return
@@ -1038,6 +1083,7 @@ export class RemoteBrowsers {
       }))
       session.state = {
         type: 'state',
+        sessionId: session.id,
         certificateDocumentId: session.certificateDocumentId,
         createdTabs: session.state.createdTabs,
         url:
@@ -1159,7 +1205,10 @@ export class RemoteBrowsers {
     if (!pending)
       throw new HttpError(404, 'Host browser session expired. Reconnect to start again.')
     const session = await pending
+    if (session.closing || session.page.isClosed())
+      throw new HttpError(404, 'Host browser session expired. Reconnect to start again.')
     clearTimeout(session.idle)
+    session.idle = undefined
     session.listeners.add(listener)
     session.visibleListeners.add(listener)
     this.activateStream(session)
@@ -1845,13 +1894,21 @@ export class RemoteBrowsers {
       [...this.owners].filter(([, owner]) => owner === taskId).map(([id]) => this.close(id)),
     )
   }
-  async close(taskId: string) {
+  recentSessionEnds() {
+    return this.sessionEnds.map((end) => ({ ...end }))
+  }
+  async close(taskId: string, reason: BrowserEndReason = 'requested') {
     const pending = this.sessions.get(taskId)
     if (!pending) return
     const session = await pending
+    if (this.sessions.get(taskId) !== pending) return
+    await this.closeSession(session, reason)
+  }
+  private async closeSession(session: Session, reason: BrowserEndReason) {
     clearTimeout(session.idle)
     clearTimeout(session.captureIdle)
     session.closing = true
+    session.closeReason ??= reason
     try {
       await session.page.close()
     } finally {

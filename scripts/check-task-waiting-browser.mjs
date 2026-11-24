@@ -31,7 +31,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';import {TaskPipelineProgress} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-pipeline-progress.tsx';import {TaskWaitingPanel} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-waiting-panel.tsx';const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<StrictMode>{window.showProgress?<TaskPipelineProgress key={window.target} taskId={window.target} active={true}/>:<TaskWaitingPanel key={window.target} taskId={window.target} panel={window.panel}/>}</StrictMode>);window.render();`,
+        contents: `import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';import {resolveThreadRuntime} from '@dovo/protocol';import {TaskPipelineProgress} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-pipeline-progress.tsx';import {TaskWaitingPanel} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-waiting-panel.tsx';const root=createRoot(document.getElementById('app'));window.resolveOpenedThread=()=>resolveThreadRuntime(window.opened.params,window.store.profiles,window.store.overviews)?.id;window.render=()=>root.render(<StrictMode>{window.showProgress?<TaskPipelineProgress key={window.target} taskId={window.target} active={true}/>:<TaskWaitingPanel key={window.target} taskId={window.target} panel={window.panel}/>}</StrictMode>);window.render();`,
         loader: 'tsx',
         resolveDir: root + 'packages/extension-tasks/',
       },
@@ -108,6 +108,8 @@ try {
         call: request,
         activeId: 'laptop',
         activeRuntimeId: 'laptop',
+        profiles: [],
+        overviews: [],
         workspace: { tasks: [{ id: 'second', title: 'Release parent' }] },
         snapshot: { workspace: { tasks: [{ id: 'second', title: 'Release parent' }] } },
       }
@@ -312,6 +314,24 @@ try {
       await page.getByRole('button', { name: /Refresh/ }).click()
       await page.getByRole('button', { name: 'Open Configure Play', exact: true }).click()
       assert.equal(await page.evaluate(() => window.opened.params.runtimeId), 'saved-vpn-address')
+      assert.equal(
+        await page.evaluate(() => window.opened.params.runtimeIdentity),
+        'canonical-server',
+      )
+      assert.equal(await page.evaluate(() => window.resolveOpenedThread()), 'saved-vpn-address')
+      await page.evaluate(() => {
+        window.store.profiles = [
+          { id: 'mac-studio', connection: { runtimeId: 'different-server' } },
+        ]
+      })
+      await page.getByRole('button', { name: /Refresh/ }).click()
+      await page.getByRole('button', { name: 'Open Configure Play', exact: true }).click()
+      assert.equal(await page.evaluate(() => window.opened.params.runtimeId), 'mac-studio')
+      assert.equal(
+        await page.evaluate(() => window.opened.params.runtimeIdentity),
+        'canonical-server',
+      )
+      assert.equal(await page.evaluate(() => window.resolveOpenedThread()), undefined)
     }
     await page.getByRole('button', { name: 'Stop watching Configure Play', exact: true }).click()
     if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()

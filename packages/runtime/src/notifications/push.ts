@@ -1,7 +1,7 @@
 import { routineQuietNow } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
-import { Effect, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import {
   ACCOUNT_DIRECTORY_URL,
@@ -25,6 +25,13 @@ import type { Devices } from '../auth/devices.js'
 import { HttpError } from '../errors.js'
 
 const record = mutableStruct({ deviceId: Schema.String, value: Schema.String })
+const outboxEntrySchema = mutableStruct({
+  ...record.fields,
+  id: Schema.String,
+  attempt: Schema.Number,
+})
+type OutboxEntry = Schema.Schema.Type<typeof outboxEntrySchema>
+const parallelDevices = 4
 const stateSchema = mutableStruct({
   running: Schema.Boolean,
   failed: Schema.Boolean,
@@ -356,17 +363,13 @@ export class PushNotifications {
             )
           )
             kinds.push({ kind: current.failed ? 'failed' : 'done' })
-        for (const { kind, input } of kinds)
+        for (const { kind, input } of kinds) {
+          if (!registrations.length) break
+          const detail = kind === 'input' ? input?.preview : this.store.latestAssistantText(task.id)
           for (const registration of registrations) {
             const id = createHash('sha256')
               .update(JSON.stringify([registration.deviceId, task.id, kind, current, input?.id]))
               .digest('hex')
-            const detail =
-              kind === 'input'
-                ? input?.preview
-                : [...this.store.task(task.id).messages]
-                    .reverse()
-                    .find((message) => message.role === 'assistant')?.text
             const question =
               kind === 'input' &&
               input?.type === 'question' &&
@@ -429,6 +432,7 @@ export class PushNotifications {
               .prepare('INSERT OR IGNORE INTO push_outbox VALUES (?,?,?,?,0,0)')
               .run(id, registration.deviceId, JSON.stringify(message), Date.now() + 3_600_000)
           }
+        }
       }
       this.db.prepare('DELETE FROM push_completions').run()
       // Removed tasks cannot leave state or pending notifications behind.
@@ -450,27 +454,50 @@ export class PushNotifications {
   }
   private async deliver() {
     this.capture()
-    // Backoff belongs to each device. While a failed message waits for its retry, the device's
-    // other messages wait too, and other devices still receive their due messages.
-    const failed = new Set<string>()
     const now = Date.now()
+    // Give each due device a slot before spending the batch on one device's backlog.
     const rows = this.db
       .prepare(
-        `SELECT id,device_id AS deviceId,value,attempt FROM push_outbox AS due
-        WHERE next<=? AND NOT EXISTS (
-          SELECT 1 FROM push_outbox AS waiting
-          WHERE waiting.device_id=due.device_id AND waiting.attempt>0 AND waiting.next>?
-        )
-        ORDER BY expires LIMIT 20`,
+        `WITH ranked AS (
+           SELECT id,device_id AS deviceId,value,attempt,expires,
+                  ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY expires,rowid) AS device_rank
+           FROM push_outbox AS due
+           WHERE next<=? AND NOT EXISTS (
+             SELECT 1 FROM push_outbox AS waiting
+             WHERE waiting.device_id=due.device_id AND waiting.attempt>0 AND waiting.next>?
+           )
+         )
+         SELECT id,deviceId,value,attempt FROM ranked ORDER BY device_rank,expires,deviceId LIMIT 20`,
       )
       .all(now, now)
+    const devices = new Map<string, OutboxEntry[]>()
     for (const raw of rows) {
+      const entry = decode(outboxEntrySchema, raw)
+      const batch = devices.get(entry.deviceId)
+      if (batch) batch.push(entry)
+      else devices.set(entry.deviceId, [entry])
+    }
+    // Settle every lane before admitting another flush, even if a database operation fails.
+    const outcomes = await Effect.runPromise(
+      Effect.forEach(
+        devices.values(),
+        (entries) => Effect.result(Effect.tryPromise(() => this.deliverDevice(entries))),
+        { concurrency: parallelDevices },
+      ),
+    )
+    const fault = outcomes.find(Result.isFailure)
+    if (fault) throw fault.failure
+    if (outcomes.some((outcome) => Result.isSuccess(outcome) && outcome.success === 'failed'))
+      this.error = 'Push delivery failed. Check the relay connection and provider credentials.'
+    else if (
+      outcomes.some((outcome) => Result.isSuccess(outcome) && outcome.success === 'delivered')
+    )
+      this.error = null
+  }
+  private async deliverDevice(entries: readonly OutboxEntry[]) {
+    let delivered = false
+    for (const entry of entries) {
       if (this.stopped) break
-      const entry = decode(
-        mutableStruct({ ...record.fields, id: Schema.String, attempt: Schema.Number }),
-        raw,
-      )
-      if (failed.has(entry.deviceId)) continue
       if (
         entry.deviceId !== 'owner' &&
         !this.devices.list().some((device) => device.id === entry.deviceId && !device.revokedAt)
@@ -534,17 +561,17 @@ export class PushNotifications {
         } else if (result.delivered)
           this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         else throw new Error('Notification was not delivered')
-        if (!failed.size) this.error = null
+        delivered = true
       } catch {
-        this.error = 'Push delivery failed. Check the relay connection and provider credentials.'
         const attempt = entry.attempt + 1
         const next = Date.now() + Math.min(30_000 * 2 ** Math.min(attempt - 1, 5), 900_000)
-        failed.add(entry.deviceId)
         this.db
           .prepare('UPDATE push_outbox SET attempt=?,next=? WHERE id=?')
           .run(attempt, next, entry.id)
+        return 'failed' as const
       }
     }
+    return delivered ? ('delivered' as const) : ('idle' as const)
   }
   start() {
     if (this.db.prepare('SELECT 1 FROM push_devices WHERE NOT json_valid(value) LIMIT 1').get())

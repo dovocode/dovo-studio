@@ -134,3 +134,17 @@ test('a send acknowledgement clears only the text that was submitted', () => {
   draft.flush()
   expect(write).toHaveBeenLastCalledWith('next')
 })
+
+test('guarded acceptance never writes an independent workspace clear', () => {
+  const write = vi.fn<(text: string, expected?: string) => void>()
+  const composer = createComposerDraft('Inspect the files', write)
+  composer.receive('Inspect the files', 'original')
+  composer.accept('Inspect the files', composer.revision, 'original')
+  expect(composer.text).toBe('')
+  expect(write).not.toHaveBeenCalled()
+  composer.receive('Inspect the files', 'original')
+  expect(composer.text).toBe('')
+  composer.receive('Inspect the files', 'newer')
+  expect(composer.text).toBe('Inspect the files')
+  expect(write).not.toHaveBeenCalled()
+})

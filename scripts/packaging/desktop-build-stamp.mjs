@@ -1,6 +1,7 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { buildDigest } from './build-fingerprint.mjs'
+import { rendererSourceCommit } from './renderer-build-identity.mjs'
 
 async function source(root) {
   const paths = [
@@ -31,6 +32,7 @@ export async function writeDesktopBuildStamp(root) {
     join(root, 'apps/desktop/dist/.dovo-build.json'),
     JSON.stringify({
       source: await source(root),
+      rendererCommit: rendererSourceCommit(root),
       outputs: await outputs(root),
     }),
   )
@@ -44,7 +46,11 @@ export async function verifyDesktopBuild(root) {
       cause: error,
     })
   }
-  if (stamp?.source !== (await source(root)) || stamp?.outputs !== (await outputs(root)))
+  if (
+    stamp?.source !== (await source(root)) ||
+    stamp?.rendererCommit !== rendererSourceCommit(root) ||
+    stamp?.outputs !== (await outputs(root))
+  )
     throw new Error(
       'The desktop build does not match its sources or outputs. Run pnpm build first.',
     )

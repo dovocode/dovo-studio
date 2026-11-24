@@ -511,7 +511,7 @@ it('does not advance a cancelled task into a review gate', async () => {
   expect(s.jobs.list()[0].status).toBe('cancelled')
   expect(s.jobs.list()[0].completedNodes).not.toContain('task')
 })
-it('retries only the failed task and rejects delayed approval of an earlier review', async () => {
+it('retries only the failed task and confirms the earlier review without advancing the next', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -585,14 +585,14 @@ it('retries only the failed task and rejects delayed approval of an earlier revi
   })
   const id = s.jobs.startManual(flow.id, 'request-one')
   await waitForJob(() => expect(s.jobs.list()[0].waitingNodeId).toBe('middle-review'))
-  const review = (nodeId: string) =>
+  const review = (nodeId: string, allow = true) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/jobs/review`, {
       method: 'POST',
       headers: {
         Authorization: 'Bearer test-owner-token-with-at-least-32-characters',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ id, nodeId, attempt: 1, allow: true }),
+      body: JSON.stringify({ id, nodeId, attempt: 1, allow }),
     })
   expect((await review('middle-review')).status).toBe(200)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('failed'))
@@ -655,7 +655,8 @@ it('retries only the failed task and rejects delayed approval of an earlier revi
     attempt: 2,
     taskId: failed.taskIds[1],
   })
-  expect((await review('middle-review')).status).toBe(409)
+  expect((await review('middle-review')).status).toBe(200)
+  expect((await review('middle-review', false)).status).toBe(409)
   expect(s.jobs.detail(id).waitingNodeId).toBe('review')
   expect((await review('review')).status).toBe(200)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
@@ -1832,5 +1833,40 @@ it.each([
     s.jobs.approve(id, true)
     await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
     expect(s.jobs.detail(id).retryAt).toBeUndefined()
+  },
+)
+
+it.each([true, false])(
+  'confirms the exact saved review choice after runtime restart (allow: %s)',
+  async (allow) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const token = 'automation-review-owner-token-at-least-32-characters'
+    const databasePath = await databaseFile('review-receipt.sqlite')
+    let runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
+    cleanups.push(() => runtime.close())
+    runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+    const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Fixture done'))
+    vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run,
+    })
+    const id = runtime.services.jobs.startManual('flow', 'start-review')
+    await waitForJob(() => expect(runtime.services.jobs.detail(id).waitingNodeId).toBe('review'))
+    const review = (choice: boolean) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/jobs/review`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, nodeId: 'review', attempt: 1, allow: choice }),
+      })
+    const status = allow ? 'completed' : 'cancelled'
+    expect((await review(allow)).status).toBe(200)
+    await waitForJob(() => expect(runtime.services.jobs.detail(id).status).toBe(status))
+    await runtime.close()
+    runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
+    expect((await review(allow)).status).toBe(200)
+    expect((await review(!allow)).status).toBe(409)
+    expect(runtime.services.jobs.detail(id).status).toBe(status)
+    expect(run).toHaveBeenCalledOnce()
   },
 )

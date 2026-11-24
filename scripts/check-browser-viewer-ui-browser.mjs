@@ -410,6 +410,95 @@ try {
         () => document.querySelector('#sessionState').dataset.state === 'online',
       )
     }
+    if (width === 1100) {
+      const initialSession = '00000000-0000-4000-8000-000000000001'
+      const replacementSession = '00000000-0000-4000-8000-000000000002'
+      const reopenedSession = '00000000-0000-4000-8000-000000000003'
+      const state = async (title, sessionId) => {
+        await page.evaluate(
+          ({ title, sessionId }) =>
+            window.socket.onmessage({
+              data: JSON.stringify({
+                type: 'state',
+                sessionId,
+                title,
+                url: 'https://example.test/doc',
+                back: false,
+                forward: false,
+                loading: false,
+                editable: false,
+              }),
+            }),
+          { title, sessionId },
+        )
+        assert.equal(await page.title(), title)
+      }
+      const reconnectAfterHiding = async () => {
+        const count = await page.evaluate(
+          () => window.bridges.filter((type) => type === 'reconnect').length,
+        )
+        await page.evaluate(() => {
+          Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+          document.dispatchEvent(new Event('visibilitychange'))
+          Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+          document.dispatchEvent(new Event('visibilitychange'))
+        })
+        await page.waitForFunction(
+          (count) => window.bridges.filter((type) => type === 'reconnect').length === count + 1,
+          count,
+        )
+        await post({ type: 'connect', url: 'ws://fixture/reconnected' })
+        await page.getByText('Connected', { exact: true }).waitFor()
+      }
+      const replacement = page.getByText(
+        'Reconnected in a new browser session. Unsaved changes may be missing.',
+      )
+      await state('Original document', initialSession)
+      await reconnectAfterHiding()
+      await state('Same document', initialSession)
+      assert.equal(await replacement.isVisible(), false)
+      await reconnectAfterHiding()
+      await state('New document', replacementSession)
+      await replacement.waitFor()
+      await state('New document updated', replacementSession)
+      assert.equal(await replacement.isVisible(), true)
+
+      await page.evaluate(
+        (sessionId) =>
+          window.socket.onmessage({
+            data: JSON.stringify({
+              type: 'closed',
+              sessionId,
+              reason: 'expired',
+              message: 'Fixture ended',
+            }),
+          }),
+        replacementSession,
+      )
+      await page.getByRole('button', { name: 'Open URL in a new session', exact: true }).click()
+      await post({ type: 'connect', url: 'ws://fixture/reopened-on-purpose' })
+      await page.getByText('Connected', { exact: true }).waitFor()
+      await state('Deliberately reopened document', reopenedSession)
+      assert.equal(await replacement.isVisible(), false)
+      await reconnectAfterHiding()
+      await state('Older runtime without a session ID', undefined)
+      assert.equal(await replacement.isVisible(), false)
+
+      const connectFreshViewer = async (previousSessionId) => {
+        await page.goto('http://viewer.test/')
+        await post({ type: 'connect', url: 'ws://fixture/remounted', previousSessionId })
+        await page.getByText('Connected', { exact: true }).waitFor()
+      }
+      await connectFreshViewer(initialSession)
+      await state('Same host page after remount', initialSession)
+      assert.equal(await replacement.isVisible(), false)
+      await connectFreshViewer(initialSession)
+      await state('Replacement host page after remount', replacementSession)
+      await replacement.waitFor()
+      await connectFreshViewer(replacementSession)
+      await state('Older runtime after remount', undefined)
+      assert.equal(await replacement.isVisible(), false)
+    }
     // Device previews keep hardware actions, without irrelevant browser viewport settings.
     await post({ type: 'configure', device: { platform: 'ios', kind: 'physical' } })
     await page.getByRole('button', { name: 'Home', exact: true }).waitFor()

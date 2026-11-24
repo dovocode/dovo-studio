@@ -1345,7 +1345,7 @@ function Welcome() {
           <Text style={[styles.muted, { fontSize: 15, lineHeight: 21, textAlign: 'center' }]}>
             <InterfaceText>
               {
-                'Dovo runs your agents on your own computer. Pair this phone once to follow tasks, answer questions and review changes from anywhere on your Wi-Fi or VPN.'
+                'Pair your phone to follow threads, answer questions, and review changes on your computer.'
               }
             </InterfaceText>
           </Text>
@@ -1358,7 +1358,7 @@ function Welcome() {
           />
           <Text style={[styles.muted, { textAlign: 'center' }]}>
             <InterfaceText>
-              {'You’ll need Dovo open on your computer to get a pairing code.'}
+              {'Use a QR code from Dovo or enter the address and pairing code from your computer.'}
             </InterfaceText>
           </Text>
         </View>

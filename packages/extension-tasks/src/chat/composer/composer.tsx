@@ -29,7 +29,7 @@ import {
 import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { randomUUID, taskUndoBackupId, taskForkResultSchema, taskSchema } from '@dovo/protocol'
-import { projectPrompts } from '@dovo/protocol'
+import { projectPrompts, taskDraftIdentity } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -600,6 +600,7 @@ export function Composer({
     runId?: string
     startupConfiguration?: Task
     preserveQueuePause?: boolean
+    draftIdentity?: string
   } | null>(null)
   const pendingSubmission = useRef<string | null>(null)
   const pendingDraftProtections = useRef(new Map<string, NonNullable<typeof attempt.current>>())
@@ -617,15 +618,19 @@ export function Composer({
       const unchanged = composerDraft.controller.revision === submitted.draftRevision
       if (!submitted.accepted) {
         submitted.accepted = true
-        acceptDraft(submitted.text, submitted.draftRevision)
-        if (unchanged) {
+        acceptDraft(submitted.text, submitted.draftRevision, submitted.draftIdentity)
+        if (unchanged && submitted.draftIdentity === undefined) {
           setTurnSettings((current) =>
             sameTurnSettings(current, submitted.turnSettings) ? null : current,
           )
           if (submitted.plan) setDraftPlan(false)
         }
       }
-      if (!unchanged && composerDraft.controller.text.trim()) {
+      if (
+        !unchanged &&
+        submitted.draftIdentity === undefined &&
+        composerDraft.controller.text.trim()
+      ) {
         const preserveSettings =
           !!submitted.turnSettings && sameTurnSettings(draftTurnSettings, submitted.turnSettings)
         const preservePlan = !!submitted.plan && draftPlan
@@ -894,6 +899,9 @@ export function Composer({
         attachmentIds,
         mode,
         draftRevision: composerDraft.controller.revision,
+        ...(connection && snapshot?.messageDraftIdentitySupported
+          ? { draftIdentity: taskDraftIdentity(text, attachmentIds, draftTurnSettings, draftPlan) }
+          : {}),
         turnSettings: turnSettings ?? undefined,
         ...(plan ? { plan: true } : {}),
         runId: mode === 'steer' ? task.activeRunId : undefined,
@@ -986,6 +994,9 @@ export function Composer({
           {
             id: task.id,
             messageId: attempt.current.id,
+            ...(attempt.current.draftIdentity
+              ? { draftIdentity: attempt.current.draftIdentity }
+              : {}),
             ...(firstMessage && !task.bot && snapshot?.messageSetupSupported
               ? {
                   initialTitle: { before: task.title, after: attempt.current.title },
@@ -1037,12 +1048,14 @@ export function Composer({
         )
       const unchanged = composerDraft.controller.revision === attempt.current.draftRevision
       if (!attempt.current.accepted) {
-        composerDraft.accept(text, attempt.current.draftRevision)
+        composerDraft.accept(text, attempt.current.draftRevision, attempt.current.draftIdentity)
         attempt.current.accepted = true
       }
-      if (unchanged && attempt.current.plan) setDraftPlan(false)
+      if (unchanged && attempt.current.draftIdentity === undefined) {
+        if (attempt.current.plan) setDraftPlan(false)
+        setTurnSettings(null)
+      }
       attempt.current = null
-      if (unchanged) setTurnSettings(null)
       if (acknowledged && backgroundTask) onStartBackground?.(backgroundTask)
     } catch (e) {
       if (attempt.current?.accepted) {

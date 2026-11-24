@@ -4,7 +4,9 @@ export {
   resolvePullReviewSource,
 } from './pull-review-source'
 export { prReviewIllustration } from '@dovo/design'
+export { createPullReviewDraftStorage, pullReviewDraftScope } from './pull-review-drafts'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { browserPullReviewDraftStorage, type PullReviewDraftStorage } from './pull-review-drafts'
 import {
   pullFindingText,
   randomUUID,
@@ -21,6 +23,15 @@ import {
 
 type Request = (path: string, input: unknown) => Promise<PullCodeReviewReport>
 type Draft = { value: PullCodeReviewDraft; version: number }
+
+function sameDraft(a: PullCodeReviewDraft, b: PullCodeReviewDraft) {
+  return (
+    a.body === b.body &&
+    a.event === b.event &&
+    JSON.stringify(a.selected) === JSON.stringify(b.selected) &&
+    JSON.stringify(a.dismissed) === JSON.stringify(b.dismissed)
+  )
+}
 
 const activityLabels = {
   preparing: 'Preparing review…',
@@ -56,15 +67,19 @@ const starts = new Map<string, { fingerprint: string; requestId: string }>()
 export function usePullCodeReview({
   target,
   scope,
+  draftScope,
+  draftStorage = browserPullReviewDraftStorage,
   request,
   connected,
 }: {
   target: PullCodeReviewTarget
   scope: string
+  draftScope?: string
+  draftStorage?: PullReviewDraftStorage
   request: Request
   connected: boolean
 }) {
-  const key = JSON.stringify([scope, target])
+  const key = JSON.stringify([scope, draftScope, target])
   const live = useRef(key)
   live.current = key
   const [state, setState] = useState<{ key: string; report: PullCodeReviewReport }>()
@@ -73,6 +88,9 @@ export function usePullCodeReview({
   const [busy, setBusy] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [dirty, setDirty] = useState(0)
+  const [loadedDraftKey, setLoadedDraftKey] = useState('')
+  const [persistedDraft, setPersistedDraft] = useState<Draft>()
+  const [storageError, setStorageError] = useState<{ key: string; message: string }>()
   const [selected, setSelected] = useState('')
   const [depth, setDepth] = useState<PullReviewDepth>()
   const [runChecks, setRunChecks] = useState(false)
@@ -99,8 +117,60 @@ export function usePullCodeReview({
   const report = state?.key === key ? state.report : undefined
   const review = report?.reviews.find((item) => item.id === selected) ?? report?.reviews[0]
   const draftKey = review ? `${key}:${review.id}` : ''
+  const latestReview = useRef({ draftKey, review })
+  latestReview.current = { draftKey, review }
+  const savedDraftKey = review && draftScope ? JSON.stringify([draftScope, target, review.id]) : ''
+  const draftReady = !savedDraftKey || savedDraftKey === loadedDraftKey
   const pending = drafts.get(draftKey)
   const draft = pending?.value ?? review?.draft
+  useEffect(() => {
+    if (!savedDraftKey) return
+    let active = true
+    void draftStorage.read(savedDraftKey).then(
+      (entry) => {
+        if (!active) return
+        if (entry) {
+          if (!drafts.has(draftKey)) drafts.set(draftKey, entry)
+          setPersistedDraft(entry)
+        }
+        setLoadedDraftKey(savedDraftKey)
+      },
+      () => {
+        if (!active) return
+        setStorageError({
+          key: savedDraftKey,
+          message: 'Could not read the review draft saved on this device.',
+        })
+        setLoadedDraftKey(savedDraftKey)
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [draftKey, draftStorage, savedDraftKey])
+  const persistDraft = useCallback(
+    (entry?: Draft) => {
+      if (!savedDraftKey) return
+      const write = entry
+        ? draftStorage.save(savedDraftKey, entry)
+        : draftStorage.remove(savedDraftKey)
+      void write.then(
+        () => {
+          if (latestReview.current.draftKey !== draftKey) return
+          setPersistedDraft(entry)
+          setStorageError((current) => (current?.key === savedDraftKey ? undefined : current))
+        },
+        () => {
+          if (latestReview.current.draftKey !== draftKey) return
+          setStorageError({
+            key: savedDraftKey,
+            message: 'Could not update the review draft saved on this device.',
+          })
+        },
+      )
+    },
+    [draftStorage, draftKey, savedDraftKey],
+  )
   const command = useCallback(
     async (action: string, input: object = {}) => {
       if (!connected) return false
@@ -173,10 +243,20 @@ export function usePullCodeReview({
     }
   }, [command])
   const save = useCallback(async () => {
-    if (!review) return false
+    if (!draftReady) return false
     if (saving.current && !(await saving.current)) return false
+    const { draftKey: currentKey, review } = latestReview.current
+    if (!review || currentKey !== draftKey) return false
     const entry = drafts.get(draftKey)
     if (!entry) return true
+    if (sameDraft(entry.value, review.draft)) {
+      drafts.delete(draftKey)
+      persistDraft()
+      setError('')
+      setDirty((n) => n + 1)
+      return true
+    }
+    if (entry.version !== review.version || review.publication) return false
     const task = (async () => {
       const result = await command('save', {
         reviewId: review.id,
@@ -192,8 +272,14 @@ export function usePullCodeReview({
         return false
       }
       const current = drafts.get(draftKey)
-      if (current === entry) drafts.delete(draftKey)
-      else if (current && saved) drafts.set(draftKey, { ...current, version: saved.version })
+      if (current === entry) {
+        drafts.delete(draftKey)
+        persistDraft()
+      } else if (current) {
+        const next = { ...current, version: saved.version }
+        drafts.set(draftKey, next)
+        persistDraft(next)
+      }
       setDirty((n) => n + 1)
       return !drafts.has(draftKey)
     })()
@@ -203,19 +289,21 @@ export function usePullCodeReview({
     } finally {
       if (saving.current === task) saving.current = undefined
     }
-  }, [command, draftKey, review?.id])
+  }, [command, draftKey, draftReady, persistDraft])
   useEffect(() => {
-    if (!pending || !connected) return
+    if (!pending || !connected || !draftReady) return
     const timer = setTimeout(() => void save(), 500)
     return () => clearTimeout(timer)
-  }, [dirty, pending, save, connected])
+  }, [dirty, pending, save, connected, draftReady, review?.version])
   const edit = (change: Partial<PullCodeReviewDraft>) => {
-    if (!review || review.publication) return
+    if (!review || review.publication || !draftReady) return
     const before = drafts.get(draftKey)
-    drafts.set(draftKey, {
+    const next = {
       value: { ...(before?.value ?? review.draft), ...change },
       version: before?.version ?? review.version,
-    })
+    }
+    drafts.set(draftKey, next)
+    persistDraft(next)
     setDirty((n) => n + 1)
   }
   const start = async (
@@ -317,20 +405,24 @@ export function usePullCodeReview({
     setDepth,
     runChecks,
     setRunChecks,
-    review,
-    draft,
-    error,
+    review: draftReady ? review : undefined,
+    draft: draftReady ? draft : undefined,
+    error: error || (storageError?.key === savedDraftKey ? storageError.message : ''),
     notice,
     busy,
     publishing,
     dirty: !!pending,
+    savedLocally: !!pending && persistedDraft === pending,
     select: async (id: string) => {
       if (await save()) setSelected(id)
     },
     edit,
     add,
     start,
-    save,
+    save: () => {
+      if (pending && storageError?.key === savedDraftKey) persistDraft(pending)
+      return save()
+    },
     command,
     refresh: async () => {
       const result = await command('read')
@@ -361,16 +453,23 @@ export function usePullCodeReview({
     },
     reloadDraft: () => {
       drafts.delete(draftKey)
+      persistDraft()
       setDirty((n) => n + 1)
       void command('read')
     },
     replaceSavedDraft: () => {
       const entry = drafts.get(draftKey)
       if (entry && review) {
-        drafts.set(draftKey, { ...entry, version: review.version })
+        const next = { ...entry, version: review.version }
+        drafts.set(draftKey, next)
+        persistDraft(next)
         setDirty((n) => n + 1)
       }
     },
-    draftConflict: !!pending && !!review && pending.version < review.version,
+    draftConflict:
+      !!pending &&
+      !!review &&
+      pending.version !== review.version &&
+      !sameDraft(pending.value, review.draft),
   }
 }

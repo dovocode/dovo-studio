@@ -1,6 +1,7 @@
 import {
   MAX_ATTACHMENTS,
   workspaceDraftHash,
+  taskDraftIdentity,
   nextQueuedMessage,
   sameTurnSettings,
   turnSettingsKey,
@@ -80,7 +81,7 @@ export class TaskQueue {
     turnSettings?: TurnSettings,
     plan = false,
   ) {
-    this.store.taskSummary(id)
+    const task = this.store.taskSummary(id)
     const receipt = this.store.taskSubmission(id, messageId)
     if (receipt) {
       if (receipt !== fingerprint(text, attachments, turnSettings, plan))
@@ -90,8 +91,9 @@ export class TaskQueue {
         )
       return true
     }
-    const task = this.store.task(id)
-    const existing = [...task.messages, ...(task.queue ?? [])].find((m) => m.id === messageId)
+    const existing =
+      this.store.taskMessage(id, messageId) ??
+      task.queue?.find((message) => message.id === messageId)
     if (existing) {
       if (
         fingerprint(
@@ -124,6 +126,7 @@ export class TaskQueue {
       unsnooze?: boolean
       clearCompletedTodos?: boolean
       source?: MessageSource
+      draftIdentity?: string
       /** One read-only planning turn; it cannot steer a run with broader access. */
       plan?: boolean
     } = {},
@@ -148,11 +151,21 @@ export class TaskQueue {
       throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
     // Runtime-origin input can coincide with an unsent human draft. Only a user submission
     // consumes composer state; form answers, review actions and child input leave it intact.
-    const consumesDraft =
+    const humanSubmission =
       (!options.source || options.source.kind === 'user') &&
       !response &&
       !review &&
       !subagentResultId
+    const consumesDraft =
+      humanSubmission &&
+      (options.draftIdentity === undefined ||
+        options.draftIdentity ===
+          taskDraftIdentity(
+            task.draft,
+            (task.draftAttachments ?? []).map(({ id }) => id),
+            task.draftTurnSettings,
+            task.draftPlan,
+          ))
     const createdAt = new Date().toISOString()
     this.store.updateTask(
       id,

@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { maxValue, minValue, mutableArray, mutableStruct, refine } from '../shared/schema.js'
 import { taskSchema, type Task } from '../workspace.js'
 import type { RuntimeOverview } from './connection/runtime-fleet.js'
-import { recentClientActions } from '../shared/client-diagnostics.js'
+import { diagnosticMessage, recentClientActions } from '../shared/client-diagnostics.js'
 
 /** The public repository a triage agent reads for the running commit. */
 export const PROBLEM_REPORT_REPOSITORY = 'dovocode/dovo-studio'
@@ -11,6 +11,34 @@ export const PROBLEM_REPORT_ATTACHMENT_NAME = 'dovo-diagnostics.md'
 export const MAX_PROBLEM_REPORT_BYTES = 64 * 1024
 export const MAX_PROBLEM_REPORT_CLIENT_ERRORS = 20
 export const MAX_PROBLEM_REPORT_TEXT = 4000
+
+export function localProblemDiagnostics(
+  client: ProblemReportClient,
+  connection: { saved: number; connected: number; error?: string | null },
+  errors: readonly ProblemReportClientError[],
+) {
+  const message = (text: string) =>
+    diagnosticMessage(text)
+      .replace(/https?:\/\/[^\s<>"']+/gi, '[address]')
+      .slice(0, 600)
+  const { saved, connected, error } = connection
+  return JSON.stringify(
+    {
+      client,
+      connection: { saved, connected, ...(error ? { error: message(error) } : {}) },
+      recentErrors: [...errors]
+        .sort((left, right) => right.at.localeCompare(left.at))
+        .slice(0, MAX_PROBLEM_REPORT_CLIENT_ERRORS)
+        .map((entry) => ({
+          at: entry.at,
+          message: message(entry.message),
+          ...(entry.source ? { source: message(entry.source) } : {}),
+        })),
+    },
+    null,
+    2,
+  )
+}
 
 const bounded = (max: number) => maxValue(Schema.String, max)
 export const problemReportIncludeSchema = mutableStruct({

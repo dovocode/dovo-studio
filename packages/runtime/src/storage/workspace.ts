@@ -1292,6 +1292,16 @@ export class WorkspaceStore {
     } else if (this.conversations.contextExcluded(id, messageId, resets)) return undefined
     return this.taskMessage(id, messageId)
   }
+  /** Notification previews need the latest assistant message, including replies outside a turn. */
+  latestAssistantText(id: string) {
+    const seed = this.seed?.get(id)
+    if (!seed) return this.conversations.latestAssistantText(id)
+    for (let index = seed.messages.length - 1; index >= 0; index--) {
+      const message = seed.messages[index]!
+      if (message.role === 'assistant') return message.text
+    }
+    return undefined
+  }
   /** Latest sent user messages for composer recall, independent of the visible history window. */
   composerHistory(id: string, before?: string) {
     const summary = this.taskSummary(id)

@@ -28,6 +28,7 @@ import {
   type JobRun,
   type AutomationNode,
   type TaskSummary,
+  type TaskTurn,
   type McpAutomationEvent,
 } from '@dovo/protocol'
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
@@ -589,32 +590,42 @@ export class Jobs {
   approve(id: string, allow: boolean, expected?: { nodeId?: string; attempt?: number }) {
     if (this.stopping) throw new HttpError(503, 'Runtime is shutting down')
     const run = this.runs.get(id)
+    if (expected?.nodeId !== undefined && expected.attempt !== undefined) {
+      const recorded = run?.reviewDecisions?.find(
+        (choice) => choice.nodeId === expected.nodeId && choice.attempt === expected.attempt,
+      )
+      if (recorded) {
+        if (recorded.allow !== allow)
+          throw new HttpError(409, 'This review already has a different decision.')
+        return
+      }
+    }
     if (!run || run.status !== 'waiting' || !run.waitingNodeId)
       throw new HttpError(409, 'Job is not waiting for review')
-    if (expected) {
-      const step = runSteps(run).find((item) => item.nodeId === run.waitingNodeId)
-      const legacy = expected.nodeId === undefined && expected.attempt === undefined
-      if (
-        !step ||
+    const step = runSteps(run).find((item) => item.nodeId === run.waitingNodeId)
+    const legacy = expected?.nodeId === undefined && expected?.attempt === undefined
+    if (
+      !step ||
+      (expected &&
         (legacy
           ? step.attempt !== 1 ||
             (run.attempt ?? 1) !== 1 ||
             run.flow.nodes.filter((node) => node.data.kind === 'review').length !== 1
-          : step.nodeId !== expected.nodeId || step.attempt !== expected.attempt)
-      )
-        throw new HttpError(
-          409,
-          'This review changed. Refresh the run and review the current step.',
-        )
-    }
+          : step.nodeId !== expected.nodeId || step.attempt !== expected.attempt))
+    )
+      throw new HttpError(409, 'This review changed. Refresh the run and review the current step.')
     if (allow && run.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
+    const nodeId = run.waitingNodeId
+    const reviewed = {
+      ...run,
+      reviewDecisions: [...(run.reviewDecisions ?? []), { nodeId, attempt: step.attempt, allow }],
+    }
     if (!allow) {
-      this.finish(id, 'cancelled')
+      this.finish(reviewed, 'cancelled')
       return
     }
-    const nodeId = run.waitingNodeId
     this.save({
-      ...updateStep(run, nodeId, {
+      ...updateStep(reviewed, nodeId, {
         status: 'completed',
         finishedAt: new Date().toISOString(),
       }),
@@ -687,12 +698,12 @@ export class Jobs {
     }
   }
   private finish(
-    id: string,
+    target: string | StoredRun,
     status: 'completed' | 'failed' | 'cancelled',
     error?: string,
     interrupted?: boolean,
   ) {
-    const run = this.runs.get(id)
+    const run = typeof target === 'string' ? this.runs.get(target) : target
     if (!run) return
     const finishedAt = new Date().toISOString()
     const current =
@@ -1225,6 +1236,7 @@ export class Jobs {
           schema === undefined
         ) {
           if (!(yield* this.runBotStep(run, node, node.data.botId))) return
+          this.enforceBudgets()
         } else if (node.data.kind === 'task') {
           // A deleted thread must not make every retry fail; start the step over instead.
           let existingTask =
@@ -1497,15 +1509,37 @@ export class Jobs {
       let tokens = 0,
         cost = 0,
         unpriced = false
+      const countTurn = (task: Pick<TaskSummary, 'id' | 'title'>, turn: TaskTurn) => {
+        tokens += turn.tokens ?? 0
+        const priced = this.store.usagePricing.price({
+          taskId: task.id,
+          title: task.title,
+          turn,
+        }).turn
+        if (priced.estimatedCostUsd === undefined && turn.status !== 'running') unpriced = true
+        else cost += priced.estimatedCostUsd ?? 0
+      }
       for (const id of ids) {
-        const task = this.store.get().tasks.find((t) => t.id === id)
+        const task = this.store.get().tasks.find((item) => item.id === id)
         if (!task) continue
-        for (const turn of this.store.task(id).turns ?? []) {
-          tokens += turn.tokens ?? 0
-          const priced = this.store.usagePricing.price({ taskId: id, title: task.title, turn }).turn
-          if (priced.estimatedCostUsd === undefined && turn.status !== 'running') unpriced = true
-          else cost += priced.estimatedCostUsd ?? 0
-        }
+        for (const turn of this.store.task(id).turns ?? []) countTurn(task, turn)
+      }
+      // Recovered legacy routines may still execute in a shared Bot. Count only the
+      // turn which consumed the saved step message, never the Bot's other turns.
+      const sharedTurns = new Set<string>()
+      for (const step of runSteps(run)) {
+        const taskId = step.taskId
+        if (step.status === 'pending' || !taskId || !step.messageId || ids.has(taskId)) continue
+        const node = run.flow.nodes.find((item) => item.id === step.nodeId)
+        if (node?.data.botId !== taskId) continue
+        const task = this.store.get().tasks.find((item) => item.id === taskId)
+        if (!task) continue
+        const turn = botStepTurn(this.store.task(taskId), step.messageId)
+        if (!turn) continue
+        const key = JSON.stringify([taskId, turn.id])
+        if (sharedTurns.has(key)) continue
+        sharedTurns.add(key)
+        countTurn(task, turn)
       }
       const reason =
         policy.minutes && now - Date.parse(run.createdAt) >= policy.minutes * 60000

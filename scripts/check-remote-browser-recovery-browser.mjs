@@ -10,15 +10,15 @@ const built = await build({
 import {createRoot} from 'react-dom/client';
 import {useState} from 'react';
 import {RemoteBrowser} from './src/browser/remote-browser.tsx';
-window.host={sessions:new Map(),calls:[],states:[],connections:[]};
+window.host={sessions:new Map(),calls:[],states:[],connections:[],closed:0};
 function App(){
   const [url,setUrl]=useState('http://localhost:3000/initial');
   const [mount,setMount]=useState(0);
   const [theme,setTheme]=useState('dark');window.theme=theme;window.setTheme=setTheme;
   window.setInitialUrl=setUrl;
   window.remount=()=>setMount(value=>value+1);
-  return <><span data-url={url}/><RemoteBrowser key={mount} taskId="task" tabId="tab"
-    initialUrl={url} onConnection={(online,ended)=>window.host.connections.push({online,ended})} onState={state=>{
+  return <><span data-url={url}/><RemoteBrowser key={mount} taskId="task" tabId="tab" profileId="work"
+    initialUrl={url} onClosed={()=>window.host.closed++} onConnection={(online,ended)=>window.host.connections.push({online,ended})} onState={state=>{
       window.host.states.push(state.url);
       setUrl(state.url==='about:blank'?'':state.url);
     }}/></>;
@@ -28,7 +28,7 @@ window.bridge=(data)=>window.dispatchEvent(new MessageEvent('message',{
   data:{channel:'dovo-browser',...data},
 }));
 window.recover=(url)=>{
-  window.bridge({type:'state',url,title:'Current page',editable:false,back:false,forward:false,loading:false});
+  window.bridge({type:'state',sessionId:'00000000-0000-4000-8000-000000000001',url,title:'Current page',editable:false,back:false,forward:false,loading:false});
   // The host has expired the old session or restarted. Its next open uses the supplied URL.
   window.host.sessions.clear();
   // Reconnect immediately, before React can commit the parent's updated tab URL.
@@ -77,7 +77,7 @@ const request=async(path,input)=>{
 const connection={address:'http://runtime.lan:4310',token:'device-token'};
 export const useWorkspace=()=>({connection,request});
 export const useResolvedTheme=()=> window.theme;
-export const remoteBrowserHtml='<html><body>Host viewer bridge</body></html>';
+export const remoteBrowserHtml='<html><body>Host viewer bridge<script>window.addEventListener("message",event=>{if(event.data.type==="connect")window.connected=event.data})</script></body></html>';
 export const readAppPreferences=()=>({browserViewport:'fill'});
 `,
         }))
@@ -97,6 +97,8 @@ try {
     const latest = await page.evaluate(() => window.host.calls.at(-1))
     assert.equal(latest.body.url, expected)
     assert.equal(latest.url, expected || 'about:blank')
+    assert.equal(latest.body.tabId, 'tab')
+    assert.equal(latest.body.profileId, 'work')
   }
   await opened(1, 'http://localhost:3000/initial')
   const viewer = page.frames()[1]
@@ -119,11 +121,20 @@ try {
     await page.evaluate(() => window.host.states.at(-1)),
     'http://localhost:3000/current',
   )
-  await page.evaluate(() => window.bridge({ type: 'closed', message: 'Browser session ended.' }))
+  await page.evaluate(() =>
+    window.bridge({
+      type: 'closed',
+      sessionId: '00000000-0000-4000-8000-000000000001',
+      reason: 'context-lost',
+      byPage: true,
+      message: 'Browser session ended.',
+    }),
+  )
   assert.deepEqual(await page.evaluate(() => window.host.connections.at(-1)), {
     online: false,
     ended: true,
   })
+  assert.equal(await page.evaluate(() => window.host.closed), 0)
   await page.evaluate(() => window.bridge({ type: 'connection', online: true }))
   assert.deepEqual(await page.evaluate(() => window.host.connections.at(-1)), {
     online: true,
@@ -145,6 +156,11 @@ try {
     window.remount()
   })
   await opened(3, 'http://localhost:3000/current')
+  await page
+    .frames()[1]
+    .waitForFunction(
+      () => window.connected?.previousSessionId === '00000000-0000-4000-8000-000000000001',
+    )
 
   await page.evaluate(() => window.recover('about:blank'))
   await opened(4, '')

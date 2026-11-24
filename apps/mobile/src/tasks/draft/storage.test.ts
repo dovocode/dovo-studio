@@ -1026,3 +1026,20 @@ it('retains completed fork acceptance for stale retries and persists retried dis
     (await runClientEffect(createDraftStorage(storage).readRecordEffect('runtime.task')))?.fork,
   ).toBeUndefined()
 })
+
+it('preserves text edited back to the submitted wording after send and restart', async () => {
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', submission.text)
+  await runClientEffect(drafts.stageEffect('runtime.task', submission, submission.text))
+  await drafts.write('runtime.task', 'Different draft')
+  await drafts.write('runtime.task', submission.text)
+
+  const restarted = createDraftStorage(storage)
+  const received = await runClientEffect(
+    restarted.readRecordEffect('runtime.task', undefined, [submission.id]),
+  )
+  expect(received?.text).toBe(submission.text)
+  await runClientEffect(restarted.confirmEffect('runtime.task', submission, true))
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe(submission.text)
+})

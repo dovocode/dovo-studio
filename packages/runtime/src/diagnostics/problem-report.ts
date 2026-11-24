@@ -216,6 +216,7 @@ async function healthSection(s: Services, now = new Date()) {
         suspects: spike.suspects.slice(0, 5).map((suspect) => suspect.name),
       })),
     },
+    browserSessionEnds: s.browsers.recentSessionEnds(),
     lastCrash: readLastCrash(s.db.name) ?? null,
   }
   return ['## Runtime health', '', fence(JSON.stringify(summary, null, 2), 'json')].join('\n')

@@ -15,8 +15,9 @@ conversation as a child under the same Bot. Open **Side threads** to read or ren
 conversations.
 
 The Bot keeps its name, settings, permissions, memory, routines and unsent draft. The next message
-starts a new model session with no messages from the saved conversation. Files on the computer stay
-in place. This action does not delete memory.
+starts a new model session with no messages from the saved conversation. The Bot can still use facts
+you asked it to save in memory. The earlier messages are available under **Side threads**, marked
+**Saved Bot conversation**. Files on the computer stay in place.
 
 Finish active work and clear queued messages first. If another device changes the conversation
 before confirmation, review the conversation and try again. Retrying a completed request does not

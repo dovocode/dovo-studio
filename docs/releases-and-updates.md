@@ -45,10 +45,10 @@ restart by turning its close request into a hide action. Update preparation also
 quit flag before installation. macOS can close windows before it emits `before-quit`. Recovery
 restores the normal hide behavior if installation fails.
 
-Run `xvfb-run -a node scripts/check-file-drafts-native.mjs` on Linux to check draft cancellation,
-document shutdown and the actual Quick task panel's quit behavior in an isolated Electron profile.
-This check does not verify installation or restart on macOS. Test the signed update on a Mac to
-verify that boundary.
+Linux Check runs `xvfb-run -a pnpm test:file-drafts:native` to check draft cancellation, document
+shutdown and the actual Quick task panel's quit behavior in an isolated Electron profile. This check
+does not verify installation or restart on macOS. Test the signed update on a Mac to verify that
+boundary.
 
 After an external macOS app replacement, Studio can refresh an older background runtime from the
 same app path and release channel. It checks the authenticated runtime, the launchd PID, the exact
@@ -103,10 +103,19 @@ release checks retain their public metadata fallback.
    and `APPLE_TEAM_ID`. Do not commit signing material. Configure the Windows signing environment as
    described in [Windows signing setup](windows-signing.md). Linux needs no signing credentials.
 4. Run **Release** manually with a matching `vX.Y.Z` tag, or push that tag. All jobs build the
-   selected commit. The workflow creates a draft and verifies every expected architecture/format and
-   update feed. The draft notes start with the version's `CHANGELOG.md` section, followed by the
-   notes that GitHub generates. The workflow stops if fragments remain in `changelog.d/`. Inspect
-   the artifacts and publish the draft only after native installation tests.
+   selected commit. For a manual Stable build, select the commit the existing Stable tag points to.
+   The workflow rejects a tag with a different source before creating the draft. All packaging and
+   signing jobs use the verified commit. The workflow verifies every expected architecture and
+   format, checks each update feed against the actual installer bytes, and records the source and
+   asset SHA-256 digests in `dovo-release-manifest.json`. The verify-only run checks the published
+   tag and asset metadata against that manifest. Published releases whose tagged source predates the
+   manifest use the historical asset list for verify-only and keep the original distribution
+   targets. Verification checks the published update feeds and available asset digests. These
+   releases have no build manifest linking the downloaded bytes to the tagged source. The draft
+   notes start with the version's `CHANGELOG.md` section, followed by the notes that GitHub
+   generates. The workflow stops if fragments remain in `changelog.d/`. Inspect the artifacts and
+   publish the draft only after native installation tests. Homebrew, mise and container distribution
+   verify the published tag and asset digests before preparing downloads.
 5. On an older install, exercise download, Later, restart/install and retained runtime data.
 
 Check runs the full build, lint, typechecks and test suite on Linux, with separate macOS and Windows
@@ -149,18 +158,20 @@ most recent published Stable or Nightly release on that branch. Distribution-onl
 checks but no longer start release builds. Nightlies publish as `vX.Y.Z-nightly.N` after all
 platform artifacts and the Check workflow pass verification. **Publish nightly** reacts to
 completion of either workflow and validates the exact commit and release provenance before
-publishing; a slow Check run leaves a verified draft pending. Retry publication without rebuilding
-with `gh workflow run publish-nightly.yml -f sha=COMMIT_SHA`. Already-published tags are skipped to
-avoid duplicate distribution runs. If distribution dispatch fails after publication, rerun
-Distribution directly with that tag. Nightly releases are GitHub prereleases and do not replace the
-latest Stable release. Their release notes start with the `changelog.d/` fragments added since the
-previous published nightly. Without new fragments, highlights from commit titles come first. The
-notes then list commit messages since that nightly, including direct commits to main. Failed draft
-builds do not advance that baseline. They include separate signed **Dovo Studio (Nightly)** Mac
-bundles, Windows/Linux installers, server archives, update metadata, Homebrew definitions, and a
-pinned mise config. The Stable release remains an explicit review and publish step. When preparing
-the next Stable version, update the `version_prefix` for both Nightly tools in
-`distribution/mise.toml` to the new base version.
+publishing; a slow Check run leaves a verified draft pending. Retry publication of a verified
+manifest-bearing draft with `gh workflow run publish-nightly.yml -f sha=COMMIT_SHA`. For a draft
+created before manifest verification, run **Release** again from the current default branch with an
+empty tag. That builds a fresh Nightly with a new tag and waits for Check on its exact commit.
+Already-published tags are skipped to avoid duplicate distribution runs. If distribution dispatch
+fails after publication, rerun Distribution directly with that tag. Nightly releases are GitHub
+prereleases and do not replace the latest Stable release. Their release notes start with the
+`changelog.d/` fragments added since the previous published nightly. Without new fragments,
+highlights from commit titles come first. The notes then list commit messages since that nightly,
+including direct commits to main. Failed draft builds do not advance that baseline. They include
+separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux installers, server archives,
+update metadata, Homebrew definitions, and a pinned mise config. The Stable release remains an
+explicit review and publish step. When preparing the next Stable version, update the
+`version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base version.
 
 Use Node 26, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
@@ -348,12 +359,19 @@ source push does not make downloadable installers. The `Release` workflow create
 server archives, the signed desktop ZIP/DMG and a desktop mise archive. Publish only after all jobs
 succeed. `Update Homebrew, mise and container distribution` then computes SHA-256 hashes, attaches
 `mise.toml` and `SHA256SUMS`, and commits `Formula/` and `Casks/` to the default branch. It refuses
-incomplete or older releases. Its container job builds `ghcr.io/dovocode/dovo-server` for
+incomplete or older releases. Earlier tags without a Dockerfile still support Homebrew and mise
+backfill. For tags with a Dockerfile, the container job builds `ghcr.io/dovocode/dovo-server` for
 `linux/amd64` and `linux/arm64` from the published Linux server archives. It checks the amd64 image
 first, then pushes the version tag and `latest` for Stable or `nightly` for Nightly. Only that job
-has `packages: write`. See [Docker](server-setup.md#docker). The same repository acts as the tap; no
-separate tap token is needed. If branch protection disallows the bot push, apply the generated
-definitions through your normal PR flow. The workflow can be rerun with a published tag.
+has `packages: write`. The Runtime image workflow also builds and checks both architectures on
+native runners. Its standalone smoke script accepts the candidate image and an optional previous
+image already on the host. It checks that the original device credential and saved draft survive
+container replacement. With only the candidate image, it checks a same-image restart. Set the
+repository Actions variable `DOVO_RUNTIME_IMAGE_BASELINE` to a published multi-architecture Dovo
+image digest to exercise a version change on both native runners. See
+[Docker](server-setup.md#docker). The same repository acts as the tap; no separate tap token is
+needed. If branch protection disallows the bot push, apply the generated definitions through your
+normal PR flow. The workflow can be rerun with a published tag.
 
 ```sh
 brew tap dovocode/studio https://github.com/dovocode/dovo-studio

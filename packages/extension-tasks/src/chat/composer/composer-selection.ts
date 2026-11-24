@@ -40,6 +40,7 @@ export function selectComposerWorkspace(
           queuedTurnSettingsSupported: snapshot.queuedTurnSettingsSupported,
           queuePausePreservationSupported: snapshot.queuePausePreservationSupported,
           messageSetupSupported: snapshot.messageSetupSupported,
+          messageDraftIdentitySupported: snapshot.messageDraftIdentitySupported,
           promptSuggestionsEnabled: snapshot.promptSuggestionsEnabled,
         }
       : null,

@@ -34,7 +34,11 @@ Install dependencies once with `pnpm install`, then choose a workflow:
 - **Desktop:** `pnpm dev:desktop`. This starts the desktop and its runtime; do not also start
   `dev:api` for the same workspace.
 - **Web:** run `pnpm dev:api` in one terminal and `pnpm dev:web` in another. Open the web address
-  and pair it with the runtime using `pnpm pair` in a third terminal.
+  and choose **Connect computer** in Threads. Run
+  `pnpm pair --connection ~/.dovo-dev/runtime-connection.json` in a third terminal and enter the
+  address and code it prints. This uses the development runtime's loopback address on the same
+  computer. If you set a custom data directory, use its `runtime-connection.json`. Save a thread's
+  browser address to open it again on a paired device. [Web thread links](web-thread-links.md)
 - **iPhone development:** keep the desktop or background runtime running on your Mac, then run
   `pnpm dev:mobile`. Open the development build on your phone and connect it from Computers. Both
   devices need the same Wi-Fi or VPN. Expo Go is not sufficient for the app’s native modules.
@@ -740,11 +744,11 @@ Input, Queue and Tool designs, adapted as small components in `@dovo/studio-ui` 
 MIT license retained. The prompt footer opens task model settings, user messages align right,
 message actions give copy feedback, and tool cards disclose provider events with status badges. Expo
 keeps native controls with the same compact conversation hierarchy and a Done action inside the
-composer. Main mobile navigation uses Expo Router native tabs for Tasks, Issues, PRs, Automations
-and Settings, with system icons and the platform tab bar (Liquid Glass on supported iOS versions).
-Detail views and the keyboard hide the tabs. Unpaired devices stay in Settings; task shortcut URLs
-continue through the persisted shortcut inbox. Existing Expo UI controls remain native SwiftUI
-controls.
+composer. Mobile tabs show Threads, PRs, and the enabled Browser and Terminal workspaces. Open
+Issues and Settings from the header menu. Automations is under **Settings → Task workflow**. Detail
+views and the keyboard hide the tabs. **New thread** opens a thread from any tab. On a fresh device,
+**Threads → Connect a computer** opens pairing. Thread shortcut URLs continue through the persisted
+shortcut inbox.
 
 - The task sidebar shows pinned tasks first and supports priority, recent activity, newest, project
   and title sorting. It can show collapsible status or project sections, or an ungrouped list.

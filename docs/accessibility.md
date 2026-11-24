@@ -15,6 +15,10 @@ device.
   the operating system’s Reduce motion preference. On mobile, it also removes animated worktree
   progress and swipe settling effects.
 
+Find **Screen reader turn updates** and **Interface language** in **Settings → General** on desktop,
+web, and mobile. Settings search accepts the interface language and English. Turn updates can
+announce status, messages, or steps in the open thread.
+
 Desktop text size and fonts are in Appearance. Mobile follows the phone’s system text size; settings
 stack controls vertically for larger text. Keyboard focus has a visible outline, including in
 Windows contrast themes.

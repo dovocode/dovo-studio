@@ -1687,6 +1687,15 @@ it('routes links and new-window popups into their linked profile', async () => {
   ).resolves.toMatchObject({
     createdTabs: [expect.objectContaining({ url: target, profileId: 'work', openerKey: 'shared' })],
   })
+  expect(open({ url: target, disposition: 'background-tab', features: '' })).toEqual({
+    action: 'deny',
+  })
+  await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(4))
+  await expect(
+    call(event, { action: 'status', key: 'shared', tabCount: 1 }),
+  ).resolves.toMatchObject({
+    createdTabs: [{ url: target, profileId: 'work', active: false, openAsTab: true }],
+  })
 })
 it('keeps the target URL available while a replacement profile has not committed a page', async () => {
   const call = handler()
@@ -1876,7 +1885,7 @@ it('adopts bounded native new tabs with their profile, background disposition an
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
     createdTabs: [
       { url: 'https://example.com/tab', active: true },
-      { url: 'http://192.168.1.20:3000/', active: false },
+      { url: 'http://192.168.1.20:3000/', active: false, openAsTab: true },
       { url: 'https://example.com/shift', active: true },
     ],
   })
@@ -2245,7 +2254,7 @@ it.each([true, false])(
   },
 )
 
-it('releases a self-closed tab once and can recreate its native view', async () => {
+it('reports an unexpected native view loss without closing the workspace tab', async () => {
   const call = handler()
   await call(event, workspaceShow)
   const listeners = mocks.contents.once.mock.calls
@@ -2266,7 +2275,7 @@ it('releases a self-closed tab once and can recreate its native view', async () 
     expect(
       await call(event, { action: 'status', key: workspaceShow.key, tabCount: 1 }),
     ).toMatchObject({
-      closedTabs: [workspaceShow.key],
+      lostTabs: [workspaceShow.key],
     })
     expect(await call(event, { action: 'status', key: workspaceShow.key })).toBeUndefined()
     await call(event, { action: 'close', key: workspaceShow.key })
@@ -2276,6 +2285,25 @@ it('releases a self-closed tab once and can recreate its native view', async () 
   }
   await call(event, workspaceShow)
   expect(mocks.create).toHaveBeenCalledTimes(2)
+})
+
+it('removes a live website-created child when it closes itself', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const beforeChild = mocks.contents.once.mock.calls.length
+  openHandler()({
+    url: 'https://example.com/child',
+    disposition: 'foreground-tab',
+    features: '',
+  }).createWindow?.({})
+  const status = (await call(event, { action: 'status', key: 'shared' })) as {
+    createdTabs: { key: string }[]
+  }
+  for (const [name, listener] of mocks.contents.once.mock.calls.slice(beforeChild))
+    if (name === 'destroyed' && typeof listener === 'function') listener()
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    closedTabs: [status.createdTabs[0].key],
+  })
 })
 
 it('reports a crashed website once and leaves reload available', async () => {
@@ -2772,7 +2800,7 @@ it('routes workspace context menus to the selected page and keeps password text 
   })
   click('Open link in new tab')
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
-    openedLinks: ['https://example.com/link'],
+    openedTabLinks: [{ url: 'https://example.com/link', profileId: 'default' }],
   })
   show(true)
   const passwordItems = mocks.menu.mock.calls.at(-1)?.[0] ?? []
@@ -2834,7 +2862,7 @@ it('runs page tools against the clicked page and ignores stale menus after navig
   click(items, 'Search selection in new tab')
   expect(mocks.searchUrl).toHaveBeenLastCalledWith('work', 'react & hooks')
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
-    openedLinks: ['http://search.lan/?q=react%20%26%20hooks'],
+    openedTabLinks: [{ url: 'http://search.lan/?q=react%20%26%20hooks', profileId: 'work' }],
   })
   for (const link of [
     'javascript:alert(1)',
@@ -2915,7 +2943,7 @@ it('offers native image actions for the clicked image, including linked and gene
   expect(mocks.clipboard).toHaveBeenLastCalledWith(params.srcURL)
   click(items, 'Open image in new tab')
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
-    openedLinks: [params.srcURL],
+    openedTabLinks: [{ url: params.srcURL, profileId: 'default' }],
   })
   expect(
     menu({ hasImageContents: false }).find((item) => item.label === 'Copy image')?.enabled,
@@ -3275,8 +3303,10 @@ it.each(['window', 'page'] as const)(
     expect(target.webContents.focus).toHaveBeenCalledTimes(close === 'page' ? 1 : 0)
     expect(mocks.window.webContents.focus).not.toHaveBeenCalled()
     const state = await call(event, { action: 'status', key: 'moving-key', tabCount: 1 })
-    if (close === 'page') expect(state).toMatchObject({ closedTabs: ['moving-key'] })
-    else expect(state).not.toHaveProperty('closedTabs')
+    const lostTabs =
+      state && typeof state === 'object' && 'lostTabs' in state ? state.lostTabs : undefined
+    expect(lostTabs).toEqual(close === 'page' ? ['moving-key'] : undefined)
+    expect(state).not.toHaveProperty('closedTabs')
     expect(mocks.contents.close).toHaveBeenCalledTimes(close === 'page' ? 0 : 1)
     mocks.contents.isDestroyed.mockReturnValue(false)
   },

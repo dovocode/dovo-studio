@@ -12,7 +12,30 @@ export function ConnectionHelp({ pairing = false }: { pairing?: boolean }) {
     <View style={{ gap: 16 }}>
       <View style={{ gap: 5 }}>
         <Text style={[styles.text, { fontWeight: '600' }]}>
-          <InterfaceText>{'Start your computer'}</InterfaceText>
+          <InterfaceText>{'LAN / VPN connections'}</InterfaceText>
+        </Text>
+        {pairing && (
+          <Text style={styles.muted}>
+            <InterfaceText>
+              {
+                'On desktop, open Settings → Devices & runtime → Connect your phone. Scan the QR code or enter the address and eight-digit code. On a standalone server, run `dovo-server pair` to get them.'
+              }
+            </InterfaceText>
+          </Text>
+        )}
+        <Text style={styles.muted}>
+          {pairing
+            ? uiText(
+                'For Wi-Fi or VPN, use the full HTTP or HTTPS address shown on your computer, including its port.',
+              )
+            : uiText(
+                'Pair LAN / VPN separately to prefer that connection when available. Copy the full Wi-Fi, Tailscale, NetBird, or HTTPS address shown on your computer, including its port. localhost and 0.0.0.0 are not addresses your phone can connect to.',
+              )}
+        </Text>
+      </View>
+      <View style={{ gap: 5 }}>
+        <Text style={[styles.text, { fontWeight: '600' }]}>
+          <InterfaceText>{'Dovo Connect'}</InterfaceText>
         </Text>
         <Text style={styles.muted}>
           <InterfaceText>
@@ -30,18 +53,6 @@ export function ConnectionHelp({ pairing = false }: { pairing?: boolean }) {
           <InterfaceText>
             {
               'WebRTC + STUN connects your phone directly to the computer. Your content is end-to-end encrypted. Enabling Dovo Connect permits an encrypted relay fallback if a network blocks direct connections. The relay forwards encrypted traffic; it cannot read your content.'
-            }
-          </InterfaceText>
-        </Text>
-      </View>
-      <View style={{ gap: 5 }}>
-        <Text style={[styles.text, { fontWeight: '600' }]}>
-          <InterfaceText>{'LAN / VPN connections'}</InterfaceText>
-        </Text>
-        <Text style={styles.muted}>
-          <InterfaceText>
-            {
-              'Pair LAN / VPN separately to prefer that connection when available. Copy the full Wi-Fi, Tailscale, NetBird, or HTTPS address shown on your computer, including its port. localhost and 0.0.0.0 are not addresses your phone can connect to.'
             }
           </InterfaceText>
         </Text>

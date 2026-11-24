@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { ReviewActivity } from './review-activity'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react'
@@ -6,6 +7,8 @@ import { File } from 'expo-file-system'
 import { optimizeAttachmentImage } from '../../../tasks/composer/optimize-attachment-image'
 import { Image, Linking, ScrollView, View } from 'react-native'
 import {
+  createPullReviewDraftStorage,
+  pullReviewDraftScope,
   prReviewIllustration,
   usePullCodeReview,
   usePullReviewSource,
@@ -47,6 +50,8 @@ import { Text } from '../../../ui/content/text'
 import { Sheet } from '../../../ui/layout/sheet'
 import { useTheme } from '../../../ui/theme'
 
+const reviewDraftStorage = createPullReviewDraftStorage(AsyncStorage)
+
 function LocalMobilePullCodeReview({
   repositoryId,
   detail,
@@ -85,6 +90,8 @@ function LocalMobilePullCodeReview({
   const review = usePullCodeReview({
     target,
     scope: JSON.stringify([snapshot?.runtimeId, profile?.id]),
+    draftScope: pullReviewDraftScope(profile?.connection ?? null),
+    draftStorage: reviewDraftStorage,
     request: transport,
     connected: connected && !!target.expectedDestination,
   })
@@ -136,6 +143,11 @@ function LocalMobilePullCodeReview({
   const current = review.review
   const completed = current?.status === 'completed'
   const draft = review.draft
+  const draftStatus = review.savedLocally
+    ? uiText('Draft saved on this device')
+    : review.dirty
+      ? uiText('Unsaved changes')
+      : uiText('Saved on computer')
   const stale =
     !!current &&
     (current.headSha !== detail.pull.headSha || current.baseSha !== detail.pull.baseSha)
@@ -329,7 +341,7 @@ function LocalMobilePullCodeReview({
                 <Text style={styles.muted}>
                   {uiText('{value0} findings in draft · {value1}', {
                     value0: draft.selected.length,
-                    value1: review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer'),
+                    value1: draftStatus,
                   })}
                 </Text>
                 <Action
@@ -1279,7 +1291,7 @@ function LocalMobilePullCodeReview({
                         accessibilityLiveRegion="polite"
                         style={[styles.muted, { fontSize: 12 }]}
                       >
-                        {review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer')}
+                        {draftStatus}
                       </Text>
                       <Choice
                         label={uiText('Review decision')}

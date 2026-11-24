@@ -1518,3 +1518,41 @@ it('protects Plan on a bare restore from desktop, web and older clients', () => 
     db.close()
   }
 })
+
+it('stages a new message and checks old submissions without loading a cold conversation', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const source = new WorkspaceStore(db)
+    source.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'thread',
+          title: 'Older conversation',
+          repositoryId: '',
+          agentId: '',
+          status: 'review',
+          createdAt: '',
+          messages: [{ id: 'legacy', role: 'user', text: 'Before submission receipts' }],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const store = new WorkspaceStore(db)
+    const queue = new TaskQueue(store)
+    expect(store.retainedHistories().tasks).toEqual([])
+    expect(
+      queue.add('thread', 'new', 'New message', [], undefined, false, false, undefined, {
+        queueOnly: true,
+      }),
+    ).toBe(true)
+    expect(store.taskSummary('thread').queue?.map(({ id }) => id)).toEqual(['new'])
+    expect(queue.accepted('thread', 'legacy', 'Before submission receipts')).toBe(true)
+    expect(() => queue.accepted('thread', 'legacy', 'Different message')).toThrow('different text')
+    expect(store.retainedHistories().tasks).toEqual([])
+  } finally {
+    db.close()
+  }
+})

@@ -1,10 +1,10 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { Button, ChoicePicker } from '@dovo/studio-ui'
+import { Button, ChoicePicker, LineCommentForm } from '@dovo/studio-ui'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { selectedPatchCode } from './selected-code'
-import { LineCommentForm } from '@dovo/studio-ui'
 import { reviewPatch } from './review-patch'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
@@ -87,6 +87,16 @@ export function PullPatch({
   onDraft?: (update: (draft: PullLineDraft) => PullLineDraft) => void
   commentDisabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+  const keyboardPicker = useRef<HTMLDetailsElement>(null)
+  const keyboardSelection = useRef(false)
+  const focusKeyboardComment = useCallback((node: HTMLTextAreaElement | null) => {
+    if (!node || !keyboardSelection.current) return
+    // The textarea connects when Pierre mounts its annotation slot.
+    const frame = requestAnimationFrame(() => node.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [])
+  const [lineError, setLineError] = useApplicationState(false)
   const { selection } = draft
   const destination = allowAgent ? draft.destination : 'github'
   const setSelection = (next: PullLineSelection | null) =>
@@ -105,6 +115,13 @@ export function PullPatch({
     )
   const setDestination = (next: PullLineDraft['destination']) =>
     onDraft?.((current) => ({ ...current, destination: next }))
+  const closeComment = () => {
+    setSelection(null)
+    if (keyboardSelection.current) {
+      keyboardSelection.current = false
+      keyboardPicker.current?.querySelector('summary')?.focus()
+    }
+  }
   const diffs = useDiffOptions()
   const [ready, setReady] = useApplicationState(false),
     [error, setError] = useApplicationState('')
@@ -235,6 +252,68 @@ export function PullPatch({
           current revision before posting to the PR, or send this feedback to an agent.
         </p>
       )}
+      {ready && onComment && !commentDisabled && !focusedLine && onDraft && (
+        <details ref={keyboardPicker} className="border-b px-3 py-2 text-xs">
+          <summary className="w-fit cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:ring-ring">
+            {uiText('Comment on line')}
+          </summary>
+          <form
+            className="flex flex-wrap items-end gap-2 pt-2"
+            onChange={() => setLineError(false)}
+            onSubmit={(event) => {
+              event.preventDefault()
+              const fields = new FormData(event.currentTarget)
+              const number = Number(fields.get('line'))
+              const side = fields.get('side') === 'deletions' ? 'deletions' : 'additions'
+              const visible = parsed.diff?.hunks.some((hunk) => {
+                const start = side === 'additions' ? hunk.additionStart : hunk.deletionStart
+                const count = side === 'additions' ? hunk.additionCount : hunk.deletionCount
+                return number >= start && number < start + count
+              })
+              if (!Number.isSafeInteger(number) || !visible) {
+                setLineError(true)
+                return
+              }
+              keyboardSelection.current = true
+              if (keyboardPicker.current) keyboardPicker.current.open = false
+              setSelection({
+                start: number,
+                end: number,
+                side,
+                file: draftFile,
+                headSha: selection?.headSha ?? headSha,
+                expectedDestination: selection?.expectedDestination ?? expectedDestination,
+              })
+            }}
+          >
+            <label className="grid gap-1">
+              {uiText('Diff side')}
+              <select name="side" className="h-7 rounded border bg-background px-2">
+                <option value="additions">{uiText('After')}</option>
+                <option value="deletions">{uiText('Before')}</option>
+              </select>
+            </label>
+            <label className="grid gap-1">
+              {uiText('Line in the diff')}
+              <input
+                className="h-7 w-24 rounded border bg-background px-2"
+                name="line"
+                type="number"
+                min={1}
+                required
+              />
+            </label>
+            <Button type="submit" size="sm" variant="outline">
+              {uiText('Open comment editor')}
+            </Button>
+            {lineError && (
+              <p role="alert" className="w-full text-destructive">
+                {uiText('Enter a line shown on the selected side of the diff.')}
+              </p>
+            )}
+          </form>
+        </details>
+      )}
       {ready ? (
         <FileDiff
           fileDiff={parsed.diff}
@@ -270,6 +349,7 @@ export function PullPatch({
                       : undefined
                   }
                   label={`${file.path}:${selection.start}–${selection.end}`}
+                  commentRef={focusKeyboardComment}
                   draft={draft}
                   onDraft={(value) => onDraft?.((current) => ({ ...current, ...value }))}
                   disabled={commentDisabled || !onComment}
@@ -278,7 +358,7 @@ export function PullPatch({
                       ? `Post to ${forgeLabels[provider]}`
                       : (agentAction?.submit ?? 'Start agent thread')
                   }
-                  onCancel={() => setSelection(null)}
+                  onCancel={closeComment}
                   onSubmit={async (body) => {
                     if (!onComment || commentDisabled) return
                     if (
@@ -304,7 +384,7 @@ export function PullPatch({
                             : undefined,
                       },
                     )
-                    if (destination === 'github' || agentAction?.clears) setSelection(null)
+                    if (destination === 'github' || agentAction?.clears) closeComment()
                   }}
                 >
                   <ChoicePicker

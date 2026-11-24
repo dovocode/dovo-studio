@@ -44,3 +44,7 @@ queue expiry, settings, reconnects and push deduplication. The push-provider che
 banner and sound decisions at the handler boundary. These checks do not establish native stacking,
 VoiceOver behaviour or physical push delivery. Verify those on iPhone before claiming device support
 is tested.
+
+Completion and failure pushes use the latest assistant message for the preview, including replies
+outside an active turn. The runtime reads the preview once and reuses it for paired devices without
+loading the conversation into its history cache.

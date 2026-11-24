@@ -335,6 +335,7 @@ export function runtimeSnapshot(
       queuePausePreservationSupported: true,
       directMessageSupported: true,
       messageSetupSupported: true,
+      messageDraftIdentitySupported: true,
       threadStartSupported: true,
       taskSearchScopeSupported: true,
       botsSupported: true,

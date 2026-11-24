@@ -702,8 +702,10 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       detachedTabs?: string[]
       /** Browser-section attention, including pages in detached pinned windows. */
       browserIndicator?: 'unread' | 'attention'
-      /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
+      /** HTTP(S) links using the pane's opening preference, drained by `status`. */
       openedLinks?: string[]
+      /** Explicit native new-tab actions with the destination profile already resolved. */
+      openedTabLinks?: { url: string; profileId: string }[]
       /**
        * Native pages opened by a website or extension. Adopt each with `show` using its key and
        * exact URL. Website pages include their opener key for temporary previews.
@@ -715,9 +717,12 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
         profileId: string
         active?: boolean
         openerKey?: string
+        openAsTab?: boolean
       }[]
-      /** Keys of tabs an extension closed in this window; drained by any `status` in the window. */
+      /** Tabs that left this window because they closed or moved to another window. */
       closedTabs?: string[]
+      /** Tabs whose native page disappeared but whose saved workspace entry remains open. */
+      lostTabs?: string[]
       /** Pending media requests in this window; a snapshot, repeated until answered or expired. */
       mediaRequests?: BrowserMediaRequest[]
       /** Ongoing tab captures in this window; a snapshot, repeated while they run. */

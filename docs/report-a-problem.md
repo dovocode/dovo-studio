@@ -1,8 +1,8 @@
 # Report a problem
 
-Report a problem starts a normal thread on one of your computers. Your own agent reads redacted
-diagnostics and the Dovo source for the exact runtime commit. It then drafts a GitHub issue for you
-to review. Dovo does not file the issue. Dovo sends nothing to a Dovo service.
+Report a problem can preview and copy app diagnostics on this device. With a connected computer, you
+can also start a triage thread. Your own agent reads redacted diagnostics and the Dovo source for
+the exact runtime commit, then drafts a GitHub issue for you to review and file.
 
 ## Open it
 
@@ -10,9 +10,11 @@ to review. Dovo does not file the issue. Dovo sends nothing to a Dovo service.
   **Settings > Updates & about > Help** and select **Report a problem…**.
 - iPhone: open **Settings > Help > Report a problem**.
 
-The command and the settings entry appear only when a connected computer runs a runtime that
-supports problem reports. Such runtimes advertise `problemReportsSupported` in their snapshot.
-Update an older runtime to use the feature.
+When no connected computer supports triage, **Report a problem** opens a local diagnostic preview.
+Review the app version, source commit when available, connection status and recent app errors.
+Select **Copy diagnostics** to copy the preview. Desktop and web report the renderer build's source
+even if no runtime is available. It works offline. A connected computer with a supporting runtime
+also offers **Local diagnostics** from the triage form.
 
 ## Fill in the form
 
@@ -50,10 +52,11 @@ The attached file, `dovo-diagnostics.md`, contains only the sections you include
 - **Runtime diagnostics and logs:** readiness and warnings, database and worktree folders, free
   storage, scheduler status, replication errors, queue counts, the state and duration of running
   threads, the kinds of uncertain provider operations, backup status, memory use and spikes, and the
-  last runtime crash. It also includes the newest lines of `server.log`, `runtime-service.log`,
-  `server-update.log`, `service.log` and `update.log` from the runtime data folder. Dovo reads at
-  most 16 KB and 150 lines from each log. Thread titles, conversations and file contents are not
-  included.
+  last runtime crash. It includes the times and reasons of recent remote browser session endings
+  without page URLs or contents. Private sessions are excluded. It also includes the newest lines of
+  `server.log`, `runtime-service.log`, `server-update.log`, `service.log` and `update.log` from the
+  runtime data folder. Dovo reads at most 16 KB and 150 lines from each log. Thread titles,
+  conversations and file contents are not included.
 - **Recent app errors:** up to 20 errors that this app window recorded since it opened. On iPhone,
   the list also includes the last crash that the app saved. New runtimes also accept the error name
   and a bounded, redacted stack.

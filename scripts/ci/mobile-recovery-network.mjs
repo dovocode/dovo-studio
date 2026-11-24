@@ -1,7 +1,7 @@
 import { connect, createServer } from 'node:net'
 
 /** Cut both HTTP requests and live streams without disturbing the emulator's UI driver. */
-export async function startMobileRecoveryNetwork(runtimePort) {
+export async function startMobileRecoveryNetwork(runtimePort, host = '127.0.0.1') {
   let online = true
   const clients = new Set()
   const server = createServer((client) => {
@@ -9,7 +9,7 @@ export async function startMobileRecoveryNetwork(runtimePort) {
       client.destroy()
       return
     }
-    const upstream = connect(runtimePort, '127.0.0.1')
+    const upstream = connect(runtimePort, host)
     clients.add(client)
     client.on('error', () => client.destroy())
     upstream.on('error', () => upstream.destroy())
@@ -22,7 +22,7 @@ export async function startMobileRecoveryNetwork(runtimePort) {
   })
   await new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
+    server.listen(0, host, resolve)
   })
   function setOnline(value) {
     online = value

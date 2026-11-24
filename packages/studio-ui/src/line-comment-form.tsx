@@ -1,7 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { suggestionComment } from './suggestion'
-import { useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode, type Ref } from 'react'
 import { Button } from './components/ui/button'
 import { Textarea } from './components/ui/textarea'
 export function LineCommentForm({
@@ -13,6 +13,7 @@ export function LineCommentForm({
   selectedCode,
   draft,
   onDraft,
+  commentRef,
   disabled = false,
 }: {
   label: string
@@ -23,6 +24,7 @@ export function LineCommentForm({
   selectedCode?: string
   draft?: { body: string; suggesting: boolean; replacement: string }
   onDraft?: (draft: { body: string; suggesting: boolean; replacement: string }) => void
+  commentRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
 }) {
   const uiText = useInterfaceText()
@@ -60,6 +62,7 @@ export function LineCommentForm({
       <p className="font-medium">{label}</p>
       {children}
       <Textarea
+        ref={commentRef}
         autoFocus
         aria-label="Line comment"
         value={body}

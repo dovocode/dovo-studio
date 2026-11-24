@@ -39,6 +39,7 @@ mocks['./composer-harness-controls'] =
 mocks['./composer-workspace'] =
   `export const ComposerWorkspace=({children})=><div>{children}</div>;`
 const forkNavigationOnly = process.argv.includes('--fork-navigation-only')
+const draftIdentityOnly = process.argv.includes('--draft-identity-only')
 const built = await build({
   stdin: {
     contents: `
@@ -47,7 +48,7 @@ const connection={address:'http://runtime',token:'token'};
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/cancel'&&window.stopFailure)throw Error(window.stopFailure);if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-thread/create'){if(window.failSideSave)throw Error('Side save failed');return new Promise((resolve,reject)=>{window.sideSaved=()=>resolve({id:'side-'+input.childId});window.sideLost=()=>reject(Error('Side chat response lost'))})};if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection,flush:async()=>{},snapshot:{workspace,...inputs,runs:[],queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection,flush:async()=>{},snapshot:{workspace,...inputs,runs:[],messageDraftIdentitySupported:window.guardedDraft||undefined,queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -69,7 +70,7 @@ function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[
   ],
   nodePaths: [fileURLToPath(new URL('../packages/studio-ui/node_modules', import.meta.url))],
   bundle: true,
-  ...(forkNavigationOnly
+  ...(forkNavigationOnly || draftIdentityOnly
     ? {
         conditions: ['development'],
         alias: {
@@ -85,8 +86,9 @@ function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[
 })
 const browser = await chromium.launch({ headless: true })
 try {
-  await checkLateForkSelection()
-  if (!forkNavigationOnly) await checkComposerSend()
+  if (!draftIdentityOnly) await checkLateForkSelection()
+  if (!forkNavigationOnly) await checkDraftIdentity()
+  if (!forkNavigationOnly && !draftIdentityOnly) await checkComposerSend()
 } finally {
   await browser.close()
 }
@@ -149,6 +151,57 @@ async function checkLateForkSelection() {
   assert.deepEqual(errors, [])
   await page.close()
   console.log('Late composer fork preserves selection and clears the submitted draft and files.')
+}
+
+async function checkDraftIdentity() {
+  const { page, errors } = await openComposerPage(false)
+  const input = page.getByRole('textbox', { name: 'Message' })
+  await input.waitFor()
+  for (const guarded of [false, true]) {
+    await page.evaluate((guarded) => {
+      window.response = undefined
+      window.guardedDraft = guarded
+      window.setTask((task) => ({
+        ...task,
+        draft: 'Inspect the files',
+        draftAttachments: [{ id: 'first', name: 'a.txt', mime: 'text/plain', size: 1 }],
+      }))
+    }, guarded)
+    await page.waitForFunction(
+      () => document.querySelector('textarea').value === 'Inspect the files',
+    )
+    await page.locator('button[type=submit]').click()
+    await page.waitForFunction(() => typeof window.response === 'function')
+    const request = await page.evaluate(() => window.requests.at(-1))
+    assert.equal(request.path, '/api/tasks/message')
+    assert.deepEqual(request.input.attachmentIds, ['first'])
+    assert.equal(typeof request.input.draftIdentity, guarded ? 'string' : 'undefined')
+    await page.evaluate((guarded) => {
+      if (guarded)
+        window.setTask((task) => ({
+          ...task,
+          draftAttachments: [
+            ...task.draftAttachments,
+            { id: 'second', name: 'b.txt', mime: 'text/plain', size: 1 },
+          ],
+        }))
+      window.response()
+    }, guarded)
+    await page.waitForFunction(
+      () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+    )
+    assert.equal(await input.inputValue(), guarded ? 'Inspect the files' : '')
+    if (guarded)
+      assert.deepEqual(
+        await page.evaluate(() => window.current.draftAttachments.map((file) => file.name)),
+        ['a.txt', 'b.txt'],
+      )
+  }
+  assert.deepEqual(errors, [])
+  await page.close()
+  console.log(
+    'Composer preserves the newer same-text draft on current runtimes and sends to older runtimes.',
+  )
 }
 
 async function checkComposerSend() {

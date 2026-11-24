@@ -5,6 +5,7 @@ import { recentClientErrors, recordClientError } from '../shared/client-diagnost
 import {
   MAX_PROBLEM_REPORT_CLIENT_ERRORS,
   defaultProblemReportInclude,
+  localProblemDiagnostics,
   problemReportRequest,
   problemReportRequestSchema,
   problemReportTargets,
@@ -17,6 +18,32 @@ const errors = Array.from({ length: 25 }, (_, index) => ({
   at: `2026-11-16T10:00:${String(index).padStart(2, '0')}.000Z`,
   message: `Error ${index}`,
 }))
+
+it('exports a bounded offline preview without addresses, credentials or stacks', () => {
+  const diagnostic = localProblemDiagnostics(
+    client,
+    { saved: 1, connected: 0, error: 'Could not reach http://machine.local:8787/api/snapshot' },
+    [
+      ...errors,
+      {
+        at: '2026-11-16T11:00:00.000Z',
+        message: 'Authorization: Bearer test-token ' + 'x'.repeat(1000),
+        stack: 'Unnecessary stack contents',
+      },
+    ],
+  )
+  const preview = JSON.parse(diagnostic)
+  expect(preview.client).toEqual(client)
+  expect(preview.connection).toEqual({
+    saved: 1,
+    connected: 0,
+    error: 'Could not reach [address]',
+  })
+  expect(preview.recentErrors).toHaveLength(MAX_PROBLEM_REPORT_CLIENT_ERRORS)
+  expect(preview.recentErrors[0].message).toHaveLength(600)
+  expect(preview.recentErrors[1].message).toBe('Error 24')
+  expect(diagnostic).not.toMatch(/machine\.local|test-token|Unnecessary stack/)
+})
 
 it('includes versions by default but leaves optional diagnostic records off', () => {
   expect(defaultProblemReportInclude).toEqual({

@@ -52,7 +52,9 @@ export default function AboutSettings() {
 
 function HelpSettings() {
   const { runtimes } = useWorkspace()
-  const supported = runtimes.some((entry) => entry.snapshot?.problemReportsSupported === true)
+  const supported = runtimes.some(
+    (entry) => entry.connected && entry.snapshot?.problemReportsSupported === true,
+  )
   return (
     <SettingsGroup title="Help">
       <SettingRow
@@ -60,10 +62,10 @@ function HelpSettings() {
         description={
           supported
             ? 'Start a thread where an agent reads redacted diagnostics and the Dovo source for your version, then drafts an issue for you to review.'
-            : 'Update a connected computer to report problems from Dovo.'
+            : 'Preview and copy app diagnostics when a computer is unavailable.'
         }
       >
-        <Button variant="outline" disabled={!supported} onClick={openReportProblem}>
+        <Button variant="outline" onClick={openReportProblem}>
           Report a problem…
         </Button>
       </SettingRow>

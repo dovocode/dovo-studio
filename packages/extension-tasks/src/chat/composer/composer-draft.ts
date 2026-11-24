@@ -17,6 +17,8 @@ export function createComposerDraft(
   const publish = () => listeners.forEach((listener) => listener())
   let text = initial
   let observed = initial
+  let observedIdentity: string | undefined
+  let consumedIdentity: string | undefined
   let revision = 0
   let dirty = false
   let protectedRevision = 0
@@ -85,7 +87,16 @@ export function createComposerDraft(
       }, 300)
       return text
     },
-    receive(value: string) {
+    receive(value: string, identity?: string) {
+      observedIdentity = identity
+      if (consumedIdentity !== undefined) {
+        if (identity === consumedIdentity) return text
+        consumedIdentity = undefined
+        if (!dirty && text !== value) {
+          text = value
+          revision++
+        }
+      }
       // Suppress consumed text until a replacement is observed. A later independent
       // write may legitimately contain the same text again. The workspace layer
       // orders remote snapshots and retains unacknowledged local patches.
@@ -100,7 +111,23 @@ export function createComposerDraft(
       publish()
       return text
     },
-    accept(submitted: string, expectedRevision = revision) {
+    accept(submitted: string, expectedRevision = revision, identity?: string) {
+      if (identity !== undefined) {
+        // A guarded runtime owns the persisted clear. Never send a second workspace
+        // edit that could bypass its draft comparison.
+        if (dirty) flush()
+        if (
+          revision === expectedRevision &&
+          text.trim() === submitted.trim() &&
+          observedIdentity === identity
+        ) {
+          consumedIdentity = identity
+          text = ''
+          revision++
+          publish()
+        }
+        return text
+      }
       cancel()
       consumed.add(submitted.trim())
       if (text.trim() === submitted.trim() && revision === expectedRevision) {

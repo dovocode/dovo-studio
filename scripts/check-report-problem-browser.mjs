@@ -17,6 +17,7 @@ const runtime = await startRuntime({
   port: 0,
   ownerToken: owner,
 })
+runtime.services.browsers.recentSessionEnds = () => [{ at: 1795512000000, reason: 'context-lost' }]
 // Keep the started agent turn local and immediate.
 runtime.services.agents.get = async () => ({
   probe: async () => ({ ok: true }),
@@ -50,7 +51,9 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';
 import {ReportProblemDialog} from './report-problem-dialog';
+import {recordClientError} from '@dovo/protocol';
 window.closeCount=0;window.opened=[];
+if(window.unavailable)recordClientError(Error('Runtime request failed with token: fixture-only-token'),'connection');
 createRoot(document.getElementById('app')).render(<ReportProblemDialog onClose={()=>window.closeCount++}/>);`,
     },
     bundle: true,
@@ -59,7 +62,10 @@ createRoot(document.getElementById('app')).render(<ReportProblemDialog onClose={
     platform: 'browser',
     jsx: 'automatic',
     conditions: ['development'],
-    define: { 'process.env.NODE_ENV': '"production"' },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      __DOVO_RENDERER_BUILD__: JSON.stringify({ version: '0.0.9', commit: '9'.repeat(40) }),
+    },
   },
   [
     {
@@ -67,14 +73,15 @@ createRoot(document.getElementById('app')).render(<ReportProblemDialog onClose={
       contents: `
 const profile={id:'computer',name:'Workstation',connection:{address:'http://10.0.0.2:4321',token:'t'.repeat(24)}};
 const workspace={
-  runtimes:[{profile,snapshot:window.snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null},
-    {profile:{...profile,id:'old',name:'Old laptop'},snapshot:{...window.snapshot,problemReportsSupported:undefined},connected:true,lastSeen:null,error:null,pulls:null,pullError:null}],
+  runtimes:window.unavailable==='unpaired'?[]:[{profile,snapshot:window.unavailable==='unsupported'?{...window.snapshot,problemReportsSupported:undefined}:window.snapshot,connected:window.unavailable!=='offline',lastSeen:null,error:null,pulls:null,pullError:null},
+    ...(!window.unavailable?[{profile:{...profile,id:'old',name:'Old laptop'},snapshot:{...window.snapshot,problemReportsSupported:undefined},connected:true,lastSeen:null,error:null,pulls:null,pullError:null}]:[])],
   activeRuntimeId:'computer',
+  syncError:window.unavailable==='offline'?'Computer unreachable at http://10.0.0.2:4321/api/snapshot':undefined,
   readRuntime:async(_profile,path,input,schema)=>{const value=await window.runtimeCall(path,input);return value},
   refreshRuntime:async()=>{},
 };
 export const useWorkspace=()=>workspace;
-export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:'nightly',viewer:{platform:'darwin',architecture:'arm64',processArchitecture:'arm64'}},openThread:target=>window.opened.push(target)});
+export const useStudioHost=()=>({appInfo:window.unavailable==='unpaired'?undefined:{version:'0.0.7',channel:'nightly',viewer:{platform:'darwin',architecture:'arm64',processArchitecture:'arm64'}},openThread:target=>window.opened.push(target)});
 export const WorkspaceScope=({children})=>children;`,
     },
     {
@@ -118,6 +125,9 @@ try {
   const dialog = page.getByRole('dialog', { name: 'Report a problem' })
   await dialog.waitFor()
   const previewButton = page.getByRole('button', { name: 'Preview', exact: true })
+  await dialog.getByRole('button', { name: 'Local diagnostics', exact: true }).click()
+  await dialog.getByLabel('Local diagnostics', { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: 'Back to report', exact: true }).click()
   // The description is required; older runtimes cannot be chosen.
   assert.equal(await previewButton.isDisabled(), true)
   assert.equal(
@@ -149,6 +159,8 @@ try {
   assert.match(file, /Source commit: [0-9a-f]{40}/)
   assert.match(file, /Reporting client: desktop, version 0\.0\.7, nightly channel, on darwin arm64/)
   assert.match(file, /LAST LOG LINE/)
+  assert.match(file, /"browserSessionEnds": \[/)
+  assert.match(file, /"reason": "context-lost"/)
   assert.doesNotMatch(file, /Recent client errors/)
   assert.equal((message + file).includes(deviceToken), false)
   assert.match(await dialog.textContent(), /The runtime hid \d+ values/)
@@ -184,6 +196,46 @@ try {
     ['dovo-diagnostics.md'],
   )
   assert.deepEqual(errors, [])
+
+  for (const unavailable of ['offline', 'unsupported', 'unpaired']) {
+    const local = await browser.newPage()
+    try {
+      const previousCalls = calls.length
+      await local.exposeFunction('runtimeCall', async (path, input) => {
+        calls.push({ path, input })
+        throw new Error('Local diagnostics must work without a runtime')
+      })
+      await local.setContent('<div id="app"></div>')
+      await local.evaluate(
+        ({ snapshot, unavailable }) => {
+          window.snapshot = snapshot
+          window.unavailable = unavailable
+          window.dovoCopyText = async (text) => {
+            window.copied = text
+          }
+        },
+        { snapshot, unavailable },
+      )
+      await local.addScriptTag({ content: built.outputFiles[0].text })
+      const diagnostics = local.getByLabel('Local diagnostics', { exact: true })
+      const exported = await diagnostics.textContent()
+      const value = JSON.parse(exported)
+      assert.equal(value.connection.connected, unavailable === 'unsupported' ? 1 : 0)
+      assert.equal(value.connection.saved, unavailable === 'unpaired' ? 0 : 1)
+      assert.equal(value.client.surface, unavailable === 'unpaired' ? 'web' : 'desktop')
+      assert.equal(value.client.appVersion, unavailable === 'unpaired' ? '0.0.9' : '0.0.7')
+      assert.equal(value.client.commit, '9'.repeat(40))
+      assert.match(exported, /Runtime request failed/)
+      assert.doesNotMatch(exported, /fixture-only-token|10\.0\.0\.2/)
+      assert.equal(await local.getByRole('button', { name: 'Preview', exact: true }).count(), 0)
+      await local.getByRole('button', { name: 'Copy diagnostics', exact: true }).click()
+      await local.getByText('Diagnostics copied', { exact: true }).waitFor()
+      assert.equal(await local.evaluate(() => window.copied), exported)
+      assert.equal(calls.length, previousCalls)
+    } finally {
+      await local.close()
+    }
+  }
   console.log('Report a problem browser check passed.')
 } finally {
   await browser.close()

@@ -728,3 +728,72 @@ it('rebuilds an unreadable notification state from durable task events', async (
   await f.service.flush()
   expect(f.send).toHaveBeenCalledOnce()
 })
+
+it('sends the latest assistant preview to two phones without retaining the conversation', async () => {
+  const f = setup()
+  const second = f.devices.add('Second phone', 'second-token')
+  f.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    messages: [
+      { id: 'first', role: 'assistant', text: 'Earlier assistant reply' },
+      { id: 'background', role: 'assistant', text: 'Latest background reply' },
+      { id: 'follow-up', role: 'user', text: 'A more recent user message' },
+    ],
+  }))
+  f.service.register(second, { ...f.registration, token: 'b'.repeat(64) })
+  await f.service.flush()
+  f.store.updateTask('task', (task) => ({ ...task, status: 'review' }))
+  const store = new WorkspaceStore(f.db)
+  const service = new PushNotifications(f.db, store, f.devices, () => undefined, { send: f.send })
+  try {
+    expect(store.retainedHistories().tasks).toEqual([])
+    await service.flush()
+    const messages = f.send.mock.calls.map(([message]) => message)
+    expect(messages.map(({ data, body }) => ({ kind: data.kind, body }))).toEqual([
+      { kind: 'done', body: 'Latest background reply' },
+      { kind: 'done', body: 'Latest background reply' },
+    ])
+    expect(new Set(messages.map(({ token }) => token)).size).toBe(2)
+    expect(store.retainedHistories().tasks).toEqual([])
+  } finally {
+    await service.dispose()
+  }
+})
+
+it('delivers to a healthy phone while another phone waits, in each phone’s own order', async () => {
+  const f = setup()
+  const second = f.devices.add('Healthy phone', 'healthy-phone-token')
+  f.service.register(second, { ...f.registration, token: 'b'.repeat(64) })
+  await f.service.flush()
+  const held = Promise.withResolvers<void>()
+  const firstStarted = Promise.withResolvers<void>()
+  const delivered = { slow: [] as string[], healthy: [] as string[] }
+  f.send.mockImplementation(async (message) => {
+    if (message.token === f.registration.token) {
+      firstStarted.resolve()
+      await held.promise
+      delivered.slow.push(message.data.inputId!)
+    } else delivered.healthy.push(message.data.inputId!)
+    return { delivered: true, invalidToken: false }
+  })
+  f.input([
+    { id: 'first', preview: 'First question' },
+    { id: 'second', preview: 'Second question' },
+  ])
+  const flush = f.service.flush()
+  try {
+    await firstStarted.promise
+    await vi.waitFor(() => expect(delivered.healthy).toEqual(['first', 'second']))
+    expect(delivered.slow).toEqual([])
+    expect(
+      f.send.mock.calls.filter(([message]) => message.token === f.registration.token),
+    ).toHaveLength(1)
+    expect(f.service.flush()).toBe(flush)
+  } finally {
+    held.resolve()
+    await flush
+  }
+  expect(delivered.slow).toEqual(['first', 'second'])
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledTimes(4)
+})

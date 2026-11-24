@@ -6,16 +6,18 @@ export function BrowserErrorNotice({
   message,
   onDismiss,
   onRetry,
+  recovery = false,
 }: {
   message: string
   onDismiss: () => void
   onRetry?: () => void
+  recovery?: boolean
 }) {
   const uiText = useInterfaceText()
   const detail = message
     .replace(/^(?:Error: )?Error invoking remote method 'preview:browser':\s*/, '')
     .replace(/^Error:\s*/, '')
-  const technical = !!onRetry || /^(?:ERR_[A-Z_]+|\(-\d+\) loading )/.test(detail)
+  const technical = !recovery && (!!onRetry || /^(?:ERR_[A-Z_]+|\(-\d+\) loading )/.test(detail))
 
   return (
     <div className="mx-3 my-2 flex shrink-0 items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 p-2.5">
@@ -23,14 +25,20 @@ export function BrowserErrorNotice({
       <div className="min-w-0 flex-1 space-y-1">
         <div role="alert" className="space-y-1">
           <p className="text-xs font-medium">
-            {onRetry ? uiText('Could not load this page') : uiText('Browser error')}
+            {recovery
+              ? uiText('Page stopped')
+              : onRetry
+                ? uiText('Could not load this page')
+                : uiText('Browser error')}
           </p>
           <p className="wrap-anywhere text-xs text-muted-foreground">
-            {onRetry
-              ? uiText('Try again or check the address.')
-              : technical
-                ? uiText('The browser could not complete this action.')
-                : detail}
+            {recovery
+              ? detail
+              : onRetry
+                ? uiText('Try again or check the address.')
+                : technical
+                  ? uiText('The browser could not complete this action.')
+                  : detail}
           </p>
         </div>
         {technical && (
@@ -41,7 +49,7 @@ export function BrowserErrorNotice({
         )}
         {onRetry && (
           <Button type="button" size="sm" variant="outline" className="h-7" onClick={onRetry}>
-            {uiText('Retry')}
+            {recovery ? uiText('Reload') : uiText('Retry')}
           </Button>
         )}
       </div>

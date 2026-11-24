@@ -400,9 +400,8 @@ export function Workbench() {
   const routedShortcut = useRef('')
   const hasOnlineComputer = runtime.overviews.some((entry) => entry.connected)
   const newThread = useCallback(() => {
-    if (active === 'terminal') router.push('/terminal/new')
-    else if (hasOnlineComputer) router.push('/new', { withAnchor: true })
-  }, [hasOnlineComputer, active])
+    if (hasOnlineComputer) router.push('/new', { withAnchor: true })
+  }, [hasOnlineComputer])
   const searchAvailable = useKeyboardSearchAvailable()
   const keyboardCommands = useMemo<KeyboardCommand[]>(() => {
     const commands: KeyboardCommand[] = []

@@ -1038,13 +1038,22 @@ function BrowserContent({
   const [error, setError] = useApplicationState(restored.error ?? library.error ?? ''),
     [reload, setReload] = useApplicationState(0)
   const loadTarget = JSON.stringify([browserKey, profileId, url])
+  const [lostNativeKeys, setLostNativeKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const nativePageLost = mode === 'web' && lostNativeKeys.has(browserKey)
   const [loadError, setLoadError] = useState<{
     target: string
     message: string
     dismissed?: boolean
   }>()
-  const failedLoad = loadError?.target === loadTarget ? loadError : undefined
+  const failedLoad =
+    loadError?.target === loadTarget
+      ? loadError
+      : nativePageLost
+        ? { target: loadTarget, message: 'This page stopped unexpectedly. Reload to try again.' }
+        : undefined
   const retryLoad = useCommittedCallback(() => {
+    if (nativePageLost)
+      setLostNativeKeys((previous) => new Set([...previous].filter((key) => key !== browserKey)))
     setLoadError(undefined)
     setReload((value) => value + 1)
   })
@@ -1331,6 +1340,7 @@ function BrowserContent({
     if (initialMode === 'devices' && connected) void act(loadDevices)
   }, [initialMode, connected])
   const changeProfile = (next: string) => {
+    if (nativePageLost) retryLoad()
     const target = history.url || selectedTab.url || url
     setUrl(target)
     if (target) setInput(target)
@@ -1373,6 +1383,7 @@ function BrowserContent({
       addressField.current?.blur()
       starterAddressField.current?.blur()
       if (mode === 'remote') remote.current?.input({ type: 'navigate', url: target })
+      else if (nativePageLost) retryLoad()
       else if (target === url) {
         if (failedLoad) retryLoad()
         else if (browser)
@@ -1448,6 +1459,15 @@ function BrowserContent({
             }
             const previousSelected = currentTabs.current.find((tab) => tab.id === activeTab)
             const closedKeys = new Set(state.closedTabs ?? [])
+            if (state.lostTabs?.length || closedKeys.size)
+              setLostNativeKeys((previous) => {
+                const current = new Set(currentTabs.current.map((tab) => nativeKey(tab.id)))
+                return new Set(
+                  [...previous, ...(state.lostTabs ?? [])].filter(
+                    (key) => current.has(key) && !closedKeys.has(key),
+                  ),
+                )
+              })
             const closedIds = new Set(
               currentTabs.current
                 .filter((tab) => closedKeys.has(nativeKey(tab.id)))
@@ -1487,6 +1507,9 @@ function BrowserContent({
                 /^https?:\/\//i.test(tab.url) ||
                 /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
             )
+            const asPreview = (tab: (typeof additions)[number]) =>
+              (!tab.openAsTab && previewLinks.current && !!tab.openerKey) ||
+              (browserPageOnly && tab.active !== false)
             const capacity = Math.max(0, 100 - merge(remaining).length)
             const identities = new Map(
               additions.slice(0, capacity).map((tab) => [tab.key, randomUUID()]),
@@ -1503,13 +1526,11 @@ function BrowserContent({
                 runtimeId: store.localRuntimeId ?? undefined,
                 profileId: tab.profileId,
                 visitedAt: 0,
-                previewOf:
-                  previewLinks.current && (tab.openerKey || browserPageOnly)
-                    ? ((tab.openerKey ? identities.get(tab.openerKey) : undefined) ??
-                      currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)
-                        ?.id ??
-                      activeTab)
-                    : undefined,
+                previewOf: asPreview(tab)
+                  ? ((tab.openerKey ? identities.get(tab.openerKey) : undefined) ??
+                    currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)?.id ??
+                    activeTab)
+                  : undefined,
               }
             })
             const rejected = (state.createdTabs ?? []).filter(
@@ -1552,8 +1573,7 @@ function BrowserContent({
                 )
               let foreground = -1
               additions.slice(0, capacity).forEach((tab, index) => {
-                if (tab.active || (previewLinks.current && (tab.openerKey || browserPageOnly)))
-                  foreground = index
+                if (tab.active || asPreview(tab)) foreground = index
               })
               const foregroundTab = adopted[foreground]
               if (foregroundTab?.previewOf) void showLinkPreview(foregroundTab, previousSelected)
@@ -1561,6 +1581,28 @@ function BrowserContent({
               for (const [key, value] of nativeTabKeys)
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
               if (incoming.length) selectTab(incoming[incoming.length - 1])
+            }
+            if (state.openedTabLinks?.length) {
+              const tabs = state.openedTabLinks
+                .slice(0, Math.max(0, 100 - currentTabs.current.length))
+                .map(({ url, profileId }): BrowserTab => ({
+                  id: randomUUID(),
+                  url,
+                  title: '',
+                  kind: 'web',
+                  profileId,
+                  visitedAt: 0,
+                  ...(browserPageOnly ? { previewOf: activeTab, pendingWindow: true } : {}),
+                }))
+              if (tabs.length < state.openedTabLinks.length)
+                setError('Close a tab before opening more browser tabs.')
+              if (tabs.length) {
+                setTabs((previous) => [...previous, ...tabs])
+                const target = tabs[tabs.length - 1]
+                if (browserPageOnly) void showLinkPreview(target)
+                else selectTab(target)
+                return
+              }
             }
             if (state.focusedTabKey) {
               const target = currentTabs.current.find(
@@ -1589,9 +1631,8 @@ function BrowserContent({
             if (
               incoming.length ||
               closedKeys.has(browserKey) ||
-              additions
-                .slice(0, capacity)
-                .some((tab) => tab.active || (previewLinks.current && tab.openerKey))
+              state.lostTabs?.includes(browserKey) ||
+              additions.slice(0, capacity).some((tab) => tab.active || asPreview(tab))
             )
               return
           }
@@ -1708,7 +1749,7 @@ function BrowserContent({
     let alive = true
     let frame: number | undefined
     let previousCommand = ''
-    let failed = false
+    let failed = nativePageLost
     const hole = nativeBrowserHole(slot.current)
     const backgroundHole = nativeBrowserHole(previewSlot.current)
     const update = () => {
@@ -1835,6 +1876,7 @@ function BrowserContent({
     mode,
     scope,
     browserKey,
+    nativePageLost,
     preset,
     landscape,
     size,
@@ -1896,6 +1938,10 @@ function BrowserContent({
   }
   const removeTab = (tab: BrowserTab, dispose = true) => {
     if (tab.pinned && dispose) return
+    const key = nativeKey(tab.id)
+    setLostNativeKeys((previous) =>
+      previous.has(key) ? new Set([...previous].filter((entry) => entry !== key)) : previous,
+    )
     setAddressDrafts((previous) => {
       const next = { ...previous }
       delete next[tab.id]
@@ -4104,6 +4150,7 @@ function BrowserContent({
       {mode === 'web' && failedLoad && !failedLoad.dismissed && (
         <BrowserErrorNotice
           message={failedLoad.message}
+          recovery={nativePageLost}
           onRetry={retryLoad}
           onDismiss={() => setLoadError({ ...failedLoad, dismissed: true })}
         />

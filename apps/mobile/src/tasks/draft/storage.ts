@@ -53,17 +53,22 @@ const recordSchema = mutableStruct({
         mode: Schema.Literals(['queue', 'steer', 'stage', 'direct']),
         title: Schema.optional(Schema.String),
         runId: Schema.optional(Schema.String),
+        draftIdentity: Schema.optional(Schema.String),
         turnSettings: Schema.optional(turnSettingsSchema),
         plan: Schema.optional(Schema.Boolean),
         preserveQueuePause: Schema.optional(Schema.Boolean),
       }),
       accepted: Schema.Boolean,
+      editedAfterStage: Schema.optional(Schema.Boolean),
     }),
   ),
 })
 export type PendingFork = NonNullable<Schema.Schema.Type<typeof recordSchema>['fork']>
 export type PendingQueueRestore = NonNullable<Schema.Schema.Type<typeof recordSchema>['restore']>
 export type DraftRecord = Schema.Schema.Type<typeof recordSchema>
+function editedSubmission(submission: DraftRecord['submission']) {
+  return submission && !submission.accepted ? { ...submission, editedAfterStage: true } : undefined
+}
 function decodeRecord(raw: string | null): DraftRecord | null {
   if (raw === null) return null
   return raw.startsWith(prefix)
@@ -181,7 +186,10 @@ export function createDraftStorage(storage: Storage) {
           )
         )
           return record
-        const text = record.text.trim() === submission.attempt.text ? '' : record.text
+        const text =
+          !submission.editedAfterStage && record.text.trim() === submission.attempt.text
+            ? ''
+            : record.text
         const next = { ...record, text, submission: { ...submission, accepted: true } }
         if (text !== record.text || !submission.accepted) {
           if (!publishedText.has(key) || publishedText.get(key) === record.text)
@@ -242,7 +250,7 @@ export function createDraftStorage(storage: Storage) {
             yield* save(key, {
               ...previous,
               text: batch.text,
-              submission: previous?.submission?.accepted ? undefined : previous?.submission,
+              submission: editedSubmission(previous?.submission),
             })
           }).pipe(
             Effect.ensuring(
@@ -287,7 +295,7 @@ export function createDraftStorage(storage: Storage) {
           ...(receiptId
             ? { handoffReceipts: [...(previous?.handoffReceipts ?? []), receiptId] }
             : {}),
-          submission: previous?.submission?.accepted ? undefined : previous?.submission,
+          submission: editedSubmission(previous?.submission),
         })
       }),
     )
@@ -431,7 +439,10 @@ export function createDraftStorage(storage: Storage) {
         const previous = yield* load(key)
         if (!previous || previous.submission?.attempt.id !== attempt.id) return
         const current = publishedText.get(key) ?? previous.text
-        const text = clear && current.trim() === attempt.text ? '' : current
+        const text =
+          clear && !previous.submission.editedAfterStage && current.trim() === attempt.text
+            ? ''
+            : current
         if (previous.submission.accepted && previous.text === text && !dirty.has(key)) return
         const next = { ...previous, text, submission: { ...previous.submission, accepted: true } }
         // Publish before awaiting storage, retaining the accepted record in memory if saving fails.
@@ -543,7 +554,7 @@ export function createDraftStorage(storage: Storage) {
           yield* save(key, {
             ...previous,
             text,
-            submission: previous?.submission?.accepted ? undefined : previous?.submission,
+            submission: editedSubmission(previous?.submission),
           })
         }),
       ),

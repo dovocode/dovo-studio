@@ -10,6 +10,7 @@ type SendInput = DraftContent & {
   turnSettings?: TurnSettings
   plan?: boolean
   preserveQueuePause?: boolean
+  draftIdentity?: string
 }
 export type SendAttempt = SendInput & { id: string; title?: string }
 
@@ -62,6 +63,7 @@ export function createSendAttempts(createId: () => string) {
         attachmentIds: [...input.attachmentIds],
         mode: input.mode,
         runId: input.runId,
+        draftIdentity: input.draftIdentity,
         turnSettings: input.turnSettings,
         ...(input.plan ? { plan: true } : {}),
         ...(input.preserveQueuePause ? { preserveQueuePause: true } : {}),

@@ -16,6 +16,9 @@ Select **More details** to show sharing, access and workspace settings, the chec
 actions, scripts, editor actions, servers, linked projects, watches and related threads. Select the
 model row to open its settings. Select **Hide details** to return to the summary.
 
+On mobile, opening a watched thread uses the owning computer's verified identity when the watch
+provides one. If that computer is missing, pair it from the thread screen to continue.
+
 Saved section visibility and order still apply. Opening the summary does not change these
 preferences. Collapsing details keeps mounted editors and their drafts. Context warnings and
 pull-request status remain visible in the summary.

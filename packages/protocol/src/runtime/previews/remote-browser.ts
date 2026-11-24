@@ -289,6 +289,7 @@ export const remoteBrowserMessageSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('state'),
+    sessionId: Schema.optional(uuidSchema),
     /** This host can inspect the currently loaded document's certificate. */
     certificateDocumentId: Schema.optional(maxValue(Schema.String, 256)),
     createdTabs: Schema.optional(
@@ -316,6 +317,10 @@ export const remoteBrowserMessageSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('closed'),
     byPage: Schema.optional(Schema.Boolean),
+    sessionId: Schema.optional(uuidSchema),
+    reason: Schema.optional(
+      Schema.Literals(['page', 'requested', 'expired', 'context-lost', 'crashed']),
+    ),
     message: Schema.String,
   }),
   remoteBrowserDialogSchema,

@@ -14,7 +14,7 @@ export type PairingInvitation = {
   expiresAt: string
   peer?: PeerConfig
 }
-export function pairingAddress(address: string) {
+export function pairingAddress(address: string, { allowLoopback = false } = {}) {
   const parsed = decodeResult(connectionSchema, {
     address: normalizeRuntimeAddress(address),
     token: 'invitation-validation-only',
@@ -22,16 +22,23 @@ export function pairingAddress(address: string) {
   if (!parsed.success)
     throw new Error('Enter a full HTTP or HTTPS computer address without embedded credentials.')
   const url = new URL(parsed.data.address)
+  const loopback =
+    ['localhost', '[::1]'].includes(url.hostname) ||
+    /^127\./.test(url.hostname) ||
+    url.hostname.endsWith('.localhost') ||
+    /^\[::ffff:7f[0-9a-f]{2}:/i.test(url.hostname)
   if (
     url.pathname !== '/' ||
     url.search ||
     url.hash ||
-    ['localhost', '[::1]', '0.0.0.0', '[::]'].includes(url.hostname) ||
-    /^127\./.test(url.hostname) ||
-    url.hostname.endsWith('.localhost') ||
-    /^\[::ffff:7f[0-9a-f]{2}:/i.test(url.hostname)
+    ['0.0.0.0', '[::]'].includes(url.hostname) ||
+    (!allowLoopback && loopback)
   )
-    throw new Error('Use the computer’s Wi-Fi or VPN address, including its port.')
+    throw new Error(
+      allowLoopback
+        ? 'Use the runtime’s HTTP or HTTPS address, including its port.'
+        : 'Use the computer’s Wi-Fi or VPN address, including its port.',
+    )
   return url.origin
 }
 export function pairingInvitation(value: PairingInvitation, now = Date.now()): PairingInvitation {

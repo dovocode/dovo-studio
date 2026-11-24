@@ -558,7 +558,7 @@ export function PairingClient({
               setError('')
               void Promise.resolve()
                 .then(() => {
-                  const target = pairingAddress(address)
+                  const target = pairingAddress(address, { allowLoopback: true })
                   setAddress(target)
                   return runtimeRequest(
                     null,
@@ -598,8 +598,8 @@ export function PairingClient({
               />
             </FormField>
             <p className="-mt-2 text-xs text-muted-foreground">
-              Use the computer’s LAN or VPN address. 0.0.0.0 is a listening address, not a
-              destination. HTTP and optional HTTPS are supported.
+              Use the computer’s LAN or VPN address, or its loopback address if the runtime is on
+              this computer. HTTP and optional HTTPS are supported.
             </p>
             <FormField label="This device’s name">
               <Input

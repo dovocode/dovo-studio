@@ -23,7 +23,11 @@ import {
 import { PairingClient } from './pairing-client'
 import { DeviceManager } from './device-manager'
 import { WindowsRuntimeSettings } from './windows-runtime'
-export default function RuntimeView({ threadConnection }: StudioViewProps) {
+export default function RuntimeView({
+  entityId,
+  navigationKey,
+  threadConnection,
+}: StudioViewProps) {
   const uiText = useInterfaceText()
 
   const sources = useRuntimeSources()
@@ -39,6 +43,9 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
     studio.openThread?.({ ...threadConnection, runtimeId: pairedTarget.id })
   }, [threadConnection, pairedTarget, studio])
   const [discovered, setDiscovered] = useState<{ address: string } | undefined>(undefined)
+  useEffect(() => {
+    if (entityId === 'pair') setDiscovered({ address: '' })
+  }, [entityId, navigationKey])
   const [managing, setManaging] = useApplicationState<RuntimeProfile | null>(null)
   const [pairingPhone, setPairingPhone] = useApplicationState<RuntimeProfile | null>(null)
   // Phones pair with a computer this app owns: the local desktop runtime or an owned server.

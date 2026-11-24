@@ -65,7 +65,9 @@ limits**, then save. Leave optional fields empty to disable them.
 - **Time**, **token**, and **estimated cost** limits apply to the run and its local child workers.
   The time limit includes approval waits and retries. Usage limits use reported turn totals. The
   runtime samples limits each second and after a provider turn. Late or missing usage can cause
-  overruns. Cost is an API estimate, not a subscription bill or a hard spending guarantee.
+  overruns. Cost is an API estimate, not a subscription bill or a hard spending guarantee. When Dovo
+  recovers a legacy routine inside a shared Bot conversation, the usage limit counts the turn for
+  the saved routine message. Other turns in that conversation keep their own usage.
 - **Quiet hours** use the saved time zone and can cross midnight. They defer successful Bot reports
   until the interval ends. Each report uses the result saved for its run, including when someone
   continues the worker thread before delivery. Reports show the end of long answers and compare the

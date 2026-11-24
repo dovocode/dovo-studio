@@ -37,6 +37,10 @@ detail.stack={rootNumber:183,position:2,size:2,complete:true,members:[183,184].m
 const mobileRoot = root + 'apps/mobile/src/scm/pulls/detail'
 const mobileMocks = [
   {
+    path: '@react-native-async-storage/async-storage',
+    contents: `export default {getItem:async key=>localStorage.getItem(key),setItem:async (key,value)=>localStorage.setItem(key,value),removeItem:async key=>localStorage.removeItem(key)};`,
+  },
+  {
     path: 'expo-image-picker',
     contents: `export const launchImageLibraryAsync=async()=>({canceled:false,assets:[{uri:'fixture:image',fileName:'mobile-shot.png',mimeType:'image/png'}]});`,
   },
@@ -161,7 +165,13 @@ try {
         console.error(error.stack)
       })
       page.setDefaultTimeout(10000)
-      await page.setContent('<body class="studio dark"><main id="app"></main></body>')
+      await page.route('https://pr-review.test/**', (route) =>
+        route.fulfill({
+          body: '<body class="studio dark"><main id="app"></main></body>',
+          contentType: 'text/html',
+        }),
+      )
+      await page.goto('https://pr-review.test/')
       for (const name of (await readdir(root + 'apps/desktop/dist/assets')).filter((name) =>
         name.endsWith('.css'),
       ))

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { browserChecks, browserShards } from './browser-shards.mjs'
 import { updateDurations } from './update-browser-durations.mjs'
@@ -100,3 +103,88 @@ await test('detects package-local browser regressions missing from scheduled sui
     'packages/extension-tasks/src/detail/task-files-drafts.browser.mjs',
   ])
 })
+
+await test(
+  'browser shard retries just the failed check and reports every attempt',
+  { skip: process.platform === 'win32' },
+  () => {
+    const root = mkdtempSync(join(tmpdir(), 'dovo-browser-shard-'))
+    try {
+      for (const name of ['apps', 'packages', 'scripts/ci'])
+        mkdirSync(join(root, name), { recursive: true })
+      for (const name of ['run-browser-suites.mjs', 'retry-browser.mjs', 'ci/browser-shards.mjs'])
+        copyFileSync(new URL(`../${name}`, import.meta.url), join(root, 'scripts', name))
+      writeFileSync(join(root, 'scripts/ci/browser-durations.json'), '{"seconds":{}}')
+      writeFileSync(join(root, 'scripts/ci/workspace-task.mjs'), '')
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            'test:fixture:browser': 'node first.mjs && node second.mjs && node third.mjs',
+          },
+        }),
+      )
+      writeFileSync(
+        join(root, 'pnpm'),
+        `#!/bin/sh
+printf '%s\n' "$4" >> "$CALLS"
+if [ "$4" = "node second.mjs" ]; then
+  if [ "$FAIL_EVERY_TIME" = yes ] || [ ! -e "$CALLS.second" ]; then
+    touch "$CALLS.second"
+    exit 7
+  fi
+fi
+`,
+        { mode: 0o700 },
+      )
+      const calls = join(root, 'calls')
+      const timings = join(root, 'timings.json')
+      const run = (alwaysFail) => {
+        writeFileSync(calls, '')
+        const result = spawnSync(process.execPath, ['scripts/run-browser-suites.mjs'], {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            PATH: `${root}:${process.env.PATH}`,
+            DOVO_BROWSER_TIMINGS: timings,
+            DOVO_BROWSER_ATTEMPTS: '2',
+            CALLS: calls,
+            FAIL_EVERY_TIME: alwaysFail ? 'yes' : 'no',
+          },
+        })
+        return {
+          result,
+          invocations: readFileSync(calls, 'utf8').trim().split('\n'),
+          suite: JSON.parse(readFileSync(timings, 'utf8')).suites[0],
+        }
+      }
+      const flaky = run(false)
+      assert.equal(flaky.result.status, 0, flaky.result.stderr)
+      assert.deepEqual(flaky.invocations, [
+        'node first.mjs',
+        'node second.mjs',
+        'node second.mjs',
+        'node third.mjs',
+      ])
+      assert.equal(flaky.suite.status, 'success')
+      assert.deepEqual(
+        flaky.suite.checks.map(({ status, attempts }) => [
+          status,
+          attempts.map(({ exitCode }) => exitCode),
+        ]),
+        [
+          ['success', [0]],
+          ['flaky', [7, 0]],
+          ['success', [0]],
+        ],
+      )
+      const failed = run(true)
+      assert.equal(failed.result.status, 7)
+      assert.deepEqual(failed.invocations, ['node first.mjs', 'node second.mjs', 'node second.mjs'])
+      assert.equal(failed.suite.status, 'failure')
+      assert.equal(failed.suite.checks[1].status, 'failure')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+)

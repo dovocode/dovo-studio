@@ -269,12 +269,12 @@ function PullDetailContent({
   const [asking, setAsking] = useApplicationState<{ selection?: PullReviewSelection } | null>(null)
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const reviews = latestPullReviews(discussion)
-  const selectTab = (value: typeof tab) => {
+  const selectTab = (value: typeof tab, updateNavigation = true) => {
     if (value !== 'review') rowReviewRun?.()
     if (content.current) scrollPositions.current[tab] = content.current.scrollTop
     scrollCache.write(stateKey, { ...scrollPositions.current })
     setTab(value)
-    if (value !== tab && value !== 'review') onTabChange?.(value)
+    if (updateNavigation && value !== tab && value !== 'review') onTabChange?.(value)
     if (value === 'changes') setChangesOpened(true)
     if (value === 'checks') setChecksOpened(true)
   }
@@ -309,7 +309,7 @@ function PullDetailContent({
   }, [summaryTarget, tab])
   useEffect(() => {
     setSummaryFragment('')
-    if (initialTab) selectTab(initialTab)
+    if (initialTab) selectTab(initialTab, false)
     if (initialTab === 'review' && configureInitialReview)
       setReviewConfigurationRequest((request) => request + 1)
     if (initialTab === 'review') {
@@ -326,7 +326,7 @@ function PullDetailContent({
     if (comment) {
       const destination = comment.kind === 'inline' ? 'changes' : 'overview'
       if (tab !== destination) {
-        selectTab(destination)
+        selectTab(destination, false)
         return
       }
       setDiscussionFilter('all')

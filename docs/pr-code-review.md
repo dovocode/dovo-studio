@@ -5,6 +5,10 @@
 When your review is requested, use **Review changes** in the PR list to open the diff directly. On
 narrow desktop windows, this action is in the PR row menu.
 
+On desktop and web, tab to **Comment on line** above the file diff and press Enter. Choose **After**
+or **Before**, enter a displayed line number, and open the comment editor. Cancel returns focus to
+**Comment on line**.
+
 If a new revision arrives while you have the PR open, **Changes** keeps the previous diff read-only.
 Select **Switch revision** after the new files load. Dovo keeps the selected file if it is still
 part of the diff. Viewed marks stay for files with the same review fingerprint. Line drafts do not
@@ -306,9 +310,11 @@ network access and host permissions, as they can in a terminal.
 - Reports, coverage, drafts and publication intent live in SQLite on the owning runtime. A process
   restart marks an unfinished pass interrupted and an unfinished publication unknown. It does not
   start a model or repost a review automatically.
-- Draft writes use versions. Conflicting edits remain visible. Refresh the report, compare the saved
-  draft, then explicitly choose **Save my draft over this version** if appropriate. **Use the saved
-  draft** replaces your unsaved copy only when you choose it.
+- Studio keeps pending review text on this device across reloads and restarts. Open the same review
+  after reconnecting to continue. Studio removes its local copy after the computer confirms the
+  save. Draft writes use versions. Conflicting edits remain visible. Refresh the report, compare the
+  saved draft, then explicitly choose **Save my draft over this version** if appropriate. **Use the
+  saved draft** replaces your unsaved copy only when you choose it.
 - A new pass keeps the earlier draft in history. If the new draft is empty, **Copy draft from the
   earlier pass** copies its text and decision. Check its findings and line references before
   posting. Switching passes and starting another pass save the current draft first.

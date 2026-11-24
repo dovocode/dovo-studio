@@ -439,9 +439,92 @@ try {
   void child.evaluate(() => window.close()).catch(() => {})
   await childClosed
   await wait(() => !browsers.sessions.has(childResource))
+  await wait(() => !!closedMessage)
   assert.equal(closedMessage?.byPage, true)
+  assert.equal(closedMessage?.reason, 'page')
   assert.equal(parent.isClosed(), false)
   await browsers.close(privateResource)
+
+  console.log('Remote browsers: retaining active media while a workspace viewer is detached')
+  const mediaResource = 'workspace-background-media'
+  await browsers.open(mediaResource, STUDIO_BROWSER_SCOPE, 'default', origin + '/media')
+  const mediaSession = await browsers.sessions.get(mediaResource)
+  const mediaDetach = await browsers.attach(mediaResource, listener(mediaResource))
+  await mediaSession.page.evaluate(async () => {
+    const context = new AudioContext()
+    const output = context.createMediaStreamDestination()
+    const oscillator = context.createOscillator()
+    oscillator.connect(output)
+    oscillator.start()
+    const audio = document.createElement('audio')
+    audio.srcObject = output.stream
+    document.body.append(audio)
+    await audio.play()
+  })
+  assert.equal(await browsers.activeMedia(mediaResource), true)
+  const detachAndAccelerateExpiry = (detach) => {
+    const schedule = globalThis.setTimeout
+    let accelerated = false
+    globalThis.setTimeout = (callback, ms, ...args) => {
+      if (ms === 5 * 60 * 1000) {
+        accelerated = true
+        ms = 1
+      }
+      return schedule(callback, ms, ...args)
+    }
+    try {
+      detach()
+    } finally {
+      globalThis.setTimeout = schedule
+    }
+    assert.equal(accelerated, true, 'Detaching schedules the host idle expiry')
+    return mediaSession.idle
+  }
+  const expiry = detachAndAccelerateExpiry(mediaDetach)
+  await wait(() => mediaSession.idle !== expiry || !browsers.sessions.has(mediaResource))
+  assert.equal(mediaSession.page.isClosed(), false, 'A playing page survives idle expiry')
+  assert.equal(browsers.sessions.has(mediaResource), true)
+  const resumed = await browsers.attach(mediaResource, listener(mediaResource))
+  assert.equal((await browsers.sessions.get(mediaResource)).id, mediaSession.id)
+  await mediaSession.page.locator('audio').evaluate((audio) => audio.pause())
+  detachAndAccelerateExpiry(resumed)
+  await wait(() => !browsers.sessions.has(mediaResource), 'Inactive media tab expires')
+  assert.equal(browsers.recentSessionEnds().at(-1)?.reason, 'expired')
+
+  console.log('Remote browsers: distinguishing context loss from a page close')
+  const recoveryResource = 'context-recovery'
+  const recoveryUrl = origin + '/same-tab'
+  await browsers.open(recoveryResource, 'recovery', 'context-recovery', recoveryUrl)
+  const recoveryPage = (await browsers.sessions.get(recoveryResource)).page
+  const lifecycle = []
+  const recordLifecycle = (message) => {
+    if (message.type === 'state' || message.type === 'closed') lifecycle.push(message)
+  }
+  dispose.push(await browsers.attach(recoveryResource, recordLifecycle))
+  const first = lifecycle.find((message) => message.type === 'state')
+  await recoveryPage.context().close()
+  await wait(() => lifecycle.some((message) => message.type === 'closed'))
+  const ended = lifecycle.find((message) => message.type === 'closed')
+  assert.equal(ended.byPage, false)
+  assert.equal(ended.reason, 'context-lost')
+  assert.equal(ended.sessionId, first.sessionId)
+  await browsers.open(recoveryResource, 'recovery', 'context-recovery', recoveryUrl)
+  dispose.push(await browsers.attach(recoveryResource, recordLifecycle))
+  const replacement = lifecycle.findLast((message) => message.type === 'state')
+  assert.notEqual(replacement.sessionId, first.sessionId)
+  assert.equal(replacement.url, recoveryUrl)
+  await browsers.close(recoveryResource, 'expired')
+  assert.equal(lifecycle.findLast((message) => message.type === 'closed')?.reason, 'expired')
+  assert.deepEqual(
+    browsers
+      .recentSessionEnds()
+      .slice(-2)
+      .map((entry) => Object.keys(entry).sort()),
+    [
+      ['at', 'reason'],
+      ['at', 'reason'],
+    ],
+  )
   console.log(
     'Real Chromium: active/idle capture, authorized input, hidden capture, viewport caps, resize/detail frames, unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
   )

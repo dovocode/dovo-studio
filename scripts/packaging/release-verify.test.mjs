@@ -1,12 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-// Exercises the release workflow's verification shell as written, so channel detection and
-// asset naming are tested against complete generated asset lists without dispatching a run.
+import {
+  buildManifest,
+  manifestName,
+  releaseFiles,
+  validatePublished,
+} from './desktop-release-manifest.mjs'
+
+// Run the release steps against disposable Git refs and release metadata.
 const workflow = await readFile(
   new URL('../../.github/workflows/release-desktop.yml', import.meta.url),
   'utf8',
@@ -32,167 +40,351 @@ void test('Windows release artifacts come from x64 builds and upload waits for s
   assert.ok(release.upload.needs.includes('windows-sign'), 'Signed artifacts must exist at upload')
 })
 
-function stepScript(name) {
-  const lines = workflow.split('\n')
-  const start = lines.findIndex((line) => line.includes(`name: ${name}`))
-  assert.ok(start >= 0, `${name} step present`)
-  const run = lines.findIndex((line, index) => index > start && line.trim() === 'run: |')
-  const indent = lines[run + 1].match(/^ */)[0].length
-  const body = []
-  for (const line of lines.slice(run + 1)) {
-    if (line.trim() && line.match(/^ */)[0].length < indent) break
-    body.push(line.slice(indent))
-  }
-  return body.join('\n')
+const release = parse(workflow).jobs
+const scriptPath = fileURLToPath(new URL('./desktop-release-manifest.mjs', import.meta.url))
+
+function stepScript(job, name) {
+  const step = release[job].steps.find((step) => step.name === name)
+  assert.ok(step?.run, `${name} step present`)
+  return step.run
 }
-export function releaseAssets(tag) {
-  const version = tag.replace(/^v/, '')
-  const nightly = version.includes('-nightly.')
-  const prefix = nightly ? 'Dovo-Studio-Nightly' : 'Dovo-Studio'
-  const server = nightly ? 'Dovo-Server-Nightly' : 'Dovo-Server'
-  const feed = nightly ? 'nightly' : 'latest'
-  return [
-    `${prefix}-${version}-arm64.dmg`,
-    `${prefix}-${version}-arm64.zip`,
-    `${prefix}-mise-${version}-macos-arm64.tar.gz`,
-    `${server}-${version}-macos-arm64.tar.gz`,
-    `${server}-${version}-linux-x64.tar.gz`,
-    `${server}-${version}-linux-arm64.tar.gz`,
-    `${server}-${version}-windows-x64.zip`,
-    `${prefix}-${version}-windows-x64.exe`,
-    `${prefix}-${version}-linux-amd64.deb`,
-    `${prefix}-${version}-linux-arm64.deb`,
-    `${prefix}-${version}-linux-x86_64.rpm`,
-    `${prefix}-${version}-linux-aarch64.rpm`,
-    `${prefix}-${version}-linux-x86_64.AppImage`,
-    `${prefix}-${version}-linux-arm64.AppImage`,
-    `${feed}-linux.yml`,
-    `${feed}-linux-arm64.yml`,
-    `${feed}.yml`,
-    `${feed}-mac.yml`,
-  ]
-}
-async function verify(directory, { tag, channel, assets }) {
-  await writeFile(join(directory, 'assets'), assets.join('\n') + '\n')
-  const gh = join(directory, 'gh')
-  await writeFile(gh, `#!/bin/sh\ncat "${join(directory, 'assets')}"\n`)
-  await chmod(gh, 0o755)
-  const summary = join(directory, 'summary')
-  await writeFile(summary, '')
-  const result = spawnSync(
-    'bash',
-    ['-euo', 'pipefail', '-c', stepScript('Verify release assets')],
-    {
-      env: {
-        PATH: `${directory}:${process.env.PATH}`,
-        HOME: directory,
-        TAG: tag,
-        CHANNEL: channel,
-        GITHUB_STEP_SUMMARY: summary,
-      },
-      encoding: 'utf8',
-    },
-  )
-  return { status: result.status, output: result.stdout + result.stderr }
-}
-await test('verify-only dispatch derives the channel from the tag and checks the matching asset names', async () => {
+
+async function fixture(action) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-release-verify-'))
   try {
-    const stable = 'v1.2.3',
-      nightly = 'v1.2.3-nightly.7'
-    for (const [tag, channel] of [
-      [stable, ''],
-      [stable, 'stable'],
-      [nightly, ''],
-      [nightly, 'nightly'],
-    ]) {
-      const ok = await verify(directory, { tag, channel, assets: releaseAssets(tag) })
-      assert.equal(ok.status, 0, `${tag} with channel "${channel}": ${ok.output}`)
-    }
-    const wrongNames = await verify(directory, {
-      tag: nightly,
-      channel: '',
-      assets: releaseAssets(stable),
-    })
-    assert.notEqual(wrongNames.status, 0)
-    assert.match(
-      wrongNames.output,
-      /Missing release asset: Dovo-Studio-Nightly-1\.2\.3-nightly\.7-arm64\.dmg/,
-    )
-    const stableAgainstNightly = await verify(directory, {
-      tag: stable,
-      channel: '',
-      assets: releaseAssets(nightly),
-    })
-    assert.notEqual(stableAgainstNightly.status, 0)
-    assert.match(
-      stableAgainstNightly.output,
-      /Missing release asset: Dovo-Studio-1\.2\.3-arm64\.dmg/,
-    )
-    const incomplete = await verify(directory, {
-      tag: nightly,
-      channel: 'nightly',
-      assets: releaseAssets(nightly).filter((name) => name !== 'nightly-mac.yml'),
-    })
-    assert.notEqual(incomplete.status, 0)
-    assert.match(incomplete.output, /Missing release asset: nightly-mac\.yml/)
-    for (const tag of [stable, nightly]) {
-      const windowsAssets = releaseAssets(tag).filter((name) =>
-        /windows-x64\.|^(latest|nightly)\.yml$/.test(name),
-      )
-      for (const missing of windowsAssets) {
-        const incompleteWindows = await verify(directory, {
-          tag,
-          channel: '',
-          assets: releaseAssets(tag).filter((name) => name !== missing),
-        })
-        assert.notEqual(incompleteWindows.status, 0, `Missing ${missing} must block release`)
-        assert.ok(incompleteWindows.output.includes(`Missing release asset: ${missing}`))
-      }
-    }
+    await action(directory)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-})
+}
 
-await test('Mac packaging uploads every verified artifact to the existing draft without electron-builder publishing', async () => {
-  const build = stepScript('Build signed Mac update artifacts')
-  assert.match(build, /^\s*pnpm run package:platform\s*$/m)
-  assert.doesNotMatch(build, /--publish/)
-  const directory = await mkdtemp(join(tmpdir(), 'dovo-mac-upload-'))
-  try {
-    const tag = 'v1.2.3-nightly.7'
-    const assets = [
-      ...releaseAssets(tag).filter((name) => /\.dmg$|arm64\.zip$|-mac\.yml$|-mise-/.test(name)),
-      'Dovo-Studio-Nightly-1.2.3-nightly.7-arm64.zip.blockmap',
-      'Dovo-Studio-Nightly-1.2.3-nightly.7-arm64.dmg.blockmap',
-    ]
-    await mkdir(join(directory, 'release'))
-    for (const name of [...assets, 'Dovo-Server-Nightly-1.2.3-nightly.7-macos-arm64.tar.gz'])
-      await writeFile(join(directory, 'release', name), 'signed artifact')
-    const gh = join(directory, 'gh')
-    await writeFile(gh, '#!/bin/sh\nprintf "%s\\n" "$@" > "$UPLOAD_ARGS"\n')
-    await chmod(gh, 0o755)
-    const result = spawnSync(
-      'bash',
-      ['-euo', 'pipefail', '-c', stepScript('Upload verified Mac release assets')],
-      {
+const sha = 'a'.repeat(40)
+const tag = 'v1.2.3'
+const tagged = (name = tag, source = sha) => `${source}\trefs/tags/${name}\n`
+
+await test('manual stable draft rejects an annotated tag from another commit before GitHub mutation', async () => {
+  await fixture(async (directory) => {
+    const git = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim()
+    await mkdir(join(directory, 'scripts/packaging'), { recursive: true })
+    await mkdir(join(directory, 'scripts/changelog'), { recursive: true })
+    await copyFile(scriptPath, join(directory, 'scripts/packaging/desktop-release-manifest.mjs'))
+    await writeFile(join(directory, 'scripts/changelog/assemble-fragments.mjs'), '')
+    await mkdir(join(directory, 'changelog.d'))
+    await writeFile(join(directory, 'package.json'), '{"version":"1.2.3"}')
+    git('init', '--quiet')
+    git('config', 'user.email', 'fixture@example.test')
+    git('config', 'user.name', 'Release fixture')
+    git('add', 'package.json')
+    git('commit', '--quiet', '-m', 'Tagged commit')
+    git('tag', '-a', tag, '-m', 'Stable fixture')
+    git('remote', 'add', 'origin', directory)
+    const source = git('rev-parse', 'HEAD')
+    git('commit', '--quiet', '--allow-empty', '-m', 'Different source')
+    const other = git('rev-parse', 'HEAD')
+    await writeFile(
+      join(directory, 'gh'),
+      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GH_CALLS"\n[ "$2" != view ]\n',
+    )
+    await chmod(join(directory, 'gh'), 0o755)
+    const calls = join(directory, 'calls')
+    const output = join(directory, 'output')
+    const runDraft = (source) =>
+      spawnSync('bash', ['-euo', 'pipefail', '-c', stepScript('draft', 'Create release draft')], {
         cwd: directory,
         env: {
-          HOME: directory,
           PATH: `${directory}:${process.env.PATH}`,
-          TAG: tag,
-          UPLOAD_ARGS: join(directory, 'arguments'),
+          GITHUB_EVENT_NAME: 'workflow_dispatch',
+          GITHUB_REF: 'refs/heads/main',
+          GITHUB_REF_NAME: 'main',
+          GITHUB_SHA: source,
+          INPUT_TAG: tag,
+          GH_CALLS: calls,
+          RUNNER_TEMP: directory,
+          GITHUB_OUTPUT: output,
         },
         encoding: 'utf8',
-      },
+      })
+    const rejected = runDraft(other)
+    assert.notEqual(rejected.status, 0)
+    await assert.rejects(readFile(calls), { code: 'ENOENT' })
+    await assert.rejects(readFile(output), { code: 'ENOENT' })
+    assert.match(rejected.stderr, /points to .* expected/)
+    git('checkout', '--quiet', source)
+    const accepted = runDraft(git('rev-parse', tag))
+    assert.equal(accepted.status, 0, accepted.stderr)
+    assert.match(
+      await readFile(calls, 'utf8'),
+      new RegExp(`release create ${tag} .* --target ${source}`),
     )
-    assert.equal(result.status, 0, result.stdout + result.stderr)
-    const args = (await readFile(join(directory, 'arguments'), 'utf8')).trim().split('\n')
-    assert.deepEqual(args.slice(0, 3), ['release', 'upload', tag])
-    assert.equal(args.at(-1), '--clobber')
-    assert.deepEqual(args.slice(3, -1).sort(), assets.map((name) => `release/${name}`).sort())
-  } finally {
-    await rm(directory, { recursive: true, force: true })
+    assert.match(await readFile(output, 'utf8'), new RegExp(`sha=${source}`))
+  })
+})
+
+await test('build manifest validates platform update feed hashes before upload and includes every binary', async () => {
+  await fixture(async (directory) => {
+    const { required, feeds } = releaseFiles(tag)
+    for (const name of required) await writeFile(join(directory, name), name)
+    for (const [name, [asset]] of Object.entries(feeds)) {
+      const sha512 = createHash('sha512').update(asset).digest('base64')
+      await writeFile(
+        join(directory, name),
+        JSON.stringify({
+          version: tag.slice(1),
+          files: [{ url: asset, sha512 }],
+          path: asset,
+          sha512,
+        }),
+      )
+    }
+    const manifest = await buildManifest(directory, tag, sha)
+    assert.deepEqual(Object.keys(manifest.assets).sort(), [...required].sort())
+    const assets = Object.entries(manifest.assets).map(([name, digest]) => ({ name, digest }))
+    assert.equal(validatePublished(manifest, tag, assets, tagged()), sha)
+    const binary = assets.find(({ name }) => name.endsWith('.exe'))
+    assert.ok(binary)
+    binary.digest = `sha256:${'b'.repeat(64)}`
+    assert.throws(
+      () => validatePublished(manifest, tag, assets, tagged()),
+      /asset digest did not match/,
+    )
+    await writeFile(join(directory, binary.name), 'changed bytes')
+    await assert.rejects(
+      buildManifest(directory, tag, sha),
+      /Update feed asset or SHA-512 did not match/,
+    )
+  })
+})
+
+await test('verify-only runs the same digest verifier for existing stable and nightly releases', async () => {
+  await fixture(async (directory) => {
+    await writeFile(
+      join(directory, 'gh'),
+      `#!/bin/sh
+case "$1 $2" in
+  "release view") printf '%s\n' '{"databaseId":7,"isDraft":false}' ;;
+  "release download") cp "$MANIFEST_FILE" "$7/dovo-release-manifest.json" ;;
+  "api repos/fixture/dovo/releases/7") cat "$ASSET_FILE" ;;
+  *) exit 1 ;;
+esac
+`,
+    )
+    await writeFile(join(directory, 'git'), '#!/bin/sh\nprintf "%s\\n" "$TAGS"\n')
+    await mkdir(join(directory, 'scripts/packaging'), { recursive: true })
+    await copyFile(scriptPath, join(directory, 'scripts/packaging/desktop-release-manifest.mjs'))
+    for (const name of ['gh', 'git']) await chmod(join(directory, name), 0o755)
+    const manifest = join(directory, 'manifest.json')
+    const assetFile = join(directory, 'assets.json')
+    const verify = (tag) =>
+      spawnSync(
+        'bash',
+        ['-euo', 'pipefail', '-c', stepScript('verify', 'Verify release source and asset digests')],
+        {
+          cwd: directory,
+          env: {
+            PATH: `${directory}:${process.env.PATH}`,
+            GH_REPO: 'fixture/dovo',
+            TAG: tag,
+            TAGS: tagged(tag),
+            SOURCE_SHA: '',
+            MANIFEST_FILE: manifest,
+            ASSET_FILE: assetFile,
+          },
+          encoding: 'utf8',
+        },
+      )
+    for (const releaseTag of [tag, `${tag}-nightly.7`]) {
+      const assets = Object.fromEntries(
+        releaseFiles(releaseTag).required.map((name) => [name, `sha256:${'a'.repeat(64)}`]),
+      )
+      await writeFile(manifest, JSON.stringify({ version: 1, tag: releaseTag, sha, assets }))
+      const published = Object.entries(assets).map(([name, digest]) => ({ name, digest }))
+      await writeFile(assetFile, JSON.stringify([...published, { name: manifestName }]))
+      const matched = verify(releaseTag)
+      assert.equal(matched.status, 0, matched.stderr)
+      published[0].digest = `sha256:${'f'.repeat(64)}`
+      await writeFile(assetFile, JSON.stringify([...published, { name: manifestName }]))
+      const altered = verify(releaseTag)
+      assert.notEqual(altered.status, 0)
+      assert.match(altered.stderr, /asset digest did not match/)
+    }
+  })
+})
+
+await test('all release packages and signing use the verified source and Mac artifacts wait for signature verification', () => {
+  for (const job of ['mac', 'platform', 'windows-sign', 'upload']) {
+    const checkout = release[job].steps.find(({ uses }) => uses?.startsWith('actions/checkout@'))
+    assert.equal(checkout.with.ref, '${{ needs.draft.outputs.sha }}')
   }
+  const mac = release.mac.steps
+  const build = stepScript('mac', 'Build signed Mac update artifacts')
+  assert.match(build, /^\s*pnpm run package:platform\s*$/m)
+  assert.doesNotMatch(build, /--publish/)
+  const staged = mac.findIndex((step) => step.with?.name === 'desktop-macos-26')
+  assert.ok(staged > mac.findIndex((step) => step.name === 'Verify Mac signature and notarization'))
+  assert.match(mac[staged].with.path, /release\/\*-mac\.yml/)
+  assert.match(
+    stepScript('upload', 'Upload desktop and server packages into draft release'),
+    /build .*release[\s\S]+gh release upload[\s\S]+verify/,
+  )
+})
+
+await test('legacy Stable tags use their historical Windows ARM64 checks and published feed digests', async () => {
+  await fixture(async (directory) => {
+    const tag = 'v0.0.8'
+    const git = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim()
+    const relativeVerifier = 'scripts/packaging/desktop-release-manifest.mjs'
+    const checkoutWorkflow = join(directory, '.github/workflows')
+    const assets = join(directory, 'asset-files')
+    const stage = join(directory, 'stage')
+    for (const folder of [checkoutWorkflow, assets, stage, join(directory, 'scripts/packaging')])
+      await mkdir(folder, { recursive: true })
+    const armExe = 'Dovo-Studio-0.0.8-windows-arm64.exe'
+    const armServer = 'Dovo-Server-0.0.8-windows-arm64.zip'
+    const { required, feeds } = releaseFiles(tag)
+    const historical = [...required, armExe, armServer, 'latest-arm64.yml']
+    await writeFile(
+      join(checkoutWorkflow, 'release-desktop.yml'),
+      [
+        'for pattern in \\',
+        historical.map((name) => `  "${name.replace('0.0.8', '${TAG#v}')}"`).join(' \\\n'),
+        '; do',
+      ]
+        .join('\n')
+        .replace('\n; do', '; do'),
+    )
+    git('init', '--quiet')
+    git('config', 'user.email', 'fixture@example.test')
+    git('config', 'user.name', 'Release fixture')
+    git('add', '.github')
+    git('commit', '--quiet', '-m', 'Legacy tag with historical release rules')
+    git('tag', '-a', tag, '-m', 'Legacy Stable')
+    git('remote', 'add', 'origin', directory)
+    const legacySha = git('rev-parse', 'HEAD')
+    const manifest = join(directory, 'published-assets.json')
+    const response = join(directory, 'response.json')
+    await writeFile(
+      response,
+      JSON.stringify({ databaseId: 8, isDraft: false, publishedAt: '2026-10-01T12:00:00Z' }),
+    )
+    for (const name of historical) await writeFile(join(assets, name), name)
+    for (const [name, [asset]] of Object.entries({ ...feeds, 'latest-arm64.yml': [armExe] })) {
+      const sha512 = createHash('sha512').update(asset).digest('base64')
+      await writeFile(
+        join(assets, name),
+        JSON.stringify({
+          version: '0.0.8',
+          files: [{ url: asset, sha512 }],
+          path: asset,
+          sha512,
+        }),
+      )
+    }
+    const digests = await Promise.all(
+      historical.map(async (name) => ({
+        name,
+        digest: `sha256:${createHash('sha256')
+          .update(await readFile(join(assets, name)))
+          .digest('hex')}`,
+      })),
+    )
+    await writeFile(manifest, JSON.stringify(digests))
+    for (const name of historical.filter((name) => /linux-.*\.tar\.gz$/.test(name)))
+      await copyFile(join(assets, name), join(stage, name))
+    await writeFile(
+      join(directory, 'gh'),
+      `#!${process.execPath}
+const fs = require('node:fs'), path = require('node:path')
+const args = process.argv.slice(2)
+if (args[0] === 'api') process.stdout.write(fs.readFileSync(process.env.GH_ASSETS))
+else if (args[1] === 'view') process.stdout.write(fs.readFileSync(process.env.GH_RESPONSE))
+else if (args[1] === 'download') {
+  const folder = args[args.indexOf('--dir') + 1]
+  for (let i = 0; i < args.length; i++)
+    if (args[i] === '--pattern') fs.copyFileSync(path.join(process.env.GH_FILES, args[i+1]), path.join(folder, args[i+1]))
+}
+else process.exit(1)
+`,
+      { mode: 0o700 },
+    )
+    const run = (...args) =>
+      spawnSync(process.execPath, [scriptPath, ...args], {
+        cwd: directory,
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          GH_REPO: 'fixture/dovo',
+          GH_ASSETS: manifest,
+          GH_RESPONSE: response,
+          GH_FILES: assets,
+        },
+        encoding: 'utf8',
+      })
+    const checked = run('verify', tag)
+    assert.equal(checked.status, 0, checked.stderr)
+    assert.equal(checked.stdout.trim(), legacySha)
+    assert.match(checked.stderr, /No build manifest binds these assets to the source/)
+    await writeFile(response, JSON.stringify({ databaseId: 8, isDraft: false }))
+    assert.match(run('verify', tag).stderr, /GitHub has no publication date/)
+    await writeFile(
+      response,
+      JSON.stringify({ databaseId: 8, isDraft: false, publishedAt: '2026-10-01T12:00:00Z' }),
+    )
+    const distributed = run('published', tag, '', stage)
+    assert.equal(distributed.status, 0, distributed.stderr)
+    assert.equal(distributed.stdout.trim(), legacySha)
+    await writeFile(
+      manifest,
+      JSON.stringify(
+        digests.filter(
+          ({ name }) => !name.includes('-windows-') && !/^latest(?:-arm64)?\.yml$/.test(name),
+        ),
+      ),
+    )
+    assert.equal(
+      run('published', tag, '', stage).status,
+      0,
+      'Legacy distribution can backfill a release without Windows packages',
+    )
+    const linux = historical.find((name) => name.endsWith('-linux-x64.tar.gz'))
+    await writeFile(join(stage, linux), 'altered Linux server archive')
+    assert.match(
+      run('published', tag, '', stage).stderr,
+      /Downloaded release asset digest did not match/,
+    )
+    await copyFile(join(assets, linux), join(stage, linux))
+
+    await writeFile(manifest, JSON.stringify(digests.filter(({ name }) => name !== armServer)))
+    assert.match(
+      run('verify', tag).stderr,
+      /Missing release asset: Dovo-Server-0.0.8-windows-arm64.zip/,
+    )
+    await writeFile(manifest, JSON.stringify(digests))
+    await writeFile(join(assets, armExe), 'altered ARM64 installer')
+    assert.match(
+      run('verify', tag).stderr,
+      /Update feed asset or SHA-512 did not match: latest-arm64.yml/,
+    )
+    await writeFile(join(assets, armExe), armExe)
+
+    await writeFile(
+      response,
+      JSON.stringify({ databaseId: 8, isDraft: true, targetCommitish: legacySha }),
+    )
+    assert.match(run('verify', tag).stderr, /rebuild a draft with the current Release workflow/)
+    await writeFile(
+      response,
+      JSON.stringify({ databaseId: 8, isDraft: false, publishedAt: '2026-10-01T12:00:00Z' }),
+    )
+    await writeFile(manifest, JSON.stringify([...digests, { name: manifestName }]))
+    await writeFile(join(assets, manifestName), '{}')
+    assert.match(run('verify', tag).stderr, /Release manifest does not match/)
+    await writeFile(manifest, JSON.stringify(digests))
+
+    await copyFile(scriptPath, join(directory, relativeVerifier))
+    git('add', relativeVerifier)
+    git('commit', '--quiet', '-m', 'Source with release manifest support')
+    git('tag', '-f', '-a', tag, '-m', 'Manifest-aware Stable')
+    assert.match(run('verify', tag).stderr, /source requires a build manifest/)
+    assert.match(run('published', tag, '', stage).stderr, /source requires a build manifest/)
+  })
 })

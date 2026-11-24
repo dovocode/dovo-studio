@@ -21,6 +21,7 @@ import {
   generatedTitleSchema,
   snapshotSchema,
   taskSchema,
+  taskDraftIdentity,
   cleanedDictationSchema,
   resolveTaskAgent,
   canChangeTaskCheckout,
@@ -353,8 +354,9 @@ export function useConversationActions(task: Task) {
         : null
     if (pending) {
       if (
-        !latestDraftText.current.trim() ||
-        latestDraftText.current.trim() === pending.message.text.trim()
+        !snapshot?.messageDraftIdentitySupported &&
+        (!latestDraftText.current.trim() ||
+          latestDraftText.current.trim() === pending.message.text.trim())
       ) {
         setTurnSettings((current) =>
           sameTurnSettings(current, pending.message.turnSettings) ? null : current,
@@ -383,7 +385,10 @@ export function useConversationActions(task: Task) {
           ),
       )
     } else if (acknowledged && attempt) {
-      if (!latestDraftText.current.trim() || latestDraftText.current.trim() === attempt.text) {
+      if (
+        !attempt.draftIdentity &&
+        (!latestDraftText.current.trim() || latestDraftText.current.trim() === attempt.text)
+      ) {
         setTurnSettings((current) =>
           sameTurnSettings(current, attempt.turnSettings) ? null : current,
         )
@@ -675,6 +680,9 @@ export function useConversationActions(task: Task) {
         text,
         attachmentIds,
         mode,
+        ...(snapshot?.messageDraftIdentitySupported
+          ? { draftIdentity: taskDraftIdentity(task.draft, attachmentIds, turnSettings, plan) }
+          : {}),
         runId: mode === 'steer' ? task.activeRunId : undefined,
         turnSettings: turnSettings ?? undefined,
         ...(plan ? { plan: true } : {}),
@@ -751,6 +759,9 @@ export function useConversationActions(task: Task) {
           {
             id: task.id,
             messageId: attempt.id,
+            ...(snapshot?.messageDraftIdentitySupported && attempt.draftIdentity
+              ? { draftIdentity: attempt.draftIdentity }
+              : {}),
             ...(firstMessage && !task.bot && snapshot?.messageSetupSupported
               ? {
                   initialTitle: { before: task.title, after: attempt.title },
@@ -824,7 +835,10 @@ export function useConversationActions(task: Task) {
             ).pipe(Effect.catch(() => Effect.succeed(undefined))),
           )
 
-        if (!latestDraftText.current.trim() || latestDraftText.current.trim() === attempt.text) {
+        if (
+          !attempt.draftIdentity &&
+          (!latestDraftText.current.trim() || latestDraftText.current.trim() === attempt.text)
+        ) {
           setTurnSettings((current) =>
             sameTurnSettings(current, attempt.turnSettings) ? null : current,
           )

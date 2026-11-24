@@ -37,7 +37,11 @@ import {
   WorkspaceRuntimeScope,
   providers,
 } from '@dovo/studio-core'
-import { usePullReviewSource, usePullCodeReview } from '@dovo/studio-core/pull-code-review'
+import {
+  pullReviewDraftScope,
+  usePullReviewSource,
+  usePullCodeReview,
+} from '@dovo/studio-core/pull-code-review'
 import {
   Button,
   ModelSettings,
@@ -79,7 +83,14 @@ function LocalPullCodeReviewPanel({
   onOpenStackReview?: (member: PullReviewStack['members'][number], runtimeId: string) => void
 }) {
   const uiText = useInterfaceText()
-  const { workspace, request, connected: online, activeRuntimeId, snapshot } = useWorkspace()
+  const {
+    workspace,
+    request,
+    connected: online,
+    activeRuntimeId,
+    snapshot,
+    connection,
+  } = useWorkspace()
   const connected = online && sourceReady
   const transport = useCallback(
     (path: string, input: unknown) => request(path, input, pullCodeReviewReportSchema),
@@ -94,6 +105,7 @@ function LocalPullCodeReviewPanel({
   const review = usePullCodeReview({
     target,
     scope: activeRuntimeId ?? '',
+    draftScope: pullReviewDraftScope(connection),
     request: transport,
     connected: connected && !!target.expectedDestination,
   })
@@ -1069,7 +1081,11 @@ function LocalPullCodeReviewPanel({
                     {uiText('Your review draft')}
                   </h4>
                   <span role="status" className="text-xs text-muted-foreground">
-                    {review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer')}
+                    {review.savedLocally
+                      ? uiText('Draft saved on this device')
+                      : review.dirty
+                        ? uiText('Unsaved changes')
+                        : uiText('Saved on computer')}
                   </span>
                 </div>
                 <Textarea

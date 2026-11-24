@@ -1,4 +1,5 @@
 name: Release
+run-name: ${{ inputs.verify_only && 'Verify release assets' || 'Package release' }}
 on:
   push:
     tags: ['v*']
@@ -7,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Leave empty for a nightly, or specify a release tag matching package.json
+        description: Leave empty for a nightly, or specify an existing release tag at the selected commit
         required: false
       verify_only:
         description: Verify existing release assets without rebuilding
@@ -29,6 +30,7 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       channel: ${{ steps.prepare.outputs.channel }}
       app_name: ${{ steps.prepare.outputs.app_name }}
+      sha: ${{ steps.prepare.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,15 +68,19 @@ jobs:
             CHANNEL=stable
             APP_NAME='Dovo Studio'
           fi
+          SOURCE_SHA=$(git rev-parse HEAD)
+          test "$SOURCE_SHA" = "$(git rev-parse "$GITHUB_SHA^{commit}")"
+          node scripts/packaging/desktop-release-manifest.mjs source "$TAG" "$SOURCE_SHA"
           {
+            echo "sha=$SOURCE_SHA"
             echo "tag=$TAG"
             echo "version=$VERSION"
             echo "channel=$CHANNEL"
             echo "app_name=$APP_NAME"
           } >> "$GITHUB_OUTPUT"
           EXISTS=false
-          if gh release view "$TAG" --json isDraft --jq .isDraft >/tmp/dovo-release-draft 2>/dev/null; then
-            if test "$(cat /tmp/dovo-release-draft)" != true; then
+          if gh release view "$TAG" --json isDraft --jq .isDraft >"$RUNNER_TEMP/dovo-release-draft" 2>/dev/null; then
+            if test "$(cat "$RUNNER_TEMP/dovo-release-draft")" != true; then
               echo 'Release is already published; skipping duplicate tag-triggered build.'
               echo 'build=false' >> "$GITHUB_OUTPUT"
               exit 0
@@ -82,11 +88,11 @@ jobs:
             EXISTS=true
           fi
           if test "$CHANNEL" = nightly; then
-            node scripts/packaging/nightly-notes.mjs "$GITHUB_SHA" > /tmp/dovo-nightly-notes.md
+            node scripts/packaging/nightly-notes.mjs "$GITHUB_SHA" > "$RUNNER_TEMP/dovo-nightly-notes.md"
             if test "$EXISTS" = true; then
-              gh release edit "$TAG" --target "$GITHUB_SHA" --notes-file /tmp/dovo-nightly-notes.md
+              gh release edit "$TAG" --target "$SOURCE_SHA" --notes-file "$RUNNER_TEMP/dovo-nightly-notes.md"
             else
-              gh release create "$TAG" --draft --prerelease --title "Dovo Studio (Nightly) ${TAG#v}" --target "$GITHUB_SHA" --notes-file /tmp/dovo-nightly-notes.md
+              gh release create "$TAG" --draft --prerelease --title "Dovo Studio (Nightly) ${TAG#v}" --target "$SOURCE_SHA" --notes-file "$RUNNER_TEMP/dovo-nightly-notes.md"
             fi
           else
             # Stable notes come from the CHANGELOG.md section that pnpm changelog:release wrote.
@@ -96,17 +102,17 @@ jobs:
               echo "$PENDING"
               exit 1
             fi
-            node scripts/changelog/assemble-fragments.mjs notes "$VERSION" > /tmp/dovo-release-notes.md
+            node scripts/changelog/assemble-fragments.mjs notes "$VERSION" > "$RUNNER_TEMP/dovo-release-notes.md"
             NOTES=()
-            if test -s /tmp/dovo-release-notes.md; then
-              NOTES=(--notes-file /tmp/dovo-release-notes.md)
+            if test -s "$RUNNER_TEMP/dovo-release-notes.md"; then
+              NOTES=(--notes-file "$RUNNER_TEMP/dovo-release-notes.md")
             else
               echo "::warning title=Changelog::CHANGELOG.md has no $VERSION section. The draft uses generated notes only."
             fi
             if test "$EXISTS" = true; then
-              gh release edit "$TAG" --target "$GITHUB_SHA"
+              gh release edit "$TAG" --target "$SOURCE_SHA"
             else
-              gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes "${NOTES[@]}"
+              gh release create "$TAG" --draft --verify-tag --title "Dovo Studio ${TAG#v}" --target "$SOURCE_SHA" --generate-notes "${NOTES[@]}"
             fi
           fi
           echo 'build=true' >> "$GITHUB_OUTPUT"
@@ -122,6 +128,8 @@ jobs:
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.sha }}
       - uses: ./.github/actions/setup-build
         id: setup
         with:
@@ -182,18 +190,17 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "release/mac-arm64/$APP_NAME.app"
           spctl --assess --type execute --verbose=2 "release/mac-arm64/$APP_NAME.app"
           xcrun stapler validate "release/mac-arm64/$APP_NAME.app"
-      - name: Upload verified Mac release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.draft.outputs.tag }}
-        run: |
-          gh release upload "$TAG" \
-            release/*.dmg \
-            release/*.zip \
-            release/*.blockmap \
-            release/*-mac.yml \
-            release/*-mise-*.tar.gz \
-            --clobber
+      - uses: actions/upload-artifact@v7
+        with:
+          compression-level: 0
+          name: desktop-macos-26
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/*-mac.yml
+            release/*-mise-*.tar.gz
   platform:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
@@ -217,6 +224,8 @@ jobs:
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.sha }}
       - uses: ./.github/actions/setup-build
         id: setup
         with:
@@ -323,6 +332,8 @@ jobs:
       AZURE_SIGNING_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.sha }}
       - uses: ./.github/actions/setup-build
         id: setup
         with:
@@ -403,6 +414,14 @@ jobs:
     needs: [draft, mac, platform, windows-sign]
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.sha }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - run: pnpm --filter @dovo/runtime... install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v8
         with:
           pattern: server-*
@@ -418,59 +437,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.draft.outputs.tag }}
+          SOURCE_SHA: ${{ needs.draft.outputs.sha }}
         run: |
+          node scripts/packaging/desktop-release-manifest.mjs source "$TAG" "$SOURCE_SHA"
+          node scripts/packaging/desktop-release-manifest.mjs build "$TAG" "$SOURCE_SHA" release
           gh release upload "$TAG" release/* --clobber
+          node scripts/packaging/desktop-release-manifest.mjs verify "$TAG" "$SOURCE_SHA" release
   verify:
-    if: ${{ always() && (inputs.verify_only || (needs.mac.result == 'success' && needs.upload.result == 'success')) }}
-    needs: [draft, mac, upload]
+    if: ${{ always() && (inputs.verify_only || needs.upload.result == 'success') }}
+    needs: [draft, upload]
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify release assets
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.sha || github.event.repository.default_branch }}
+      - uses: pnpm/action-setup@v6
+        if: inputs.verify_only
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - run: pnpm --filter @dovo/runtime... install --frozen-lockfile --ignore-scripts
+        if: inputs.verify_only
+      - name: Verify release source and asset digests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.draft.outputs.tag || inputs.tag || github.ref_name }}
-          CHANNEL: ${{ needs.draft.outputs.channel }}
-        run: |
-          # verify_only skips the draft job, so derive the channel from the nightly tag convention.
-          if test -z "$CHANNEL"; then
-            case "$TAG" in
-              *-nightly.*) CHANNEL=nightly ;;
-              *) CHANNEL=stable ;;
-            esac
-          fi
-          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > /tmp/dovo-release-assets
-          if test "$CHANNEL" = nightly; then
-            PREFIX=Dovo-Studio-Nightly
-            SERVER=Dovo-Server-Nightly
-            FEED=nightly
-          else
-            PREFIX=Dovo-Studio
-            SERVER=Dovo-Server
-            FEED=latest
-          fi
-          for pattern in \
-            "$PREFIX-${TAG#v}-arm64.dmg" \
-            "$PREFIX-${TAG#v}-arm64.zip" \
-            "$PREFIX-mise-${TAG#v}-macos-arm64.tar.gz" \
-            "$SERVER-${TAG#v}-macos-arm64.tar.gz" \
-            "$SERVER-${TAG#v}-linux-x64.tar.gz" \
-            "$SERVER-${TAG#v}-linux-arm64.tar.gz" \
-            "$SERVER-${TAG#v}-windows-x64.zip" \
-            "$PREFIX-${TAG#v}-windows-x64.exe" \
-            "$PREFIX-${TAG#v}-linux-amd64.deb" \
-            "$PREFIX-${TAG#v}-linux-arm64.deb" \
-            "$PREFIX-${TAG#v}-linux-x86_64.rpm" \
-            "$PREFIX-${TAG#v}-linux-aarch64.rpm" \
-            "$PREFIX-${TAG#v}-linux-x86_64.AppImage" \
-            "$PREFIX-${TAG#v}-linux-arm64.AppImage" \
-            "$FEED-linux.yml" \
-            "$FEED-linux-arm64.yml" \
-            "$FEED.yml" \
-            "$FEED-mac.yml"; do
-            grep -Fx "$pattern" /tmp/dovo-release-assets || { echo "::error::Missing release asset: $pattern"; exit 1; }
-          done
-          echo "Release $TAG has all required assets." >> "$GITHUB_STEP_SUMMARY"
+          SOURCE_SHA: ${{ needs.draft.outputs.sha }}
+        run: node scripts/packaging/desktop-release-manifest.mjs verify "$TAG" "$SOURCE_SHA"
   publication-ready:
     needs: [draft, verify]
     if: ${{ needs.draft.outputs.channel == 'nightly' && needs.verify.result == 'success' }}
@@ -479,8 +473,9 @@ jobs:
       - name: Record verified nightly provenance
         env:
           TAG: ${{ needs.draft.outputs.tag }}
+          SOURCE_SHA: ${{ needs.draft.outputs.sha }}
         run: |
-          node -e 'require("fs").writeFileSync("nightly.json", JSON.stringify({tag:process.env.TAG,sha:process.env.GITHUB_SHA,channel:"nightly"}))'
+          node -e 'require("fs").writeFileSync("nightly.json", JSON.stringify({tag:process.env.TAG,sha:process.env.SOURCE_SHA,channel:"nightly"}))'
       - uses: actions/upload-artifact@v7
         with:
           name: nightly-publication

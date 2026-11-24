@@ -1,4 +1,4 @@
-import { mutableStruct, taskFamilyWorking } from '@dovo/protocol'
+import { mutableArray, mutableStruct, taskFamilyWorking } from '@dovo/protocol'
 import {
   automationSchema,
   jobRunSchema,
@@ -12,6 +12,11 @@ import { createHash } from 'node:crypto'
 import { botStepTurn } from './bot-step.js'
 import { readStepResult } from './step-result.js'
 export const storedRunSchema = mutableStruct({
+  reviewDecisions: Schema.optional(
+    mutableArray(
+      mutableStruct({ nodeId: Schema.String, attempt: Schema.Number, allow: Schema.Boolean }),
+    ),
+  ),
   retryTurnId: Schema.optional(Schema.String),
   outputs: Schema.optional(
     Schema.Record(

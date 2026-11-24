@@ -1,5 +1,10 @@
 import { LocalBrowserPreview } from './local-browser-preview'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
+import {
+  browserSessionKey,
+  previousBrowserSession,
+  rememberBrowserSession,
+} from '@dovo/studio-core/browser-session-history'
 import type { BrowserSearchEngine } from '@dovo/protocol'
 import { useScreenshotAttachment } from './screenshot-attachment'
 import { Text } from '../../ui/content/text'
@@ -120,6 +125,13 @@ function RemoteBrowserContent({
   const [landscape, setLandscape] = useApplicationState(false)
 
   const { connected, connection, profile, profiles, readEffect, snapshot } = useRuntime()
+  const sessionKey = browserSessionKey(
+    connection?.runtimeId ??
+      (connection ? JSON.stringify([profile?.id, connection.address]) : undefined),
+    taskId,
+    deviceId ? undefined : tabId,
+    profileId,
+  )
   const localhost = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
   const canOpenLocal =
     localhost &&
@@ -277,6 +289,7 @@ function RemoteBrowserContent({
             type: 'connect',
             url: target,
             device: result.device,
+            previousSessionId: previousBrowserSession(sessionKey),
           })
           post({
             type: 'presentation',
@@ -536,10 +549,14 @@ function RemoteBrowserContent({
                   setEnded(true)
                   setOnline(false)
                 }
-                if (state.data.byPage) closedCallback.current?.()
+                if (state.data.reason ? state.data.reason === 'page' : state.data.byPage) {
+                  rememberBrowserSession(sessionKey, undefined)
+                  closedCallback.current?.()
+                }
                 return
               }
               if (state.success && state.data.type === 'state') {
+                rememberBrowserSession(sessionKey, state.data.sessionId)
                 setBrowserState(state.data)
                 stateCallback.current?.(state.data)
                 lastAddress.current = state.data.url === 'about:blank' ? '' : state.data.url
@@ -562,6 +579,7 @@ function RemoteBrowserContent({
             }
             if (parsed.data.type === 'close') {
               if (!visible.current || AppState.currentState === 'background') return
+              rememberBrowserSession(sessionKey, undefined)
               current.current++
               pending.current = false
               ready.current = false

@@ -2,12 +2,14 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { useEffect, useMemo, useRef } from 'react'
 import { Platform, ScrollView, View } from 'react-native'
 import Constants from 'expo-constants'
+import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
 import { router } from 'expo-router'
 import {
   createLauncherTask,
   defaultProblemReportInclude,
   launcherDefaultAgent,
+  localProblemDiagnostics,
   problemReportPreviewSchema,
   problemReportRequest,
   problemReportStart,
@@ -58,7 +60,14 @@ const client: ProblemReportClient = {
 export default function ReportProblemScreen() {
   const uiText = useInterfaceText()
   const { styles } = useTheme()
-  const { overviews, activeId, readRuntime, refreshRuntime } = useRuntime()
+  const {
+    profiles,
+    overviews,
+    activeId,
+    readRuntime,
+    refreshRuntime,
+    error: connectionError,
+  } = useRuntime()
   const targets = useMemo(() => problemReportTargets(overviews), [overviews])
   const available = targets.filter((target) => target.available)
   const [runtimeId, setRuntimeId] = useApplicationState(
@@ -67,7 +76,9 @@ export default function ReportProblemScreen() {
       available[0]?.profile.id ??
       '',
   )
-  const target = available.find((entry) => entry.profile.id === runtimeId)
+  const target = runtimeId
+    ? available.find((entry) => entry.profile.id === runtimeId)
+    : (available.find((entry) => entry.profile.id === activeId) ?? available[0])
   const [form, setForm] = useApplicationState<ProblemReportForm>({
     description: '',
     expected: '',
@@ -78,6 +89,8 @@ export default function ReportProblemScreen() {
   const [reviewed, setReviewed] = useApplicationState<Reviewed | null>(null)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const [showLocal, setShowLocal] = useApplicationState(false)
+  const [copyStatus, setCopyStatus] = useApplicationState('')
   const [errors, setErrors] = useApplicationState<ProblemReportClientError[]>(() =>
     recentClientErrors(),
   )
@@ -106,6 +119,18 @@ export default function ReportProblemScreen() {
     ? permissionPolicyUIIssue(selection.harness, snapshot?.permissionPolicySupported === true)
     : undefined
   const locked = busy || !!attempt.current
+  const local = !reviewed && !busy && (showLocal || !available.length)
+  const diagnostics = local
+    ? localProblemDiagnostics(
+        client,
+        {
+          saved: profiles.length,
+          connected: overviews.filter((entry) => entry.connected).length,
+          error: connectionError,
+        },
+        errors,
+      )
+    : ''
 
   const preview = async () => {
     if (!target || busy) return
@@ -184,6 +209,44 @@ export default function ReportProblemScreen() {
     }
   }
   const mono = { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12 }
+  if (local)
+    return (
+      <SettingsPage>
+        <ScreenHeader title={uiText('Report a problem')} />
+        <ScrollView contentContainerStyle={[styles.content, { gap: 20 }]}>
+          <Text style={styles.muted}>
+            <InterfaceText>
+              {
+                'Preview app diagnostics on this device. Triage requires a connected computer that supports problem reports.'
+              }
+            </InterfaceText>
+          </Text>
+          <SettingsGroup title={uiText('Local diagnostics')}>
+            <Text selectable style={[styles.text, mono, { padding: 12 }]}>
+              {diagnostics}
+            </Text>
+          </SettingsGroup>
+          {!!copyStatus && <Text accessibilityLiveRegion="polite">{copyStatus}</Text>}
+          <Action
+            label={uiText('Copy diagnostics')}
+            onPress={() =>
+              void Clipboard.setStringAsync(diagnostics).then(
+                () => setCopyStatus(uiText('Diagnostics copied')),
+                () =>
+                  setCopyStatus(uiText('Could not copy diagnostics. Select the text to copy it.')),
+              )
+            }
+          />
+          {!!available.length && (
+            <Action
+              secondary
+              label={uiText('Back to report')}
+              onPress={() => setShowLocal(false)}
+            />
+          )}
+        </ScrollView>
+      </SettingsPage>
+    )
   return (
     <SettingsPage>
       <ScreenHeader title={uiText('Report a problem')} />
@@ -200,11 +263,6 @@ export default function ReportProblemScreen() {
             }
           </InterfaceText>
         </Text>
-        {!available.length && (
-          <Text accessibilityRole="alert" style={styles.muted}>
-            <InterfaceText>{'Update a connected computer to report problems.'}</InterfaceText>
-          </Text>
-        )}
         {reviewed ? (
           <>
             <Text style={styles.muted}>
@@ -261,7 +319,7 @@ export default function ReportProblemScreen() {
               <SettingsGroup>
                 <Choice
                   label={uiText('Computer')}
-                  value={runtimeId}
+                  value={target?.profile.id ?? ''}
                   disabled={locked}
                   items={available.map((entry) => ({
                     id: entry.profile.id,
@@ -350,11 +408,19 @@ export default function ReportProblemScreen() {
             />
           </>
         ) : (
-          <Action
-            label={uiText('Preview')}
-            disabled={busy || !target || !form.description.trim()}
-            onPress={() => void preview()}
-          />
+          <>
+            <Action
+              secondary
+              label={uiText('Local diagnostics')}
+              disabled={locked}
+              onPress={() => setShowLocal(true)}
+            />
+            <Action
+              label={uiText('Preview')}
+              disabled={busy || !target || !form.description.trim()}
+              onPress={() => void preview()}
+            />
+          </>
         )}
       </ScrollView>
     </SettingsPage>

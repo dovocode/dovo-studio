@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useStudioHost, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import {
   Button,
   Dialog,
@@ -15,6 +16,7 @@ import {
   createLauncherTask,
   defaultProblemReportInclude,
   launcherDefaultAgent,
+  localProblemDiagnostics,
   problemReportPreviewSchema,
   problemReportRequest,
   problemReportStart,
@@ -38,7 +40,10 @@ import { ReportProblemFields, ReportProblemPreviewView } from './report-problem-
 type Reviewed = { runtimeId: string; request: ProblemReportRequest; preview: ProblemReportPreview }
 type Attempt = { profile: RuntimeProfile; body: ProblemReportStart }
 
+declare const __DOVO_RENDERER_BUILD__: { version: string; commit?: string } | undefined
+
 function clientInfo(appInfo: ReturnType<typeof useStudioHost>['appInfo']): ProblemReportClient {
+  const build = typeof __DOVO_RENDERER_BUILD__ === 'undefined' ? undefined : __DOVO_RENDERER_BUILD__
   const viewer = appInfo?.viewer
   const platform = viewer
     ? `${viewer.platform} ${viewer.architecture}`
@@ -48,12 +53,15 @@ function clientInfo(appInfo: ReturnType<typeof useStudioHost>['appInfo']): Probl
   return {
     surface: appInfo ? 'desktop' : 'web',
     ...(appInfo ? { appVersion: appInfo.version, channel: appInfo.channel } : {}),
+    ...(!appInfo && build ? { appVersion: build.version } : {}),
+    ...(build?.commit ? { commit: build.commit } : {}),
     ...(platform ? { platform: platform.slice(0, 128) } : {}),
   }
 }
 
 export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
-  const { runtimes, activeRuntimeId, readRuntime, refreshRuntime } = useWorkspace()
+  const { runtimes, activeRuntimeId, readRuntime, refreshRuntime, storageError, syncError } =
+    useWorkspace()
   const { appInfo, openThread } = useStudioHost()
   const targets = useMemo(() => problemReportTargets(runtimes), [runtimes])
   const [runtimeId, setRuntimeId] = useState(
@@ -63,7 +71,11 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
       targets.find((target) => target.available)?.profile.id ??
       '',
   )
-  const target = targets.find((entry) => entry.profile.id === runtimeId)
+  const available = targets.some((entry) => entry.available)
+  const target =
+    targets.find((entry) => entry.profile.id === runtimeId) ??
+    targets.find((entry) => entry.available && entry.profile.id === activeRuntimeId) ??
+    targets.find((entry) => entry.available)
   const [form, setForm] = useState<ProblemReportForm>({
     description: '',
     expected: '',
@@ -74,8 +86,22 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
   const [reviewed, setReviewed] = useState<Reviewed | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showLocal, setShowLocal] = useState(false)
+  const [copyStatus, setCopyStatus] = useState('')
   const attempt = useRef<Attempt | null>(null)
   const errors = useMemo(() => recentClientErrors(), [])
+  const local = !reviewed && !busy && (showLocal || !available)
+  const diagnostics = local
+    ? localProblemDiagnostics(
+        clientInfo(appInfo),
+        {
+          saved: runtimes.length,
+          connected: runtimes.filter((entry) => entry.connected).length,
+          error: storageError || syncError,
+        },
+        errors,
+      )
+    : ''
   // The default agent follows the chosen computer until the person picks another one.
   const scratch = target?.scratch
   const snapshot = target?.snapshot
@@ -185,12 +211,21 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>Report a problem</DialogTitle>
           <DialogDescription>
-            {reviewed
-              ? 'Check what Dovo will send. Starting creates a new thread without a project.'
-              : 'An agent on your computer reads the diagnostics and the Dovo source for your version, then drafts an issue for you to review. Nothing is filed for you.'}
+            {local
+              ? 'Preview app diagnostics on this device. Triage requires a connected computer that supports problem reports.'
+              : reviewed
+                ? 'Check what Dovo will send. Starting creates a new thread without a project.'
+                : 'An agent on your computer reads the diagnostics and the Dovo source for your version, then drafts an issue for you to review. Nothing is filed for you.'}
           </DialogDescription>
         </DialogHeader>
-        {reviewed ? (
+        {local ? (
+          <pre
+            aria-label="Local diagnostics"
+            className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs"
+          >
+            {diagnostics}
+          </pre>
+        ) : reviewed ? (
           <ReportProblemPreviewView preview={reviewed.preview} />
         ) : (
           <ReportProblemFields
@@ -205,14 +240,14 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
                 <select
                   aria-label="Computer"
                   className={selectClass}
-                  value={runtimeId}
+                  value={target?.profile.id ?? ''}
                   disabled={locked}
                   onChange={(event) => {
                     manualSelection.current = false
                     setRuntimeId(event.target.value)
                   }}
                 >
-                  {!targets.some((entry) => entry.available) && (
+                  {!available && (
                     <option value="">No connected computer supports problem reports</option>
                   )}
                   {targets.map((entry) => (
@@ -249,13 +284,35 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
             )}
           </ReportProblemFields>
         )}
-        {(error || selectionIssue) && (
+        {local && copyStatus && <p role="status">{copyStatus}</p>}
+        {!local && (error || selectionIssue) && (
           <p role="alert" className="text-xs text-destructive">
             {error || selectionIssue}
           </p>
         )}
         <div className="flex flex-wrap justify-end gap-2">
-          {reviewed ? (
+          {local ? (
+            <>
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              {available && (
+                <Button variant="outline" onClick={() => setShowLocal(false)}>
+                  Back to report
+                </Button>
+              )}
+              <Button
+                onClick={() =>
+                  void copyTextToClipboard(diagnostics).then(
+                    () => setCopyStatus('Diagnostics copied'),
+                    () => setCopyStatus('Could not copy diagnostics. Select the text to copy it.'),
+                  )
+                }
+              >
+                Copy diagnostics
+              </Button>
+            </>
+          ) : reviewed ? (
             <>
               <Button
                 variant="outline"
@@ -273,6 +330,9 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
             </>
           ) : (
             <>
+              <Button variant="outline" disabled={locked} onClick={() => setShowLocal(true)}>
+                Local diagnostics
+              </Button>
               <Button variant="outline" disabled={busy} onClick={onClose}>
                 Cancel
               </Button>

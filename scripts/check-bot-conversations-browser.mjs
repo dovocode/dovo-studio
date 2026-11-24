@@ -109,6 +109,10 @@ try {
     await page.getByRole('button', { name: 'Archive and start new', exact: true }).click()
     await page
       .getByRole('dialog')
+      .getByText(/Save this conversation in Side threads/)
+      .waitFor()
+    await page
+      .getByRole('dialog')
       .getByText(/Settings, memory, routines/)
       .waitFor()
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()

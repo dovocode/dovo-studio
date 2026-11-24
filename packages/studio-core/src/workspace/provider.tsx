@@ -171,6 +171,7 @@ export function WorkspaceProvider({
   )
   const [workspace, setState, current] = useApplicationState(createWorkspace)
   const [ready, setReady] = useApplicationState(false),
+    [restoringConnection, setRestoringConnection] = useApplicationState(true),
     [storageError, setStorageError] = useApplicationState<string | null>(null),
     writable = useRef(true)
   const [connection, setConnection, connectionRef] = useApplicationState<RuntimeConnection | null>(
@@ -1678,7 +1679,10 @@ export function WorkspaceProvider({
       ),
       Effect.ensuring(
         Effect.sync(() => {
-          if (!disposed) setReady(true)
+          if (!disposed) {
+            setReady(true)
+            setRestoringConnection(false)
+          }
         }),
       ),
     )
@@ -2180,6 +2184,7 @@ export function WorkspaceProvider({
       workspace: visibleWorkspace,
       setWorkspace,
       ready,
+      restoringConnection,
       storageError,
       connection,
       snapshot,
@@ -2227,6 +2232,7 @@ export function WorkspaceProvider({
       visibleWorkspace,
       setWorkspace,
       ready,
+      restoringConnection,
       storageError,
       connection,
       snapshot,

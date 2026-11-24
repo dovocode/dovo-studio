@@ -1,6 +1,12 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
-import { botResultSchema, decode, threadChildren, taskParentReference } from '@dovo/protocol'
+import {
+  botResultSchema,
+  conversationPageSchema,
+  decode,
+  threadChildren,
+  taskParentReference,
+} from '@dovo/protocol'
 import { setupBotRuntime } from '../../testing/bots'
 import { waitForRuntime } from '../../testing/integration'
 
@@ -81,6 +87,23 @@ it('atomically archives the complete conversation under the same Bot and starts 
   )
   expect(fresh.messages).toEqual([])
   expect(fresh.turns).toEqual([])
+  const freshPage = decode(
+    conversationPageSchema,
+    await (await f.request('/api/tasks/history', { id })).json(),
+  )
+  const savedPage = decode(
+    conversationPageSchema,
+    await (await f.request('/api/tasks/history', { id: saved.id })).json(),
+  )
+  expect(freshPage.messages).toEqual([])
+  expect(freshPage.turns).toEqual([])
+  expect(freshPage.historyRevision).toBeGreaterThan(before.historyRevision ?? 0)
+  expect(savedPage.messages.map((message) => message.id)).toEqual(
+    before.messages.map((message) => message.id),
+  )
+  expect(
+    (await f.request('/api/tasks/history', { id, before: before.messages[0]!.id })).status,
+  ).toBe(409)
   expect(fresh.nativeTodos).toBeUndefined()
   expect(fresh.sessionId).toBeUndefined()
   expect(fresh.draft).toBe(before.draft)

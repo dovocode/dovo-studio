@@ -54,3 +54,18 @@ it('rejects loopback variants and wildcard addresses before requesting pairing',
     expect(() => pairingAddress(address)).toThrow(/address|HTTP/)
   }
 })
+
+it('allows loopback only when the desktop or web pairing flow opts in', () => {
+  for (const address of ['http://127.0.0.2:8787', 'http://[::1]:8787', 'http://localhost:8787']) {
+    expect(pairingAddress(address, { allowLoopback: true })).toBe(address)
+    expect(() => pairingAddress(address)).toThrow(/address/)
+    expect(() => pairingInvitationUrl({ ...invitation, address })).toThrow(/address/)
+  }
+  for (const address of [
+    '0.0.0.0:8787',
+    '[::]:8787',
+    'user:secret@localhost:8787',
+    'localhost:8787/path',
+  ])
+    expect(() => pairingAddress(address, { allowLoopback: true })).toThrow(/address|HTTP/)
+})

@@ -14,6 +14,7 @@ import {
   type Task,
   type Workspace,
 } from '@dovo/studio-core'
+import { taskDraftIdentity } from '@dovo/protocol'
 import { createComposerDraft } from './composer-draft'
 import { appendHandoff } from '../../detail/side-threads'
 
@@ -124,7 +125,15 @@ export function useComposerDraft(
   // Reconcile and flush during layout so remounts cannot paint an old debounced draft.
   useLayoutEffect(() => {
     const previous = savedController.text
-    savedController.receive(task.draft)
+    savedController.receive(
+      task.draft,
+      taskDraftIdentity(
+        task.draft,
+        task.draftAttachments?.map(({ id }) => id) ?? [],
+        task.draftTurnSettings,
+        task.draftPlan,
+      ),
+    )
     if (savedController.text !== previous) {
       // An accepted external workspace edit replaces this controller's old recovery text.
       // The workspace outbox owns that edit; do not replay the superseded record on reload.
@@ -134,7 +143,15 @@ export function useComposerDraft(
         report(cause)
       }
     }
-  }, [savedController, task.draft, recovery, report])
+  }, [
+    savedController,
+    task.draft,
+    task.draftAttachments,
+    task.draftTurnSettings,
+    task.draftPlan,
+    recovery,
+    report,
+  ])
   useLayoutEffect(() => {
     const save = () => {
       try {
@@ -172,15 +189,19 @@ export function useComposerDraft(
     [controller, temporary],
   )
   const accept = useCallback(
-    (submitted: string, revision?: number) => {
+    (submitted: string, revision?: number, identity?: string) => {
       try {
-        savedController.accept(submitted, revision)
+        const previous = savedController.revision
+        const checkpoint = recovery.current?.checkpoint() ?? null
+        savedController.accept(submitted, revision, identity)
+        if (identity !== undefined && savedController.revision !== previous)
+          recovery.current?.retire(checkpoint)
         setError('')
       } catch (cause) {
         report(cause)
       }
     },
-    [savedController, report],
+    [savedController, recovery, report],
   )
   // Handoffs always target the saved draft, even while a queued message is being edited, and
   // persist immediately on top of any local edits the runtime has not seen yet.

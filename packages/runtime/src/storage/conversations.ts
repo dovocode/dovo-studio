@@ -91,6 +91,16 @@ export class Conversations {
       return start !== undefined && end !== undefined && current > start && current <= end
     })
   }
+  latestAssistantText(taskId: string) {
+    const row = this.db
+      .prepare(`
+        SELECT json_extract(value, '$.text') AS text FROM conversation_items
+        WHERE task_id = ? AND kind = 'message' AND json_extract(value, '$.role') = 'assistant'
+        ORDER BY ordinal DESC LIMIT 1
+      `)
+      .get(taskId)
+    return decode(Schema.UndefinedOr(mutableStruct({ text: Schema.String })), row)?.text
+  }
   /** Composer recall reads only user messages and never materializes the conversation. */
   recentUserMessages(taskId: string, before?: string) {
     const cursor =

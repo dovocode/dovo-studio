@@ -157,3 +157,16 @@ node scripts/ci/mobile-native-smoke.mjs
 The script owns and deletes only the simulator it creates. Its fixture pairing approval is limited
 to the named test phone; it does not use a user's paired computers or phone. Failure screenshots and
 Maestro diagnostics are retained in the Check run.
+
+The installed iOS and Android CI builds pair with a fixture runtime over HTTP. Each platform has a
+smoke test that cuts both requests and the live stream, restarts the app with a draft, and checks
+that reconnect delivers the draft once through the original pairing.
+
+To check a new installed app against an older runtime, build the selected previous Dovo commit in a
+clean separate checkout with `pnpm --filter @dovo/runtime... -r build`. Keep the disposable device
+and app build from the current checkout. Set `DOVO_MOBILE_SMOKE_PREVIOUS_CHECKOUT` to the older
+checkout's absolute path when starting the iOS smoke script above or
+`node scripts/verify-mobile.mjs <emulator-id> --android-recovery` on Android. The driver checks that
+this is a different ancestor commit, then starts its compiled runtime with an isolated database. The
+previous runtime must support the pairing, thread, and draft APIs the installed release smoke uses.
+The regular CI smoke continues to verify the matching build.

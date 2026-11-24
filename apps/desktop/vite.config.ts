@@ -4,8 +4,14 @@ import electron from 'vite-plugin-electron/simple'
 import { defineConfig } from 'vite-plus'
 import { fileURLToPath } from 'node:url'
 import { writeDesktopBuildStamp } from '../../scripts/packaging/desktop-build-stamp.mjs'
+import { rendererBuildIdentity } from '../../scripts/packaging/renderer-build-identity.mjs'
 
 export default defineConfig({
+  define: {
+    __DOVO_RENDERER_BUILD__: JSON.stringify(
+      rendererBuildIdentity(new URL('../../', import.meta.url)),
+    ),
+  },
   test: {
     // Vitest v4 compatibility: preserve mock call history.
     // Remove after tests no longer rely on calls from setup or earlier tests.

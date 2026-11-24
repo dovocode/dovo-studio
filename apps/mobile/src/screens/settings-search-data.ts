@@ -2,6 +2,8 @@
 export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> = {
   '/settings/devices': ['Dovo Connect URL', 'Dovo Artifacts URL', 'Remote MCP'],
   '/settings/general': [
+    'Interface language',
+    'Screen reader turn updates',
     'Open on launch',
     'Time format',
     'Enable experimental Browser',

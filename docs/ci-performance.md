@@ -10,9 +10,11 @@ same commit. Mobile integration and manual mobile releases remain separate.
 the complete workspace typecheck. Both use explicit source globs in `vite.config.ts`; native
 compiler children cannot be traced reliably on every Linux host. The ordinary `pnpm build` and
 `pnpm typecheck` commands remain available for uncached verification. Update the input/output lists
-when introducing a generated output or a build input outside the existing source trees. Build
-environment variables are fingerprinted too. The wrapper removes invocation IDs and browser-check
-settings before starting Vite, so these do not leak back into nested build fingerprints.
+when introducing a generated output or a build input outside the existing source trees. The cache
+restores both browser viewers, including the JSON viewer imported by Electron. Build environment
+variables and the renderer source commit are fingerprinted too. The wrapper removes invocation IDs
+and browser-check settings before starting Vite, so these do not leak back into nested build
+fingerprints.
 
 The desktop package runs browser-viewer generation and `vp build` directly. Its former additional
 `vp run bundle` cache wrapper caused nested esbuild spawns to fail with `EINVAL` on the review Linux
@@ -29,7 +31,9 @@ Source fingerprints, rather than a GitHub cache hit alone, decide whether a task
 The browser registry is assigned longest-first using `scripts/ci/browser-durations.json`. Newly
 registered suites use the median measured duration and are included automatically. Each shard emits
 an actual duration summary and a `browser-timings-N` artifact, including partial results on failure.
-Refresh the estimates after meaningful changes to suite timings:
+The artifact records each check's exit status and attempts. A retry runs only the failed check, so
+earlier generators and successful checks keep their results. Refresh the estimates after meaningful
+changes to suite timings:
 
 ```sh
 gh run download RUN_ID --pattern 'browser-timings-*' --dir /tmp/dovo-browser-timings

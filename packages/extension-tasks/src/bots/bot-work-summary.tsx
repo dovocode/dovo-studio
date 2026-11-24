@@ -109,7 +109,7 @@ function BotWorkControls({
           <DialogTitle>{uiText('Archive and start new?')}</DialogTitle>
           <DialogDescription>
             {uiText(
-              'Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.',
+              'Save this conversation in Side threads and start a fresh conversation. Settings, memory, routines and your unsent draft stay.',
             )}
           </DialogDescription>
           {error && (

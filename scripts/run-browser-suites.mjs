@@ -1,6 +1,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { browserAttemptLimit, runBrowserCheck } from './retry-browser.mjs'
 import { browserChecks, browserShards, unregisteredBrowserChecks } from './ci/browser-shards.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
@@ -39,35 +40,48 @@ if (mode !== '--list') {
   )
 }
 const timings = []
+const attempts = browserAttemptLimit(process.env.DOVO_BROWSER_ATTEMPTS)
+const windows = process.platform === 'win32'
+const shell = windows ? (process.env.ComSpec ?? 'cmd.exe') : 'sh'
+const shellArgs = (command) => (windows ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command])
+const summary = process.env.GITHUB_STEP_SUMMARY
 for (const suite of selected.suites) {
   console.log(suite)
   if (mode === '--list') continue
   const started = performance.now()
-  const command = browserChecks(manifest.scripts[suite])
-  if (!command) throw new Error(`Browser suite has no checks: ${suite}`)
-  const shell = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'sh'
-  const shellArgs = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-c', command]
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/retry-browser.mjs', 'pnpm', 'exec', shell, ...shellArgs],
-    {
-      stdio: 'inherit',
-    },
-  )
-  timings.push({
-    name: suite,
-    seconds: Math.round((performance.now() - started) / 100) / 10,
-    status: result.status === 0 ? 'success' : 'failure',
-  })
-  if (process.env.DOVO_BROWSER_TIMINGS)
-    writeFileSync(
-      process.env.DOVO_BROWSER_TIMINGS,
-      JSON.stringify({ shard, count, suites: timings }, null, 2) + '\n',
-    )
-  if (process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(
-      process.env.GITHUB_STEP_SUMMARY,
-      `- ${suite}: ${timings.at(-1).seconds}s (${timings.at(-1).status})\n`,
-    )
-  if (result.status !== 0) process.exit(result.status ?? 1)
+  const prepared = browserChecks(manifest.scripts[suite])
+  if (!prepared) throw new Error(`Browser suite has no checks: ${suite}`)
+  const commands = prepared.split(' && ')
+  const checks = []
+  for (const command of commands) {
+    const results = runBrowserCheck('pnpm', ['exec', shell, ...shellArgs(command)], { attempts })
+    const last = results.at(-1)
+    const status = last.exitCode !== 0 ? 'failure' : results.length > 1 ? 'flaky' : 'success'
+    checks.push({ command, status, attempts: results })
+    const report = {
+      name: suite,
+      seconds: Math.round((performance.now() - started) / 100) / 10,
+      status:
+        last.exitCode !== 0
+          ? 'failure'
+          : checks.length === commands.length
+            ? 'success'
+            : 'incomplete',
+      checks,
+    }
+    if (process.env.DOVO_BROWSER_TIMINGS)
+      writeFileSync(
+        process.env.DOVO_BROWSER_TIMINGS,
+        JSON.stringify({ shard, count, suites: [...timings, report] }, null, 2) + '\n',
+      )
+    if (summary && status !== 'success')
+      appendFileSync(
+        summary,
+        `- ${suite}: \`${command}\` (${status}, ${results.length} attempts)\n`,
+      )
+    if (last.exitCode !== 0) process.exit(last.exitCode)
+  }
+  const seconds = Math.round((performance.now() - started) / 100) / 10
+  timings.push({ name: suite, seconds, status: 'success', checks })
+  if (summary) appendFileSync(summary, `- ${suite}: ${seconds}s (success)\n`)
 }

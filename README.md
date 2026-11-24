@@ -60,6 +60,9 @@ pnpm dev:api
 pnpm dev:web
 ```
 
+From a third terminal, run `pnpm pair --connection ~/.dovo-dev/runtime-connection.json`. In the web
+app, choose **Connect computer** and enter the address and code.
+
 For native mobile development, keep a runtime running and use a development build (Expo Go does not
 include the app's native modules):
 

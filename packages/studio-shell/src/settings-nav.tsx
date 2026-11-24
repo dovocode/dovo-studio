@@ -183,15 +183,18 @@ export function SettingsNav({
     const root = document.querySelector('[data-settings-content]')
     if (!root) return
     let highlighted: HTMLElement | undefined
+    const labels = new Set([jump.label, uiText(jump.label)])
     const reveal = () => {
       const candidates = root.querySelectorAll<HTMLElement>(
         '[data-setting-label], [aria-label], label, summary',
       )
-      const element = [...candidates].find(
-        (element) =>
-          (element.dataset.settingLabel ??
+      const element = [...candidates].find((element) =>
+        labels.has(
+          element.dataset.settingLabel ??
             element.getAttribute('aria-label') ??
-            element.textContent?.trim()) === jump.label,
+            element.textContent?.trim() ??
+            '',
+        ),
       )
       if (!element) return false
       let parent: HTMLElement | null = element
@@ -205,7 +208,7 @@ export function SettingsNav({
       if (!highlighted.hasAttribute('tabindex')) highlighted.tabIndex = -1
       highlighted.focus({ preventScroll: true })
       highlighted.scrollIntoView({ block: 'center', behavior: 'instant' })
-      setSearchStatus(`Showing ${jump.label}.`)
+      setSearchStatus(`Showing ${uiText(jump.label)}.`)
       return true
     }
     const observer = new MutationObserver(() => {
@@ -214,7 +217,7 @@ export function SettingsNav({
         clearTimeout(timeout)
       }
     })
-    const unavailable = `${jump.label} is not shown for this target. ${views.find((view) => view.id === jump.viewId)?.settingsFieldRequirements?.[jump.label] ?? 'Choose another project, computer or agent on this page.'}`
+    const unavailable = `${uiText(jump.label)} is not shown for this target. ${views.find((view) => view.id === jump.viewId)?.settingsFieldRequirements?.[jump.label] ?? 'Choose another project, computer or agent on this page.'}`
     const timeout = window.setTimeout(() => observer.disconnect(), 15000)
     if (reveal()) clearTimeout(timeout)
     else {
@@ -227,13 +230,14 @@ export function SettingsNav({
       highlighted?.removeAttribute('data-search-highlight')
       highlighted?.classList.remove('bg-accent')
     }
-  }, [jump, activeId, target.environmentId, target.projectId])
+  }, [jump, activeId, target.environmentId, target.projectId, uiText])
   const select = async (id: string) => {
     const attempt = ++selectionAttempt.current
     const accepted = id === activeId || (await onSelect(id)) !== false
     return accepted && attempt === selectionAttempt.current
   }
   const needle = query.trim().toLowerCase()
+  const terms = needle.split(/\s+/)
   const sectionFor = (view: StudioView): NavigationSection => {
     if (view.id === 'task-defaults') return 'tasks'
     if (
@@ -252,30 +256,31 @@ export function SettingsNav({
     ordered.map((view) => [
       view.id,
       needle
-        ? (view.settingsFields ?? []).filter(
-            (label) =>
-              needle.split(/\s+/).some((term) => label.toLowerCase().includes(term)) &&
-              needle
-                .split(/\s+/)
-                .every((term) => `${label} ${uiText(view.title)}`.toLowerCase().includes(term)),
-          )
+        ? (view.settingsFields ?? []).filter((label) => {
+            const field = `${label} ${uiText(label)}`.toLowerCase()
+            const page = `${view.title} ${uiText(view.title)}`.toLowerCase()
+            return (
+              terms.some((term) => field.includes(term)) &&
+              terms.every((term) => field.includes(term) || page.includes(term))
+            )
+          })
         : [],
     ]),
   )
   const matches = ordered.filter((view) => {
     if (!needle || fieldMatches.get(view.id)?.length) return true
     const category = headings.find(([section]) => section === sectionFor(view))?.[1] ?? ''
-    const words = `${uiText(view.title)} ${view.keywords ?? ''} ${category}`
+    const words = `${uiText(view.title)} ${view.keywords ?? ''} ${category} ${uiText(category)}`
       .toLowerCase()
       .split(/\s+/)
     return (
-      needle.split(/\s+/).every((term) => words.some((word) => word.startsWith(term))) ||
+      terms.every((term) => words.some((word) => word.startsWith(term))) ||
       view.title.toLowerCase().includes(needle)
     )
   })
   const openSetting = async (viewId: string, label: string) => {
     const attempt = selectionAttempt.current + 1
-    setSearchStatus(`Opening ${label}…`)
+    setSearchStatus(`Opening ${uiText(label)}…`)
     if (!(await select(viewId))) {
       if (attempt === selectionAttempt.current) setSearchStatus('')
       return
@@ -532,7 +537,7 @@ export function SettingsNav({
                             onClick={() => openSetting(view.id, label)}
                             className="ml-3 block min-h-8 w-[calc(100%-0.75rem)] rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
-                            {label}
+                            {uiText(label)}
                             {view.settingsFieldRequirements?.[label] && (
                               <span className="mt-0.5 block text-[11px]">
                                 {view.settingsFieldRequirements[label]}

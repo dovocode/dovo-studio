@@ -51,6 +51,7 @@ import {
   type StudioExtension,
   type StudioHostApi,
   type StudioNavigation,
+  type StudioThreadReference,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -80,6 +81,35 @@ import { TaskLauncher } from './task-launcher'
 import { ReportProblem } from './report-problem/report-problem'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 import { workbenchDiagnosticContext } from './workbench-diagnostics'
+import { pullReviewDraftScope } from '@dovo/studio-core/pull-code-review'
+export type WorkbenchLocation =
+  | { kind: 'section'; viewId: string }
+  | {
+      kind: 'pull'
+      pullTarget: NonNullable<StudioNavigation['pullTarget']>
+      ownerScope: string
+    }
+  | ({
+      kind: 'thread'
+      threadId: string
+    } & (
+      | { runtimeIdentity: string; runtimeId?: never }
+      | { runtimeId: string; runtimeIdentity?: never }
+    ))
+
+type WorkbenchHistory = {
+  initial?: WorkbenchLocation
+  write: (location: WorkbenchLocation, replace: boolean) => void
+  listen: (travel: (location: WorkbenchLocation) => Promise<boolean>) => () => void
+  back: () => boolean
+}
+
+type NavigationOptions = {
+  replace?: boolean
+  fromUrl?: boolean
+  runtimeId?: string | null
+}
+
 type WorkbenchProps = {
   captureContent?: ReactNode
   threadWindow?: import('@dovo/protocol').ThreadWindowTarget
@@ -110,6 +140,7 @@ type WorkbenchProps = {
   updates?: DesktopUpdateBridge
   /** Desktop only: paints the native title bar and caption buttons in the theme's colours. */
   windowColors?: (colors: WindowColors) => Promise<void>
+  webHistory?: WorkbenchHistory
 }
 type ViewModule = { default: ComponentType<StudioViewProps> }
 /** React.lazy remembers a rejected import forever, so one failed chunk fetch or activation
@@ -247,6 +278,7 @@ function WorkbenchContent({
   inputPreview,
   taskLauncher,
   windowColors,
+  webHistory,
 }: WorkbenchProps) {
   const uiText = useInterfaceText()
 
@@ -281,12 +313,14 @@ function WorkbenchContent({
   }, [updates])
   const {
     ready,
+    restoringConnection,
     snapshot,
     workspace,
     storageError,
     connected,
     syncError,
     runtimeRegistry,
+    connection,
     runtimes,
     pendingSync,
     retrySync,
@@ -337,6 +371,19 @@ function WorkbenchContent({
   currentRuntime.current = runtimeRegistry.activeId
   const currentProfiles = useRef(runtimeRegistry.profiles)
   currentProfiles.current = runtimeRegistry.profiles
+  const currentConnection = useRef(connection)
+  currentConnection.current = connection
+  const threadRuntimes = useRef({ runtimes, activeIdentity: snapshot?.runtimeId })
+  threadRuntimes.current = { runtimes, activeIdentity: snapshot?.runtimeId }
+  const browserHistory = useRef(webHistory)
+  browserHistory.current = webHistory
+  const pullOwnerScope = useCallback((runtimeId: string) => {
+    const profile = currentProfiles.current.find((candidate) => candidate.id === runtimeId)
+    return pullReviewDraftScope(
+      profile?.connection ??
+        (runtimeId === currentRuntime.current ? currentConnection.current : null),
+    )
+  }, [])
   const [navigationKey, setNavigationKey] = useState(0)
   const [settingsNavigationKey, setSettingsNavigationKey] = useState(0)
   const canLeave = useCallback(
@@ -359,7 +406,7 @@ function WorkbenchContent({
     return true
   }, [canLeave, setSettingsTarget])
   const commitNavigation = useCallback(
-    (next: StudioNavigation, options?: { replace?: boolean }) => {
+    (next: StudioNavigation, options?: NavigationOptions) => {
       if (browserWindowId && next.viewId !== 'browser') return false
       recordClientAction('navigation', 'app')
       // Keep existing links to the former device-only PR page working.
@@ -380,13 +427,14 @@ function WorkbenchContent({
         navigation.settingsTarget = null
         setSettingsTarget(null)
       }
+      const runtimeId =
+        options?.runtimeId === undefined ? currentRuntime.current : options.runtimeId
+      const profile = currentProfiles.current.find((profile) => profile.id === runtimeId)
       if (next.viewId === 'tasks' && next.entityId) {
-        const profile = currentProfiles.current.find(
-          (profile) => profile.id === currentRuntime.current,
-        )
         if (profile) prepareRuntimeTask(profile.connection, next.entityId)
       }
       if (
+        !browserHistory.current &&
         !options?.replace &&
         (target.viewId !== next.viewId ||
           target.entityId !== next.entityId ||
@@ -399,12 +447,28 @@ function WorkbenchContent({
       settingsNavigation.current.target = next
       updateTarget(next)
       setNavigationKey((key) => key + 1)
+      if (!options?.fromUrl && browserHistory.current) {
+        const runtimeIdentity =
+          profile?.connection.runtimeId ??
+          threadRuntimes.current.runtimes.find((source) => source.profile.id === runtimeId)
+            ?.snapshot?.runtimeId
+        const owner = runtimeIdentity ? { runtimeIdentity } : runtimeId ? { runtimeId } : undefined
+        const pullTarget = next.viewId === 'pulls' ? next.pullTarget : undefined
+        const ownerScope = pullTarget && pullOwnerScope(pullTarget.runtimeId)
+        const location: WorkbenchLocation =
+          next.viewId === 'tasks' && next.entityId && owner
+            ? { kind: 'thread', threadId: next.entityId, ...owner }
+            : pullTarget && ownerScope
+              ? { kind: 'pull', pullTarget, ownerScope }
+              : { kind: 'section', viewId: next.viewId }
+        browserHistory.current.write(location, options?.replace ?? false)
+      }
       return true
     },
-    [updateTarget, setSettingsTarget, browserWindowId, isSettingsView],
+    [updateTarget, setSettingsTarget, browserWindowId, isSettingsView, pullOwnerScope],
   )
   const navigate = useCallback(
-    async (next: StudioNavigation, options?: { replace?: boolean }) => {
+    async (next: StudioNavigation, options?: NavigationOptions) => {
       const attempt = ++navigationAttempt.current
       const runtimeId = currentRuntime.current
       if (
@@ -423,6 +487,7 @@ function WorkbenchContent({
       await closeSettings()
       return true
     }
+    if (browserHistory.current) return browserHistory.current.back()
     const previous = history.current.at(-1)
     const attempt = ++navigationAttempt.current
     const runtimeId = currentRuntime.current
@@ -537,11 +602,14 @@ function WorkbenchContent({
         if (destination.runtimeId !== currentRuntime.current)
           await switchRuntime(destination.runtimeId)
         if (!mounted.current || attempt !== navigationAttempt.current) return
-        commitNavigation({
-          viewId: destination.viewId,
-          entityId: destination.entityId,
-          threadRequest: destination.threadRequest,
-        })
+        commitNavigation(
+          {
+            viewId: destination.viewId,
+            entityId: destination.entityId,
+            threadRequest: destination.threadRequest,
+          },
+          { runtimeId: destination.runtimeId },
+        )
       })().catch((error: unknown) => {
         if (attempt === navigationAttempt.current)
           setSwitchError(error instanceof Error ? error.message : String(error))
@@ -549,31 +617,22 @@ function WorkbenchContent({
     },
     [canLeave, switchRuntime, commitNavigation, setSwitchError],
   )
-  // Runtime snapshots change frequently. Keep the host API (and extension catalog) stable
-  // while resolving navigation against the latest paired computers.
-  const threadRuntimes = useRef({
-    profiles: runtimeRegistry.profiles,
-    runtimes,
-    activeIdentity: snapshot?.runtimeId,
-  })
-  threadRuntimes.current = {
-    profiles: runtimeRegistry.profiles,
-    runtimes,
-    activeIdentity: snapshot?.runtimeId,
-  }
-  const openThread = useCallback<NonNullable<StudioHostApi['openThread']>>(
-    async (destination) => {
+  const openThread = useCallback(
+    async (
+      destination: StudioThreadReference & { parent?: StudioThreadReference },
+      fromUrl = false,
+    ) => {
       if (browserWindowId) {
         if (!popOutThread || !destination.runtimeId) {
           setSwitchError('Open this draft in the main Studio window.')
-          return
+          return false
         }
         void popOutThread({
           runtimeId: destination.runtimeId,
           taskId: destination.threadId,
           title: destination.title,
         }).catch((cause: unknown) => setSwitchError(String(cause)))
-        return
+        return true
       }
       const attempt = ++navigationAttempt.current
       const capturedRuntime = currentRuntime.current
@@ -583,14 +642,14 @@ function WorkbenchContent({
         attempt !== navigationAttempt.current ||
         capturedRuntime !== currentRuntime.current
       )
-        return
+        return false
       const previous = {
         target: settingsNavigation.current.target,
         runtimeId: currentRuntime.current,
       }
-      const { profiles, runtimes, activeIdentity } = threadRuntimes.current
+      const { runtimes, activeIdentity } = threadRuntimes.current
       setSwitchError('')
-      const profile = resolveThreadRuntime(destination, profiles, runtimes)
+      const profile = resolveThreadRuntime(destination, currentProfiles.current, runtimes)
       // A direct local connection may have no saved profile, but still has a stable identity.
       const local =
         destination.runtimeId === null &&
@@ -598,18 +657,20 @@ function WorkbenchContent({
         (!destination.runtimeIdentity || destination.runtimeIdentity === activeIdentity)
       if (!profile && !local) {
         commitNavigation({ viewId: 'runtime', threadConnection: destination })
-        return
+        return true
       }
       const runtimeId = profile?.id ?? null
-      void (async () => {
+      try {
         if (runtimeId !== currentRuntime.current) {
           if (!runtimeId) throw new Error('The parent computer is no longer available')
           await switchRuntime(runtimeId)
         }
-        if (!mounted.current || attempt !== navigationAttempt.current) return
-        history.current.push(previous)
-        if (history.current.length > 50) history.current.shift()
-        commitNavigation(
+        if (!mounted.current || attempt !== navigationAttempt.current) return false
+        if (!browserHistory.current) {
+          history.current.push(previous)
+          if (history.current.length > 50) history.current.shift()
+        }
+        return commitNavigation(
           {
             viewId: 'tasks',
             entityId: destination.threadId,
@@ -617,15 +678,52 @@ function WorkbenchContent({
             nativeAgentKey: destination.nativeAgentKey,
             threadRequest: destination.threadRequest,
           },
-          { replace: true },
+          { replace: !browserHistory.current || fromUrl, fromUrl, runtimeId },
         )
-      })().catch((error: unknown) => {
+      } catch (error) {
         if (attempt === navigationAttempt.current)
           setSwitchError(error instanceof Error ? error.message : String(error))
-      })
+        return false
+      }
     },
     [canLeave, switchRuntime, commitNavigation, setSwitchError, browserWindowId, popOutThread],
   )
+  const travel = useCallback(
+    (location: WorkbenchLocation) => {
+      const options = { replace: true, fromUrl: true }
+      if (location.kind === 'section') return navigate({ viewId: location.viewId }, options)
+      if (location.kind === 'pull') {
+        const { pullTarget } = location
+        return navigate(
+          pullOwnerScope(pullTarget.runtimeId) === location.ownerScope
+            ? { viewId: 'pulls', entityId: pullTarget.url, pullTarget }
+            : { viewId: 'pulls' },
+          options,
+        )
+      }
+      return openThread(
+        {
+          threadId: location.threadId,
+          runtimeId: location.runtimeId ?? null,
+          runtimeIdentity: location.runtimeIdentity,
+          title: 'this thread',
+        },
+        true,
+      )
+    },
+    [navigate, openThread, pullOwnerScope],
+  )
+  useEffect(() => {
+    if (!ready || restoringConnection || !webHistory) return
+    return webHistory.listen(travel)
+  }, [ready, restoringConnection, webHistory, travel])
+  const didOpenInitialLocation = useRef(false)
+  useEffect(() => {
+    if (!ready || restoringConnection || !webHistory?.initial || didOpenInitialLocation.current)
+      return
+    didOpenInitialLocation.current = true
+    void travel(webHistory.initial)
+  }, [ready, restoringConnection, webHistory, travel])
   const [pipelinePreview, setPipelinePreview] = useState<LinkTarget | null>(null)
   const navigateLinkTarget = (destination: LinkTarget) => {
     if (destination.kind === 'pull') {
@@ -971,7 +1069,7 @@ function WorkbenchContent({
           )
         )
       ) {
-        if (history.current.length) {
+        if (!browserHistory.current && history.current.length) {
           event.preventDefault()
           void goBack()
         }

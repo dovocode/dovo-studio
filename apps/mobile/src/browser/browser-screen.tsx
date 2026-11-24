@@ -69,6 +69,7 @@ import { useTheme } from '../ui/theme'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import {
   promoteTab,
+  inactivePreviews,
   moveBrowserTab,
   browserAddress,
   browserTabProjectName,
@@ -581,6 +582,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     if (tab.kind === 'local' && nativeAvailable && DovoWebKitBrowser)
       await closeNativeTab(DovoWebKitBrowser, tab.id)
     if (tab.kind === 'remote') {
+      const runtime = runtimeRef.current
       const profile = runtime.profiles.find((profile) => profile.id === tab.runtimeId)
       const online = runtime.overviews.some(
         (entry) => entry.profile.id === tab.runtimeId && entry.connected,
@@ -599,22 +601,68 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     await disposeTab(tab)
     change((state) => closeTab(state, tab.id, randomUUID()))
   }
-  useEffect(() => {
-    const retained = new Set<string>()
-    let tab = state.tabs.find((tab) => tab.id === state.active)
-    while (tab && !retained.has(tab.id)) {
-      retained.add(tab.id)
-      tab = state.tabs.find((item) => item.id === tab?.previewOf)
+  const protectedTabIds = async (candidates: readonly BrowserTab[]) => {
+    const ids = new Set<string>()
+    const local = candidates.filter((tab) => tab.kind === 'local')
+    if (nativeAvailable && local.length) {
+      try {
+        const activeIds = await DovoWebKitBrowser?.getActiveMediaTabIds?.()
+        for (const id of activeIds ?? local.map((tab) => tab.id)) ids.add(id)
+      } catch {
+        for (const tab of local) ids.add(tab.id)
+      }
     }
-    const discarded = state.tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
+    await Promise.all(
+      candidates.map(async (tab) => {
+        if (tab.kind !== 'remote') return
+        const runtime = runtimeRef.current
+        const owner = runtime.overviews.find((entry) => entry.profile.id === tab.runtimeId)
+        if (!owner?.connected) {
+          ids.add(tab.id)
+          return
+        }
+        try {
+          const status = await runtime.readRuntime(
+            owner.profile,
+            '/api/previews/browser/activity',
+            { taskId: STUDIO_BROWSER_SCOPE, tabId: tab.id, profileId: tab.profileId },
+            browserTabActivitySchema,
+          )
+          if (status.active) ids.add(tab.id)
+        } catch {
+          ids.add(tab.id)
+        }
+      }),
+    )
+    return ids
+  }
+  useEffect(() => {
+    const discarded = inactivePreviews(state)
     if (!discarded.length) return
-    const ids = new Set(discarded.map((tab) => tab.id))
-    change((state) => ({ ...state, tabs: state.tabs.filter((tab) => !ids.has(tab.id)) }))
-    for (const tab of discarded)
-      void disposeTab(tab).catch((cause) =>
-        setError(uiText('Could not close preview: {value0}', { value0: String(cause) })),
-      )
-  }, [state.tabs, state.active])
+    let stopped = false
+    void protectedTabIds(discarded).then((protectedIds) => {
+      if (stopped) return
+      const candidates = inactivePreviews(current.current).filter((tab) => discarded.includes(tab))
+      const closing = candidates.filter((tab) => !protectedIds.has(tab.id))
+      const closingIds = new Set(closing.map((tab) => tab.id))
+      change((state) => {
+        let next = state
+        for (const tab of candidates) {
+          if (protectedIds.has(tab.id)) next = promoteTab(next, tab.id)
+        }
+        return closing.length
+          ? { ...next, tabs: next.tabs.filter((tab) => !closingIds.has(tab.id)) }
+          : next
+      })
+      for (const tab of closing)
+        void disposeTab(tab).catch((cause) =>
+          setError(uiText('Could not close preview: {value0}', { value0: String(cause) })),
+        )
+    })
+    return () => {
+      stopped = true
+    }
+  }, [state.tabs, state.active, nativeAvailable])
   useEffect(() => {
     if (!loaded || !focused) return
     let stopped = false,
@@ -636,42 +684,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             plan.closeIds.includes(tab.id) ||
             plan.tabs.find((item) => item.id === tab.id)?.settledAt !== tab.settledAt,
         )
-        const protectedIds = new Set<string>()
+        const protectedIds = candidates.length
+          ? await protectedTabIds(candidates)
+          : new Set<string>()
         if (candidates.length) {
-          const local = candidates.filter((tab) => tab.kind === 'local')
-          if (nativeAvailable && local.length) {
-            try {
-              if (DovoWebKitBrowser?.getActiveMediaTabIds) {
-                for (const id of await DovoWebKitBrowser.getActiveMediaTabIds())
-                  protectedIds.add(id)
-              } else for (const tab of local) protectedIds.add(tab.id)
-            } catch {
-              for (const tab of local) protectedIds.add(tab.id)
-            }
-          }
-          await Promise.all(
-            candidates
-              .filter((tab) => tab.kind === 'remote')
-              .map(async (tab) => {
-                const runtime = runtimeRef.current
-                const owner = runtime.overviews.find((entry) => entry.profile.id === tab.runtimeId)
-                if (!owner?.connected) {
-                  protectedIds.add(tab.id)
-                  return
-                }
-                try {
-                  const status = await runtime.readRuntime(
-                    owner.profile,
-                    '/api/previews/browser/activity',
-                    { taskId: STUDIO_BROWSER_SCOPE, tabId: tab.id, profileId: tab.profileId },
-                    browserTabActivitySchema,
-                  )
-                  if (status.active) protectedIds.add(tab.id)
-                } catch {
-                  protectedIds.add(tab.id)
-                }
-              }),
-          )
           for (const tab of current.current.tabs)
             if (!candidates.includes(tab)) protectedIds.add(tab.id)
         }

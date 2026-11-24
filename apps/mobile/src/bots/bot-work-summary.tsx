@@ -157,7 +157,7 @@ function BotWorkControls({
         >
           <Text>
             {uiText(
-              'Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.',
+              'Save this conversation in Side threads and start a fresh conversation. Settings, memory, routines and your unsent draft stay.',
             )}
           </Text>
           <Action

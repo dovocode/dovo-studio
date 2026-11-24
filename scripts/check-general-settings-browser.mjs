@@ -1427,8 +1427,27 @@ try {
     speechLanguage,
   )
   assert.equal(await page.evaluate(() => window.readPreferences().interfaceLanguage), 'nl-NL')
+  await page.setViewportSize({ width: 1200, height: 840 })
+  for (const query of ['Interface language', 'Interfacetaal']) {
+    await search.fill(query)
+    await settingsSidebar.getByRole('button', { name: 'Interfacetaal', exact: true }).waitFor()
+    await search.press('Enter')
+    const field = page.locator('[data-search-highlight][data-setting-label="Interfacetaal"]')
+    await field.waitFor()
+    assert.equal(await field.evaluate((row) => row === document.activeElement), true)
+  }
+  await search.fill('Kleurenschema')
+  await settingsSidebar.getByRole('button', { name: 'Kleurenschema', exact: true }).waitFor()
+  await search.press('Enter')
+  await page.locator('[data-search-highlight][data-setting-label="Color scheme"]').waitFor()
+  await page.evaluate(() => window.changeView('general'))
   await choose('Interfacetaal', 'English (US)')
   await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
+  await search.fill('Screen reader turn updates')
+  await search.press('Enter')
+  await page
+    .locator('[data-search-highlight][data-setting-label="Screen reader turn updates"]')
+    .waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Settings: permanently expanded navigation, shared page frames, category/control search, storage labels, all app pages, persisted preferences, notification permissions, local/remote profiles, update states, scoped agents/lifecycle, navigation and narrow layouts passed.',

@@ -23,6 +23,11 @@ import {
   responses,
   readAppPreferences,
 } from '@dovo/studio-core'
+import {
+  browserSessionKey,
+  previousBrowserSession,
+  rememberBrowserSession,
+} from '@dovo/studio-core/browser-session-history'
 export type RemoteBrowserControls = {
   input: (input: RemoteBrowserInput) => void
   keyboard: () => void
@@ -68,7 +73,14 @@ export function RemoteBrowser({
   onPerformance?: (details: string) => void
   onShortcut?: (key: 't' | 'w' | 'd', shift: boolean) => void
 }) {
-  const { connection, request } = useWorkspace()
+  const { activeRuntimeId, connection, request } = useWorkspace()
+  const sessionKey = browserSessionKey(
+    connection?.runtimeId ??
+      (connection ? JSON.stringify([activeRuntimeId, connection.address]) : undefined),
+    taskId,
+    deviceId ? undefined : tabId,
+    profileId,
+  )
   const theme = useResolvedTheme()
   const hasWorkspaceShortcuts = !!onShortcut
   const appearance = useRef(theme)
@@ -176,7 +188,12 @@ export function RemoteBrowser({
         result,
       )
       if (tabId) post({ type: 'visibility', visible: visibility.current })
-      post({ type: 'connect', url: target, device: result.device })
+      post({
+        type: 'connect',
+        url: target,
+        device: result.device,
+        previousSessionId: previousBrowserSession(sessionKey),
+      })
     } catch (error) {
       if (generation === version.current)
         post({ type: 'error', message: error instanceof Error ? error.message : String(error) })
@@ -193,6 +210,7 @@ export function RemoteBrowser({
     post,
     externalNavigation,
     hasWorkspaceShortcuts,
+    sessionKey,
   ])
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>) => {
@@ -229,8 +247,10 @@ export function RemoteBrowser({
       if (data.type === 'closed') {
         const result = decodeResult(remoteBrowserMessageSchema, data)
         if (result.success && result.data.type === 'closed') {
-          if (result.data.byPage) reportClosed()
-          else if (!deviceId) {
+          if (result.data.reason ? result.data.reason === 'page' : result.data.byPage) {
+            rememberBrowserSession(sessionKey, undefined)
+            reportClosed()
+          } else if (!deviceId) {
             sessionEnded.current = true
             online.current = false
             reportConnection(false)
@@ -240,6 +260,7 @@ export function RemoteBrowser({
       if (data.type === 'state') {
         const state = decodeResult(remoteBrowserMessageSchema, data)
         if (state.success && state.data.type === 'state') {
+          rememberBrowserSession(sessionKey, state.data.sessionId)
           address.current = state.data.url === 'about:blank' ? '' : state.data.url
           reportState(state.data)
         }
@@ -261,18 +282,20 @@ export function RemoteBrowser({
       )
         shortcut(data.key, data.shift)
       if (data.type === 'reconnect') void connect()
-      if (data.type === 'close')
+      if (data.type === 'close') {
+        rememberBrowserSession(sessionKey, undefined)
         void request(
           deviceId ? '/api/previews/simulator/close' : '/api/previews/browser/close',
           { taskId, id: deviceId, tabId, profileId, url: address.current },
           responses.ok,
         ).catch((error) => post({ type: 'error', message: String(error) }))
+      }
     }
     window.addEventListener('message', receive)
     return () => {
       window.removeEventListener('message', receive)
     }
-  }, [connect, request, taskId, deviceId, tabId, profileId, post, screenshots.busy])
+  }, [connect, request, taskId, deviceId, tabId, profileId, post, screenshots.busy, sessionKey])
   useEffect(
     () => () => {
       version.current++

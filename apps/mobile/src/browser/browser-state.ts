@@ -118,6 +118,16 @@ export const recentTabs = (tabs: BrowserTab[]) =>
   tabs
     .filter((tab) => !tab.previewOf)
     .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.visitedAt - a.visitedAt)
+
+export function inactivePreviews(state: BrowserState): BrowserTab[] {
+  const retained = new Set<string>()
+  let tab = state.tabs.find((tab) => tab.id === state.active)
+  while (tab && !retained.has(tab.id)) {
+    retained.add(tab.id)
+    tab = state.tabs.find((item) => item.id === tab?.previewOf)
+  }
+  return state.tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
+}
 export function promoteTab(state: BrowserState, id: string): BrowserState {
   const tab = state.tabs.find((tab) => tab.id === id)
   if (!tab?.previewOf) return state

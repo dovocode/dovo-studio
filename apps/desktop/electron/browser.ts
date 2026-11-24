@@ -97,9 +97,11 @@ type Entry = {
   /** Existing live opener retained beneath this preview and Studio's controls. */
   previewBackgroundKey?: string
   openedLinks: string[]
+  openedTabLinks: { url: string; profileId: string }[]
   favicon?: string | null
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
+  rendererLost?: boolean
   documentRevision?: number
   /** Trusted edit in this page or one of its frames, until a new top-level document commits. */
   formEdited?: boolean
@@ -500,8 +502,10 @@ export function registerBrowser(
         profileId: string
         active?: boolean
         openerKey?: string
+        openAsTab?: boolean
       }[]
       closed: string[]
+      lost: string[]
       moved: { key: string; tab: BrowserWorkspaceTab }[]
       favicons: { key: string; url: string; favicon: string | null }[]
     }
@@ -509,7 +513,10 @@ export function registerBrowser(
   const tabEvents = (windowId: number) => {
     let events = windowTabs.get(windowId)
     if (!events)
-      windowTabs.set(windowId, (events = { created: [], closed: [], moved: [], favicons: [] }))
+      windowTabs.set(
+        windowId,
+        (events = { created: [], closed: [], lost: [], moved: [], favicons: [] }),
+      )
     return events
   }
   const drainTabEvents = (windowId: number, workspace: boolean) => {
@@ -518,6 +525,7 @@ export function registerBrowser(
     const events = windowTabs.get(windowId)
     const createdTabs = events?.created.splice(0) ?? []
     const closedTabs = events?.closed.splice(0) ?? []
+    const lostTabs = events?.lost.splice(0) ?? []
     const movedTabs = events?.moved.splice(0) ?? []
     const faviconUpdates = events?.favicons.splice(0) ?? []
     if (movedTabs.length && !workspaceStates.has(windowId))
@@ -526,6 +534,7 @@ export function registerBrowser(
       detachedTabs: detachedTabKeys(windowId),
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
+      ...(lostTabs.length ? { lostTabs } : {}),
       ...(movedTabs.length ? { movedTabs } : {}),
       ...(faviconUpdates.length ? { faviconUpdates } : {}),
     }
@@ -800,6 +809,7 @@ export function registerBrowser(
     url: string,
     profileId: string,
     source?: Entry,
+    disposition?: 'background-tab',
   ) => {
     await extensions.prepare(profileId)
     if (
@@ -829,18 +839,27 @@ export function registerBrowser(
       key,
       url,
       profileId,
-      active: true,
+      active: disposition !== 'background-tab',
+      ...(disposition ? { openAsTab: true } : {}),
       ...(source ? { openerKey: source.key } : {}),
     })
     return true
   }
-  const routeProfileLink = (source: Entry, url: string) => {
+  const routeProfileLink = (source: Entry, url: string, disposition?: 'background-tab') => {
     const profileId = websiteLinkProfile(source.profileId, url)
     if (!profileId || profileId === source.profileId) return false
-    void openProfileLink(source.window, url, profileId, source).catch((cause: unknown) => {
-      source.navigationError = `Could not open the link in its browser profile: ${String(cause)}`
-    })
+    void openProfileLink(source.window, url, profileId, source, disposition).catch(
+      (cause: unknown) => {
+        source.navigationError = `Could not open the link in its browser profile: ${String(cause)}`
+      },
+    )
     return true
+  }
+  const openContextTab = (source: Entry, input: string) => {
+    const url = openableUrl(input)
+    if (!url || source.openedTabLinks.length >= MAX_OPENED_LINKS) return
+    const profileId = websiteLinkProfile(source.profileId, url) ?? source.profileId
+    source.openedTabLinks.push({ url, profileId })
   }
   const createEntry = (
     window: BrowserWindow,
@@ -883,6 +902,7 @@ export function registerBrowser(
       workspace,
       foreground: false,
       openedLinks: [],
+      openedTabLinks: [],
       popups: new Set(),
       view,
       contents: view.webContents,
@@ -939,12 +959,15 @@ export function registerBrowser(
       releaseView(currentKey)
       if (created.workspace) {
         const events = tabEvents(created.windowId)
-        if (events.closed.length < MAX_EXTENSION_TAB_EVENTS) events.closed.push(created.key)
+        const targets = !created.pageCreated || created.rendererLost ? events.lost : events.closed
+        if (targets.length < MAX_EXTENSION_TAB_EVENTS) targets.push(created.key)
       }
     })
     view.webContents.on('render-process-gone', (_event, details) => {
-      if (details.reason !== 'clean-exit')
+      if (details.reason !== 'clean-exit') {
+        created.rendererLost = true
         created.navigationError = 'This page stopped unexpectedly. Reload to try again.'
+      }
     })
     view.webContents.ipc.on('browser:notification-click', (event) => {
       if (created.workspace && event.senderFrame === view.webContents.mainFrame) focusTab(created)
@@ -1001,6 +1024,7 @@ export function registerBrowser(
     view.webContents.on('audio-state-changed', () => syncBackgroundThrottling(created))
     view.webContents.on('did-navigate', () => {
       created.formEdited = false
+      created.rendererLost = false
       try {
         applyZoom(created)
       } catch (error) {
@@ -1174,7 +1198,7 @@ export function registerBrowser(
             label: 'Open link in new tab',
             click: () => {
               if (!live()) return
-              if (!routeProfileLink(created, params.linkURL)) queueLink(created, params.linkURL)
+              openContextTab(created, params.linkURL)
             },
           },
           {
@@ -1202,7 +1226,7 @@ export function registerBrowser(
           items.push({
             label: 'Open image in new tab',
             click: () => {
-              if (!routeProfileLink(created, srcURL)) queueLink(created, srcURL)
+              if (live()) openContextTab(created, srcURL)
             },
           })
         if (
@@ -1238,7 +1262,7 @@ export function registerBrowser(
             click: () => {
               if (!live()) return
               try {
-                queueLink(created, websiteSearchUrl(profileId, text))
+                openContextTab(created, websiteSearchUrl(profileId, text))
               } catch (error) {
                 console.error('Could not search selected text.', error)
               }
@@ -1510,7 +1534,12 @@ export function registerBrowser(
         return { action: 'deny' }
       }
       // Explicit link-domain preferences also apply to window.open popup requests.
-      if (!details.postBody && openableUrl(details.url) && routeProfileLink(created, details.url))
+      const background = details.disposition === 'background-tab'
+      if (
+        !details.postBody &&
+        openableUrl(details.url) &&
+        routeProfileLink(created, details.url, background ? 'background-tab' : undefined)
+      )
         return { action: 'deny' }
       if (!pageOnly && popupRequest(details) && openableUrl(details.url)) {
         if (created.popups.size >= MAX_POPUPS) return { action: 'deny' }
@@ -1562,7 +1591,8 @@ export function registerBrowser(
               key: childKey,
               url: child.url === 'about:blank' ? '' : child.url,
               profileId,
-              active: details.disposition !== 'background-tab',
+              active: !background,
+              ...(background ? { openAsTab: true } : {}),
               openerKey: created.key,
             })
             return child.view.webContents
@@ -2813,6 +2843,7 @@ export function registerBrowser(
         throw new Error(failure)
       }
       const openedLinks = entry.openedLinks.splice(0)
+      const openedTabLinks = entry.openedTabLinks.splice(0)
       const focusedTabKey = command.tabCount !== undefined ? focusedTabs.get(window.id) : undefined
       if (command.tabCount !== undefined) focusedTabs.delete(window.id)
       return {
@@ -2828,6 +2859,7 @@ export function registerBrowser(
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
         ...(openedLinks.length ? { openedLinks } : {}),
+        ...(openedTabLinks.length ? { openedTabLinks } : {}),
         ...drainTabEvents(window.id, entry.workspace || command.tabCount !== undefined),
         ...media.snapshot(window.id),
       }

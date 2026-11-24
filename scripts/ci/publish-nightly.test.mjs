@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, delimiter } from 'node:path'
+import { manifestName, releaseFiles } from '../packaging/desktop-release-manifest.mjs'
 import { publicationPair, validatePublication } from './publish-nightly.mjs'
 const sha = 'a'.repeat(40)
 const check = {
@@ -36,6 +37,20 @@ void test('publishes only after exact-source Check and Release both pass in eith
     null,
   )
 })
+void test('verify-only runs cannot supersede a ready nightly but a pending package run can', () => {
+  const verifyOnly = {
+    ...release,
+    id: 3,
+    status: 'in_progress',
+    display_title: 'Verify release assets',
+  }
+  assert.equal(publicationPair([check, release, verifyOnly], sha), release)
+  assert.equal(
+    publicationPair([check, release, { ...verifyOnly, display_title: 'Release' }], sha),
+    null,
+  )
+})
+
 void test('rejects mismatched or non-nightly release provenance', () => {
   const manifest = { sha, channel: 'nightly', tag: 'v0.0.9-nightly.526' }
   const release = { tagName: manifest.tag, targetCommitish: sha, isPrerelease: true }
@@ -48,10 +63,24 @@ void test('rejects mismatched or non-nightly release provenance', () => {
 void test('desktop publication dispatches distribution once and never starts a mobile release', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-publication-test-'))
   const tag = 'v0.0.9-nightly.526'
+  const assets = Object.fromEntries(
+    releaseFiles(tag).required.map((name) => [name, `sha256:${'a'.repeat(64)}`]),
+  )
   const fixture = {
-    runs: [check, release],
+    runs: [check, release, { ...release, id: 3 }],
     manifest: { sha, channel: 'nightly', tag },
-    release: { tagName: tag, targetCommitish: sha, isPrerelease: true, isDraft: true },
+    buildManifest: { version: 1, sha, tag, assets },
+    releaseAssets: [
+      ...Object.entries(assets).map(([name, digest]) => ({ name, digest })),
+      { name: manifestName },
+    ],
+    release: {
+      databaseId: 7,
+      tagName: tag,
+      targetCommitish: sha,
+      isPrerelease: true,
+      isDraft: true,
+    },
     releases: [
       { draft: true, tag_name: 'v0.0.9-nightly.527', body: 'x'.repeat(2 * 1024 * 1024) },
       { draft: false, tag_name: 'v0.0.9-nightly.525' },
@@ -59,6 +88,7 @@ void test('desktop publication dispatches distribution once and never starts a m
   }
   try {
     writeFileSync(join(directory, 'fixture.json'), JSON.stringify(fixture))
+    writeFileSync(join(directory, 'git'), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
     writeFileSync(
       join(directory, 'gh'),
       `#!${process.execPath}
@@ -67,8 +97,11 @@ const root = process.env.PUBLICATION_FIXTURE;
 const fixture = JSON.parse(fs.readFileSync(path.join(root, 'fixture.json')));
 const args = process.argv.slice(2);
 fs.appendFileSync(path.join(root, 'calls.jsonl'), JSON.stringify(args)+'\\n');
-if (args[0] === 'api' && args[1].includes('/artifacts')) console.log(JSON.stringify({artifacts:[{name:'nightly-publication',expired:false}]}));
+if (args[0] === 'api' && args[1].includes('/3/artifacts')) console.log(JSON.stringify({artifacts:[]}));
+else if (args[0] === 'api' && args[1].includes('/3/jobs')) console.log(JSON.stringify({jobs:[{name:'draft',conclusion:'skipped'},{name:'verify',conclusion:'success'}]}));
+else if (args[0] === 'api' && args[1].includes('/artifacts')) console.log(JSON.stringify({artifacts:[{name:'nightly-publication',expired:false}]}));
 else if (args[0] === 'api' && args[1].includes('/actions/runs?')) console.log(JSON.stringify({workflow_runs:fixture.runs}));
+else if (args[0] === 'api' && args[1].endsWith('/releases/7')) console.log(JSON.stringify(fixture.releaseAssets));
 else if (args[0] === 'api') {
   // Model gh's output projection. Without it, this realistic release history
   // exceeds the publication subprocess's default buffer and the test fails.
@@ -77,6 +110,7 @@ else if (args[0] === 'api') {
   console.log(JSON.stringify(releases));
 }
 else if (args[0] === 'run') fs.writeFileSync(path.join(args.at(-1),'nightly.json'),JSON.stringify(fixture.manifest));
+else if (args[0] === 'release' && args[1] === 'download') fs.writeFileSync(path.join(args.at(-1),${JSON.stringify(manifestName)}),JSON.stringify(fixture.buildManifest));
 else if (args[0] === 'release' && args[1] === 'view') console.log(JSON.stringify(fixture.release));
 else if (args[0] === 'release' && args[1] === 'edit') {fixture.release.isDraft=false;fs.writeFileSync(path.join(root,'fixture.json'),JSON.stringify(fixture));}
 `,
@@ -84,6 +118,7 @@ else if (args[0] === 'release' && args[1] === 'edit') {fixture.release.isDraft=f
     )
     const run = () =>
       execFileSync(process.execPath, ['scripts/ci/publish-nightly.mjs'], {
+        stdio: 'pipe',
         env: {
           ...process.env,
           PATH: directory + delimiter + process.env.PATH,
@@ -92,6 +127,22 @@ else if (args[0] === 'release' && args[1] === 'edit') {fixture.release.isDraft=f
           SOURCE_SHA: sha,
         },
       })
+    const oldTag = 'v0.0.9-nightly.525'
+    writeFileSync(
+      join(directory, 'fixture.json'),
+      JSON.stringify({
+        ...fixture,
+        manifest: { ...fixture.manifest, tag: oldTag },
+        release: { ...fixture.release, tagName: oldTag },
+        releaseAssets: fixture.releaseAssets.filter(({ name }) => name !== manifestName),
+      }),
+    )
+    assert.throws(run, /rebuild a draft with the current Release workflow/)
+    const blocked = readFileSync(join(directory, 'calls.jsonl'), 'utf8')
+    assert.doesNotMatch(blocked, /"edit"|"workflow"/)
+
+    writeFileSync(join(directory, 'fixture.json'), JSON.stringify(fixture))
+    writeFileSync(join(directory, 'calls.jsonl'), '')
     run()
     run()
     const calls = readFileSync(join(directory, 'calls.jsonl'), 'utf8')

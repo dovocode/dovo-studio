@@ -506,17 +506,16 @@ it('continues other schedules and retries while a saved Bot report cannot be del
   ).toHaveLength(1)
 })
 
-it('recovers a legacy routine already queued in the Bot without converting or duplicating it', async () => {
+async function seedLegacyRoutine(b: Awaited<ReturnType<typeof bot>>, now: string) {
   const { botStepMessageId } = await import('../../jobs/jobs')
-  const b = await bot()
-  b.g.hold('PERSON')
-  await b.send('PERSON interrupted')
-  await configure(b, 'LEGACY routine')
-  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
-  const id = randomUUID(),
-    messageId = botStepMessageId(id, 'task', 1),
-    now = new Date().toISOString()
-  await b.f.request('/api/tasks/message', { id: b.id, messageId, text: 'LEGACY routine' })
+  const id = randomUUID()
+  const messageId = botStepMessageId(id, 'task', 1)
+  const response = await b.f.request('/api/tasks/message', {
+    id: b.id,
+    messageId,
+    text: 'LEGACY routine',
+  })
+  expect(response.ok).toBe(true)
   const flow = b.s().store.get().automations[0]
   b.s()
     .db.prepare('INSERT INTO job_runs VALUES (?,?)')
@@ -547,6 +546,16 @@ it('recovers a legacy routine already queued in the Bot without converting or du
         ],
       }),
     )
+  return { id, messageId }
+}
+
+it('recovers a legacy routine already queued in the Bot without converting or duplicating it', async () => {
+  const b = await bot()
+  b.g.hold('PERSON')
+  await b.send('PERSON interrupted')
+  await configure(b, 'LEGACY routine')
+  await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
+  const { id } = await seedLegacyRoutine(b, new Date().toISOString())
   await b.f.restart()
   b.f.runtime.run.mockImplementation((i) => gates().run(i))
   expect(b.s().jobs.detail(id).status).toBe('failed')
@@ -562,6 +571,91 @@ it('recovers a legacy routine already queued in the Bot without converting or du
   ).toHaveLength(1)
   expect(b.s().jobs.detail(id).taskIds).toEqual([b.id])
 })
+
+it.each(['tokens', 'costUsd'] as const)(
+  'counts the recovered legacy routine turn toward its %s budget without counting the person',
+  async (kind) => {
+    const b = await bot()
+    if (kind === 'costUsd') {
+      b.s().store.updateTask(b.id, (task) => ({
+        ...task,
+        harness: { ...(task.harness ?? defaultTaskHarness('codex')), model: 'legacy-budget-model' },
+      }))
+      b.s().store.usagePricing.setOverride('legacy-budget-model', {
+        input: 1,
+        output: 1,
+        cacheRead: 1,
+        cacheWrite: 1,
+      })
+    }
+    const now = new Date().toISOString()
+    b.g.hold('PERSON')
+    await b.send('PERSON interrupted')
+    await configure(b, 'LEGACY routine')
+    await waitForRuntime(() => expect(b.g.started.has('PERSON')).toBe(true))
+    b.s().store.update((workspace) => ({
+      ...workspace,
+      automations: workspace.automations.map((flow) => ({
+        ...flow,
+        policy: kind === 'tokens' ? { tokens: 100 } : { costUsd: 1 },
+      })),
+    }))
+    const personTurn = b.s().store.taskSummary(b.id).history.latestTurn!.id
+    const reportUsage = (turnId: string, tokens: number) =>
+      b.s().store.updateTaskHistory(b.id, (task) => ({
+        ...task,
+        turns: task.turns?.map((turn) =>
+          turn.id === turnId ? { ...turn, tokens, estimatedCostUsd: tokens / 100 } : turn,
+        ),
+      }))
+    reportUsage(personTurn, 200)
+    const { id, messageId } = await seedLegacyRoutine(b, now)
+    await b.f.restart()
+    const recovered = gates()
+    recovered.hold('LEGACY routine')
+    b.f.runtime.run.mockImplementation((input) => recovered.run(input))
+    try {
+      expect(b.s().jobs.detail(id).status).toBe('failed')
+      expect((await b.f.request('/api/tasks/queue', { id: b.id, action: 'resume' })).ok).toBe(true)
+      b.s().jobs.retry(id)
+      await waitForRuntime(() => {
+        expect(recovered.started.has('LEGACY routine')).toBe(true)
+        expect(b.s().jobs.detail(id).currentNodeId).toBe('task')
+      })
+      const task = b.s().store.task(b.id)
+      const routineTurn = task.messages.find((message) => message.id === messageId)?.turnId
+      expect(routineTurn).toBeTruthy()
+      expect(routineTurn).not.toBe(personTurn)
+      expect(task.turns?.find((turn) => turn.id === personTurn)?.tokens).toBe(200)
+      reportUsage(routineTurn!, 25)
+      b.s().jobs.enforceBudgets()
+      expect(b.s().jobs.detail(id).status).toBe('running')
+
+      reportUsage(routineTurn!, 100)
+      b.s().jobs.enforceBudgets()
+      expect(b.s().jobs.detail(id).status).toBe('failed')
+      expect(b.s().jobs.detail(id).error).toContain(
+        kind === 'tokens' ? 'token budget' : 'estimated cost budget',
+      )
+      await waitForRuntime(() =>
+        expect(
+          b
+            .s()
+            .store.task(b.id)
+            .turns?.find((turn) => turn.id === routineTurn)?.status,
+        ).toBe('cancelled'),
+      )
+      expect(
+        b
+          .s()
+          .store.task(b.id)
+          .turns?.find((turn) => turn.id === personTurn)?.tokens,
+      ).toBe(200)
+    } finally {
+      recovered.release('LEGACY routine')
+    }
+  },
+)
 
 it('keeps an unconsumed due time after a temporary acceptance failure', async () => {
   const { vi } = await import('vite-plus/test')

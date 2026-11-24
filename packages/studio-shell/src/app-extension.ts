@@ -7,6 +7,8 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'general',
       settingsFields: [
+        'Interface language',
+        'Screen reader turn updates',
         'Global new thread shortcut',
         'Issues',
         'Jira',

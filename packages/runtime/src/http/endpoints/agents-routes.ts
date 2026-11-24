@@ -795,6 +795,25 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           (input.queueOnly || input.preserveQueuePause || path === '/api/tasks/steer')
         )
           throw new HttpError(400, 'Send now cannot be combined with queueing or steering')
+        if (input.attachmentIds.length) {
+          // Only a fresh attachment lookup fails before any send side effects. Keep
+          // an already admitted message's outcome recoverable through its receipt.
+          try {
+            s.attachments.metadata(input.id, input.attachmentIds)
+          } catch (cause) {
+            if (!(cause instanceof HttpError) || (cause.status !== 400 && cause.status !== 404))
+              throw cause
+            const task = s.store.get().tasks.find(({ id }) => id === input.id)
+            const admitted =
+              s.store.taskSubmission(input.id, input.messageId) ||
+              (task
+                ? task.queue?.some(({ id }) => id === input.messageId) ||
+                  s.store.taskMessage(input.id, input.messageId)
+                : s.store.unreadableTaskIds().includes(input.id))
+            if (admitted) throw cause
+            throw new HttpError(cause.status, cause.message, { mutationRejected: true })
+          }
+        }
         if (path === '/api/tasks/steer') {
           if (input.createTask) throw new HttpError(400, 'A new thread cannot be steered')
           if (input.queueOnly) throw new HttpError(400, 'A staged message cannot steer the agent')
@@ -818,6 +837,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
             input.attachmentIds,
             input.runId,
             s.runtimeId,
+            input.draftIdentity,
           )
         }
         if (input.createTask)
@@ -852,6 +872,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           input.initialTitle,
           'accepted',
           s.runtimeId,
+          input.draftIdentity,
         )
         if (firstSubmission && input.initialTitle) {
           const expectedTitle = input.initialTitle.after

@@ -40,6 +40,8 @@ export type WorkspaceContextValue = {
   workspace: Workspace
   setWorkspace: Dispatch<SetStateAction<Workspace>>
   ready: boolean
+  /** Cached work can render while startup finishes restoring the selected connection. */
+  restoringConnection?: boolean
   storageError: string | null
   connection: RuntimeConnection | null
   snapshot: RuntimeSnapshot | null

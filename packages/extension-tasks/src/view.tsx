@@ -175,6 +175,9 @@ export default function TasksView({
     () => workspace.tasks.filter((task) => !task.example),
     [workspace.tasks],
   )
+  const needsComputer =
+    store.ready && !store.connection && !store.runtimeRegistry.profiles.length && !localTasks.length
+  const pairComputer = () => host.navigate({ viewId: 'runtime', entityId: 'pair' })
   const [selectedId, setSelectedId] = useApplicationState(entityId ?? '')
   const [startupDraft, setStartupDraft] = useState<{
     task: Task
@@ -747,6 +750,10 @@ export default function TasksView({
   const startTask = useCommittedCallback(
     async (requestedProject?: string, confirmed = false, templateId?: string) => {
       if (busy) return
+      if (needsComputer) {
+        pairComputer()
+        return
+      }
       if (!confirmed) {
         setSuggestedProject(requestedProject ?? projectId)
         setProjectQuery('')
@@ -884,6 +891,10 @@ export default function TasksView({
   const [draftVersion, setDraftVersion] = useApplicationState(0)
   const newThread = useCommittedCallback(() => {
     if (busy) return
+    if (needsComputer) {
+      pairComputer()
+      return
+    }
     setDeselected(true)
     setSelectedId('')
     setSplitId('')
@@ -2119,6 +2130,19 @@ export default function TasksView({
       </BackgroundRefreshProvider>
     )
   }
+  if (needsComputer && !embedded)
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <SidebarHeader enabled />
+        <div className="max-w-sm space-y-3 text-center">
+          <h1 className="text-lg font-medium">{uiText('Connect a computer')}</h1>
+          <p className="text-sm text-muted-foreground">
+            {uiText('Pair the computer that will run your threads.')}
+          </p>
+          <Button onClick={pairComputer}>{uiText('Connect computer')}</Button>
+        </div>
+      </div>
+    )
   return (
     <>
       <div className="flex min-h-0 min-w-0 flex-1">

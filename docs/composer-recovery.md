@@ -254,3 +254,15 @@ editors, it holds or fails the startup read while each editor fills its default.
 pipeline list until after the read. It checks that saved text comes back, that nothing is written
 before the read and that a field typed during startup stays next to the saved fields. It does not
 run on a phone.
+
+## A rejected send and a newer draft
+
+When the runtime rejects a message because an attached file is missing or belongs to a different
+thread, it checks for any prior admission before classifying the rejection. A fresh rejection leaves
+Scope, the draft and the queue intact. Dovo removes the rejected attempt from pending actions, so
+you can fix the attachment and send again. An interrupted send with an unknown outcome keeps its
+message ID and follows the existing reconnect recovery.
+
+Current clients send a fingerprint of the draft they observed. If the runtime already has a
+different draft, attachment set, turn settings or Plan setting, it accepts the message and keeps the
+newer draft intact. Older runtimes and clients keep their existing send behavior.

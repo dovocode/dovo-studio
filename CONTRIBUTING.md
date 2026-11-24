@@ -2,8 +2,9 @@
 
 ## Set up
 
-Use Node.js 24.11 or newer and the pnpm version declared in the root `package.json`. From the
-repository root, install the locked dependencies with:
+Use the exact Node.js version in `.node-version` and the pnpm version declared in the root
+`package.json`. Check them with `node --version` and `pnpm --version`, then install the locked
+dependencies from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -55,10 +56,11 @@ Use `pnpm exec vp fmt <paths>` to format selected files. `pnpm check` is the rep
 Vite+ check; `pnpm typecheck`, `pnpm lint`, and `pnpm build` run their named workspace tasks.
 Package-specific checks can be run with `pnpm --filter @dovo/<package> typecheck`. Run
 `pnpm test:browser` for all registered browser suites, or an individual `test:*:browser` script for
-a focused check. CI runs the same registry in four shards. Register new browser checks in
-`package.json`; the runner rejects unregistered `check-*-browser.mjs` files. New browser fixtures
-should use `scripts/browser/harness.mjs`, which checks for unused stubs and requires an importer for
-relative module replacements.
+a focused check. Before running a focused browser check, run `pnpm exec playwright install chromium`
+(`--with-deps chromium` on Linux when system libraries are missing). CI runs the same registry in
+four shards. Register new browser checks in `package.json`; the runner rejects unregistered
+`check-*-browser.mjs` files. New browser fixtures should use `scripts/browser/harness.mjs`, which
+checks for unused stubs and requires an importer for relative module replacements.
 
 Before pushing, run `pnpm verify:ci` for typechecking, unit/integration tests, formatting/lint,
 builds, packaging/CI script regressions, runtime synchronization, Expo configuration, Metro module
@@ -75,10 +77,10 @@ tests, Electron/media checks under a window manager, native mobile builds, bundl
 and TURN kernel/network-namespace checks; those need their respective OS, SDK or system
 dependencies. A local pass does not replace these hosted checks.
 
-Mobile integration CI pairs the installed Android release over HTTP, opens a thread from a link,
-restarts the app with the runtime unreachable, and sends the recovered draft once after reconnect.
-To run that flow with Maestro on a disposable stock Android emulator and the release APK installed,
-build the runtime with `pnpm --filter @dovo/runtime... -r build` and run
+Mobile integration CI pairs installed Android and iOS release builds over HTTP, opens a thread from
+a link, restarts the app with the runtime unreachable, and sends the recovered draft once after
+reconnect. To run that flow with Maestro on a disposable stock Android emulator and the release APK
+installed, build the runtime with `pnpm --filter @dovo/runtime... -r build` and run
 `node scripts/verify-mobile.mjs <emulator-id> --android-recovery`. The flow clears the app data on
 that emulator. If ADB disconnects during the initial launch, the runner waits for it and starts one
 fresh Maestro session. Failures after launch go straight to the diagnostics.

@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import { rendererSourceCommit } from '../packaging/renderer-build-identity.mjs'
 
 const invocationMetadata = new Set([
   'INVOCATION_ID',
@@ -36,7 +37,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (!['build', 'typecheck'].includes(task))
     throw new Error('Usage: node scripts/ci/workspace-task.mjs build|typecheck')
   const result = spawnSync('pnpm', ['exec', 'vp', 'run', `ci-${task}`], {
-    env: workspaceTaskEnvironment(process.env),
+    env: {
+      ...workspaceTaskEnvironment(process.env),
+      DOVO_RENDERER_BUILD_COMMIT: rendererSourceCommit(new URL('../../', import.meta.url)) ?? '',
+    },
     stdio: 'inherit',
     shell: process.platform === 'win32',
   })
