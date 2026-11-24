@@ -817,13 +817,16 @@ it.each([true, false])(
         cdp: {
           send: async () => ({ result: { value: { elements: [], elementsTruncated: false } } }),
         },
+        uploads: { release: vi.fn<() => Promise<void>>().mockResolvedValue() },
       }
       sessions.set('thread', Promise.resolve(session))
-      const close = vi.spyOn(browsers, 'close').mockResolvedValue()
       Object.defineProperty(browsers, 'scheduleSharpFrame', { value: () => {} })
       await browsers.agentCommand('task', { action: 'snapshot' }, () => {}, 'thread')
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
-      expect(close).toHaveBeenCalledTimes(viewing ? 0 : 1)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 1)
+      expect(session.page.close).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(session.page.close).toHaveBeenCalledTimes(viewing ? 0 : 1)
+      expect(session.uploads.release).toHaveBeenCalledTimes(viewing ? 0 : 1)
     } finally {
       vi.useRealTimers()
     }

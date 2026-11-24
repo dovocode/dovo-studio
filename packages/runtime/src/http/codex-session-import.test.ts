@@ -63,7 +63,12 @@ async function setup() {
   const directory = join(home, 'sessions', '2026', '10', '01')
   await mkdir(directory, { recursive: true })
   const token = 'codex-import-owner-token-with-enough-characters'
-  const options = { port: 0, databasePath: join(f.directory, 'runtime.sqlite'), ownerToken: token }
+  // A runtime backup can remove a journal while Git scans the working tree.
+  const options = {
+    port: 0,
+    databasePath: join(f.directory, '.git', 'runtime.sqlite'),
+    ownerToken: token,
+  }
   let runtime = await startRuntime(options)
   cleanups.push(() => runtime.close())
   f.workspace.agents[0] = {
