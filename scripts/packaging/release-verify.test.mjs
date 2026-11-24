@@ -155,6 +155,48 @@ await test('build manifest validates platform update feed hashes before upload a
   })
 })
 
+for (const releaseTag of [tag, 'v1.2.3-nightly.42']) {
+  await test(`build manifest verifies AppImage, DEB and RPM entries in each Linux feed for ${releaseTag}`, async () => {
+    await fixture(async (directory) => {
+      const { channel, feeds, required, studio, version } = releaseFiles(releaseTag)
+      for (const name of required) await writeFile(join(directory, name), name)
+      const writeFeed = (name, assets) => {
+        const files = assets.map((url) => ({
+          url,
+          sha512: createHash('sha512').update(url).digest('base64'),
+        }))
+        return writeFile(
+          join(directory, name),
+          JSON.stringify({ version, files, path: files[0].url, sha512: files[0].sha512 }),
+        )
+      }
+      for (const [name, [asset]] of Object.entries(feeds)) await writeFeed(name, [asset])
+
+      const prefix = `${studio}-${version}-linux`
+      const x64 = [`${prefix}-x86_64.AppImage`, `${prefix}-amd64.deb`, `${prefix}-x86_64.rpm`]
+      const arm64 = [`${prefix}-arm64.AppImage`, `${prefix}-arm64.deb`, `${prefix}-aarch64.rpm`]
+      const x64Feed = `${channel}-linux.yml`
+      const arm64Feed = `${channel}-linux-arm64.yml`
+      await writeFeed(x64Feed, x64)
+      await writeFeed(arm64Feed, arm64)
+      assert.equal((await buildManifest(directory, releaseTag, sha)).sha, sha)
+
+      await writeFeed(x64Feed, [...x64, arm64[1]])
+      await assert.rejects(
+        buildManifest(directory, releaseTag, sha),
+        /Update feed asset or SHA-512 did not match: (latest|nightly)-linux\.yml/,
+      )
+
+      await writeFeed(x64Feed, x64)
+      await writeFile(join(directory, arm64[2]), 'changed ARM64 RPM bytes')
+      await assert.rejects(
+        buildManifest(directory, releaseTag, sha),
+        /Update feed asset or SHA-512 did not match: (latest|nightly)-linux-arm64\.yml/,
+      )
+    })
+  })
+}
+
 await test('verify-only runs the same digest verifier for existing stable and nightly releases', async () => {
   await fixture(async (directory) => {
     await writeFile(

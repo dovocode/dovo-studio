@@ -107,12 +107,13 @@ release checks retain their public metadata fallback.
    The workflow rejects a tag with a different source before creating the draft. All packaging and
    signing jobs use the verified commit. The workflow verifies every expected architecture and
    format, checks each update feed against the actual installer bytes, and records the source and
-   asset SHA-256 digests in `dovo-release-manifest.json`. The verify-only run checks the published
-   tag and asset metadata against that manifest. Published releases whose tagged source predates the
-   manifest use the historical asset list for verify-only and keep the original distribution
-   targets. Verification checks the published update feeds and available asset digests. These
-   releases have no build manifest linking the downloaded bytes to the tagged source. The draft
-   notes start with the version's `CHANGELOG.md` section, followed by the notes that GitHub
+   asset SHA-256 digests in `dovo-release-manifest.json`. On Linux, this verifies the AppImage and
+   any DEB and RPM packages listed in the feed for that architecture. The verify-only run checks the
+   published tag and asset metadata against that manifest. Published releases whose tagged source
+   predates the manifest use the historical asset list for verify-only and keep the original
+   distribution targets. Verification checks the published update feeds and available asset digests.
+   These releases have no build manifest linking the downloaded bytes to the tagged source. The
+   draft notes start with the version's `CHANGELOG.md` section, followed by the notes that GitHub
    generates. The workflow stops if fragments remain in `changelog.d/`. Inspect the artifacts and
    publish the draft only after native installation tests. Homebrew, mise and container distribution
    verify the published tag and asset digests before preparing downloads.

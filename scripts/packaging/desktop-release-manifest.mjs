@@ -24,13 +24,14 @@ export function releaseFiles(tag) {
   const macZip = `${studio}-${version}-arm64.zip`
   const macDmg = `${studio}-${version}-arm64.dmg`
   const windows = `${studio}-${version}-windows-x64.exe`
-  const linux = `${studio}-${version}-linux-x86_64.AppImage`
-  const arm = `${studio}-${version}-linux-arm64.AppImage`
+  const linux = `${studio}-${version}-linux`
+  const linuxX64 = [`${linux}-x86_64.AppImage`, `${linux}-amd64.deb`, `${linux}-x86_64.rpm`]
+  const linuxArm64 = [`${linux}-arm64.AppImage`, `${linux}-arm64.deb`, `${linux}-aarch64.rpm`]
   const feeds = {
     [`${channel}-mac.yml`]: [macZip, macDmg],
     [`${channel}.yml`]: [windows],
-    [`${channel}-linux.yml`]: [linux],
-    [`${channel}-linux-arm64.yml`]: [arm],
+    [`${channel}-linux.yml`]: linuxX64,
+    [`${channel}-linux-arm64.yml`]: linuxArm64,
   }
   const distributionFiles = [
     macZip,
@@ -50,12 +51,9 @@ export function releaseFiles(tag) {
       ...distributionFiles,
       macDmg,
       windows,
-      linux,
-      arm,
+      ...linuxX64,
+      ...linuxArm64,
       `${server}-${version}-windows-x64.zip`,
-      ...['amd64.deb', 'arm64.deb', 'x86_64.rpm', 'aarch64.rpm'].map(
-        (format) => `${studio}-${version}-linux-${format}`,
-      ),
       ...Object.keys(feeds),
     ],
   }
