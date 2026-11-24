@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import timers from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
 const engine =
@@ -47,7 +48,20 @@ export async function prepareMirage(root) {
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
     }
-    const response = await fetch(asset.url, { signal: AbortSignal.timeout(120000) })
+    const download = () => fetch(asset.url, { signal: AbortSignal.timeout(120000) })
+    let response = await download()
+    if (response.status === 429) {
+      // Hugging Face reports seconds to reset within a five-minute window.
+      const rateLimit = response.headers.get('ratelimit') ?? ''
+      const reset = /(?:^|;)\s*t=(\d+)\b/.exec(rateLimit)?.[1]
+      const delaySeconds = Math.max(1, Number(reset ?? 300))
+      if (delaySeconds <= 300) {
+        await response.body?.cancel()
+        console.warn(`Mirage ${asset.name} download rate limited. Retrying in ${delaySeconds}s.`)
+        await timers.setTimeout(delaySeconds * 1000)
+        response = await download()
+      }
+    }
     if (!response.ok)
       throw new Error(`Mirage ${asset.name} download failed: HTTP ${response.status}`)
     const bytes = Buffer.from(await response.arrayBuffer())

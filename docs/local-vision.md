@@ -87,10 +87,11 @@ The runtime build prepares the assets:
 pnpm --filter @dovo/runtime build
 ```
 
-The first build downloads about 23 MB from pinned Hugging Face revisions. Later builds verify the
-local cache. The distribution includes weights, WASM, its JavaScript loader, the Apache 2.0 license
-and attribution. Installed inference needs no model download or network connection. Desktop and
-server distributions include these files in the runtime package.
+The first build downloads about 23 MB from pinned Hugging Face revisions. If Hugging Face rate
+limits a download, the build retries once after the quota resets, with a wait of up to five minutes.
+Later builds verify the local cache. The distribution includes weights, WASM, its JavaScript loader,
+the Apache 2.0 license and attribution. Installed inference needs no model download or network
+connection. Desktop and server distributions include these files in the runtime package.
 
 Model revision: `3d03cee88c0acbe4e71b94b567ab14e6e55f40c9`. Runtime revision:
 `1a028f5a3972b67dd8d8752f882113d475e7ec4c`, version `4.0.0`. The preparation script checks byte
