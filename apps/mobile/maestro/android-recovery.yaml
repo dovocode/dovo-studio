@@ -56,9 +56,8 @@ appId: com.dovo.studio
     id: Message
 - inputText: Android recovery draft
 - hideKeyboard
-- assertVisible:
-    id: Message
-    text: Android recovery draft
+# Android exposes the draft text on the edit field and the Message ID on its wrapper.
+- assertVisible: Android recovery draft
 - extendedWaitUntil:
     visible:
       id: Send when online
@@ -67,9 +66,7 @@ appId: com.dovo.studio
 - stopApp
 - openLink: ${THREAD_LINK}
 - extendedWaitUntil:
-    visible:
-      id: Message
-      text: Android recovery draft
+    visible: Android recovery draft
     timeout: 30000
 - assertVisible:
     id: Send when online
