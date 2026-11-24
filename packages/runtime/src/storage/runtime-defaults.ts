@@ -32,7 +32,7 @@ function readDefaults(db: Database.Database) {
   const organizations = read.get('organization-settings')
   return decode(runtimeDefaultsSchema, {
     ...(typeof defaults === 'string' ? JSON.parse(defaults) : {}),
-    organizations: typeof organizations === 'string' ? JSON.parse(organizations) : undefined,
+    ...(typeof organizations === 'string' ? { organizations: JSON.parse(organizations) } : {}),
   })
 }
 

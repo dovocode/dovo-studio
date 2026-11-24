@@ -1001,7 +1001,7 @@ const tools: Array<
               {
                 name: 'pipeline_watch',
                 description:
-                  'Monitor CI/releases after pushes/triggers/reruns. watch with url OR runIds. Discover IDs once; register replacements. Notifications replace polling; success is silent. Handle failures, then finish. Respect opt-outs/paused queues; settling/archiving stops watches. status/stop without selectors affects all. Account: repositoryId or General connectionId.',
+                  'Watch CI/releases after pushes, triggers or reruns. Use url or runIds. Discover IDs once; register replacements. Notifications replace polling; success is silent. Handle failures, then finish. Respect opt-outs/paused queues. Settling/archiving stops watches. Unfiltered status/stop affects all. Account: repositoryId or General connectionId.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
