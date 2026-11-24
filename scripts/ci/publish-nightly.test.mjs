@@ -10,13 +10,21 @@ const sha = 'a'.repeat(40)
 const check = {
   id: 1,
   name: 'Check',
+  path: '.github/workflows/check.yml',
   head_sha: sha,
   head_branch: 'main',
   event: 'push',
   status: 'completed',
   conclusion: 'success',
 }
-const release = { ...check, id: 2, name: 'Release', event: 'workflow_dispatch' }
+const release = {
+  ...check,
+  id: 2,
+  name: 'Package release',
+  path: '.github/workflows/release-desktop.yml',
+  display_title: 'Package release',
+  event: 'workflow_dispatch',
+}
 void test('publishes only after exact-source Check and Release both pass in either completion order', () => {
   assert.equal(publicationPair([check], sha), null)
   assert.equal(publicationPair([release], sha), null)

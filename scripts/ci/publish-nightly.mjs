@@ -7,22 +7,22 @@ import { verify } from '../packaging/desktop-release-manifest.mjs'
 
 // Both completion events run this once; either can arrive first. No waiting runner is needed.
 export function publicationPair(runs, sha) {
-  const latest = (name) =>
+  const latest = (path, release = false) =>
     runs
       .filter(
         (run) =>
-          run.name === name &&
-          (name !== 'Release' ||
+          run.path?.split('@', 1)[0] === path &&
+          (!release ||
             run.event !== 'workflow_dispatch' ||
             run.display_title !== 'Verify release assets') &&
           run.head_sha === sha &&
           (run.head_branch === 'main' ||
-            (name === 'Release' && /^v\d+\.\d+\.\d+-nightly\.\d+$/.test(run.head_branch))) &&
+            (release && /^v\d+\.\d+\.\d+-nightly\.\d+$/.test(run.head_branch))) &&
           ['push', 'schedule', 'workflow_dispatch'].includes(run.event),
       )
       .sort((a, b) => b.id - a.id)[0]
-  const check = latest('Check'),
-    release = latest('Release')
+  const check = latest('.github/workflows/check.yml'),
+    release = latest('.github/workflows/release-desktop.yml', true)
   return check?.conclusion === 'success' &&
     check.status === 'completed' &&
     release?.conclusion === 'success' &&
