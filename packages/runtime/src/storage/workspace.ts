@@ -490,15 +490,16 @@ export class WorkspaceStore {
             ? { ...task.restartRecovery, automatic: false }
             : undefined,
       }
-    return task.queue?.length
+    const settled = task.activeRunId ? { ...task, activeRunId: undefined } : task
+    return settled.queue?.length
       ? {
-          ...task,
+          ...settled,
           restartRecovery:
-            task.restartRecovery ??
-            (!task.queuePaused ? { kind: 'queue', automatic: false } : undefined),
+            settled.restartRecovery ??
+            (!settled.queuePaused ? { kind: 'queue', automatic: false } : undefined),
           queuePaused: true,
         }
-      : task
+      : settled
   }
   /** Version 3 rows carry each history summary. Earlier documents, and rows written before
    * summaries were stored, derive it once from that task's complete history. */

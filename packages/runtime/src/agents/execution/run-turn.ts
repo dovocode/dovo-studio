@@ -194,6 +194,9 @@ export class TaskTurnRunner {
   ) {
     this.sharedSkills = new SharedSkillBundles(skillCacheDirectory)
   }
+  private refreshCompletedTurnFiles(cwd: string) {
+    return runtimeOperation(() => this.git.changes(cwd)).pipe(Effect.retry({ times: 1 }))
+  }
   /** Finish saving an already terminal provider turn. */
   finalizeEffect(id: string, cwd: string, hasGit: boolean) {
     return Effect.gen({ self: this }, function* () {
@@ -225,9 +228,7 @@ export class TaskTurnRunner {
       const after =
         turn.checkpoint.after ??
         (before
-          ? yield* runtimeOperation(() =>
-              this.git.snapshot(cwd, `refs/dovo/checkpoints/${turn.id}/after`),
-            )
+          ? yield* runtimeOperation(() => this.git.turnAfterSnapshot(cwd, turn.id))
           : undefined)
       const changes = after
         ? yield* runtimeOperation(() => this.git.checkpointChanges(cwd, before, after))
@@ -235,7 +236,7 @@ export class TaskTurnRunner {
       const linked = yield* runtimeOperation(() =>
         linkedAfter(this.git, turn.id, turn.checkpoint?.linked ?? []),
       )
-      const files = before ? yield* runtimeOperation(() => this.git.changes(cwd)) : []
+      const files = before ? yield* this.refreshCompletedTurnFiles(cwd) : []
       this.store.updateTaskHistory(
         id,
         (task) => ({
@@ -789,9 +790,7 @@ export class TaskTurnRunner {
             }
             this.store.updateTask(id, (task) => task, undefined, action)
             const capturedAfter = captureGit
-              ? yield* runtimeOperation(() =>
-                  this.git.snapshot(cwd, `refs/dovo/checkpoints/${turnId}/after`),
-                )
+              ? yield* runtimeOperation(() => this.git.turnAfterSnapshot(cwd, turnId))
               : undefined
             after = capturedAfter
             const changes = yield* runtimeOperation(() =>
@@ -2146,7 +2145,7 @@ export class TaskTurnRunner {
           yield* runtimeOperation(() => Promise.all(pendingGitUpdates))
           const review = yield* (
             captureGit
-              ? runtimeOperation(() => this.git.changes(cwd))
+              ? this.refreshCompletedTurnFiles(cwd)
               : Effect.succeed(captureChanges ? [] : this.store.taskSummary(id).files)
           ).pipe(
             Effect.map((files) => ({ files, error: undefined })),

@@ -34,10 +34,7 @@ export async function linkedAfter(
   for (const checkpoint of checkpoints) {
     const after =
       checkpoint.after ??
-      (await git.snapshot(
-        checkpoint.directory,
-        `refs/dovo/checkpoints/${turnId}/linked/${checkpoint.checkoutId}/after`,
-      ))
+      (await git.turnAfterSnapshot(checkpoint.directory, turnId, checkpoint.checkoutId))
     result.push({
       ...checkpoint,
       after,

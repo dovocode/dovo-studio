@@ -1,6 +1,7 @@
 import { runtimeIntegration, waitForRuntime as waitForRecovery } from '../../testing/integration'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { execFile } from 'node:child_process'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright'
@@ -771,6 +772,250 @@ it('holds an unconfirmed provider action for manual review even when automatic r
   expect(runtime.services.store.task(id).error).toContain('not confirmed')
   expect(runtime.services.store.task(id).activeRunId).toBeUndefined()
 })
+
+it('recovers the published Git tree after a failed SQLite save and restart', async () => {
+  const { options, id } = await seed(true, { status: 'draft' })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    await writeFile(join(input.cwd, 'hello.txt'), 'Written during the turn\n')
+    input.onText('Saved reply')
+  })
+  adapter(run)
+  const first = await startRuntime(options)
+  cleanups.push(first.close)
+  const { git, tasks, store } = first.services
+  first.services.db.exec(`CREATE TEMP TRIGGER reject_final_save BEFORE UPDATE ON workspace_tasks
+    WHEN json_extract(NEW.value, '$.status') = 'review' AND json_extract(NEW.value, '$.runPhase') IS NULL
+    BEGIN SELECT RAISE(ABORT, 'Final SQLite write failed'); END`)
+  await (
+    await tasks.start(id)
+  ).done
+  const interrupted = store.task(id)
+  expect(interrupted.error).toContain('Final SQLite write failed')
+  const completed = interrupted.turns?.at(-1)
+  expect(completed?.status).toBe('completed')
+  expect(completed?.checkpoint?.after).toBeUndefined()
+  const cwd = run.mock.calls[0][0].cwd
+  const ref = `refs/dovo/checkpoints/${completed?.id}/after`
+  const original = (await git.command(cwd, ['rev-parse', ref])).trim()
+  expect(await git.command(cwd, ['show', `${original}:hello.txt`])).toBe(
+    'Written during the turn\n',
+  )
+  await first.close()
+  await writeFile(join(cwd, 'hello.txt'), 'Edited later by the user\n')
+
+  const reopened = await startRuntime(options)
+  cleanups.push(reopened.close)
+  const response = await fetch(`http://127.0.0.1:${reopened.port}/api/tasks/run`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${options.ownerToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, saveOnly: true }),
+  })
+  expect(response.status).toBe(200)
+  await waitForRecovery(() => expect(reopened.services.store.task(id).runPhase).toBeUndefined())
+  const recovered = reopened.services.store.task(id)
+  expect(recovered.turns).toHaveLength(1)
+  expect(recovered.turns?.[0].checkpoint).toMatchObject({
+    after: original,
+    files: [expect.objectContaining({ path: 'hello.txt', after: 'Written during the turn\n' })],
+  })
+  expect((await reopened.services.git.command(cwd, ['rev-parse', ref])).trim()).toBe(original)
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('Edited later by the user\n')
+  expect(recovered.messages.filter((message) => message.role === 'assistant')).toMatchObject([
+    { turnId: completed?.id, text: 'Saved reply' },
+  ])
+  expect(run).toHaveBeenCalledOnce()
+})
+
+it.skipIf(process.platform === 'win32').each(['before claim', 'after dispatch'] as const)(
+  'keeps a saved reply and protects its queued follow-up when the runtime dies %s',
+  async (cut) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const options = {
+      databasePath: join(f.directory, '.git', 'queued-turn-crash.sqlite'),
+      ownerToken: 'synthetic-owner-token-for-restart-test',
+      port: 0,
+    }
+    const initial = await startRuntime(options)
+    let id: string
+    try {
+      initial.services.store.update(() => f.workspace)
+      initial.services.preferences.save({ autoContinueAfterRestart: true })
+      id = initial.services.tasks.create({
+        title: 'Queued turn crash',
+        repositoryId: 'repo',
+        agentId: 'agent',
+        objective: 'First request',
+      }).id
+    } finally {
+      await initial.close()
+    }
+
+    await expect(
+      promisify(execFile)(
+        process.execPath,
+        [
+          '--import',
+          new URL('../../../node_modules/tsx/dist/loader.mjs', import.meta.url).href,
+          '--conditions=development',
+          '--input-type=module',
+          '--eval',
+          `
+          import assert from 'node:assert/strict';
+          import { writeSync } from 'node:fs';
+          import { startRuntime } from ${JSON.stringify(new URL('../../index.ts', import.meta.url).href)};
+          const [id, rawOptions, cut] = process.argv.slice(1);
+          const options = JSON.parse(rawOptions);
+          const runtime = await startRuntime(options);
+          const { agents, store, tasks } = runtime.services;
+          let releaseFirst;
+          let firstStarted;
+          const firstReady = new Promise(resolve => { firstStarted = resolve; });
+          const firstMayFinish = new Promise(resolve => { releaseFirst = resolve; });
+          const crash = () => {
+            const task = store.task(id);
+            assert.equal(task.turns?.[0]?.status, 'completed');
+            assert.equal(typeof task.turns[0].checkpoint?.after, 'string');
+            assert.equal(task.messages.find(message => message.role === 'assistant')?.text, 'First reply');
+            writeSync(1, 'first reply saved; crash ' + cut + '\\n');
+            process.kill(process.pid, 'SIGKILL');
+          };
+          agents.get = async () => ({
+            probe: async () => {},
+            run: async (input) => {
+              const task = store.task(id);
+              if (task.runAttempt?.inputMessageIds.at(-1) === 'next') {
+                assert.equal(cut, 'after dispatch');
+                assert.match(input.prompt, /Queued follow-up/);
+                assert.equal(task.queue?.length, 0);
+                assert.equal(task.runAttempt.promptAccepted, false);
+                assert.equal(store.providerActions.state('start:' + task.activeRunId), 'dispatched');
+                crash();
+                return;
+              }
+              assert.equal(task.runAttempt?.inputMessageIds.at(-1), 'first');
+              input.onSession('queued-turn-session');
+              input.onPromptAccepted();
+              firstStarted();
+              await firstMayFinish;
+              input.onText('First reply');
+            },
+          });
+          const take = tasks.queue.take.bind(tasks.queue);
+          tasks.queue.take = (...args) => {
+            const task = store.task(id);
+            if (cut !== 'before claim' || task.queue?.[0]?.id !== 'next') return take(...args);
+            assert.equal(task.runPhase, undefined);
+            assert.equal(task.turns?.length, 1);
+            crash();
+          };
+          const send = (messageId, text) => fetch('http://127.0.0.1:' + runtime.port + '/api/tasks/message', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + options.ownerToken, 'content-type': 'application/json' },
+            body: JSON.stringify({ id, messageId, text }),
+          });
+          assert.equal((await send('first', 'First request')).status, 200);
+          await firstReady;
+          assert.equal((await send('next', 'Queued follow-up')).status, 200);
+          assert.deepEqual(store.task(id).queue?.map(message => message.id), ['next']);
+          releaseFirst();
+          `,
+          id,
+          JSON.stringify(options),
+          cut,
+        ],
+        {
+          cwd: f.directory,
+          env: {
+            PATH: process.env.PATH,
+            HOME: f.directory,
+            DOVO_BROWSER_EXECUTABLE: chromium.executablePath(),
+            XDG_CONFIG_HOME: join(f.directory, 'config'),
+            XDG_DATA_HOME: join(f.directory, 'data'),
+            XDG_STATE_HOME: join(f.directory, 'state'),
+          },
+          timeout: 20_000,
+        },
+      ),
+    ).rejects.toMatchObject({
+      signal: 'SIGKILL',
+      stdout: expect.stringContaining(`first reply saved; crash ${cut}\n`),
+    })
+
+    const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Follow-up reply'))
+    adapter(run)
+    const restarted = await startRuntime(options)
+    cleanups.push(restarted.close)
+    const { store } = restarted.services
+    const saved = store.task(id)
+    const firstTurn = saved.turns?.[0]
+    expect(firstTurn).toMatchObject({
+      status: 'completed',
+      checkpoint: { after: expect.any(String) },
+    })
+    expect(
+      saved.messages.filter((message) => message.role === 'assistant' && message.text),
+    ).toEqual([expect.objectContaining({ text: 'First reply', turnId: firstTurn?.id })])
+    const next = expect.objectContaining({ id: 'next', text: 'Queued follow-up' })
+    const dispatched = cut === 'after dispatch'
+    expect(saved).toMatchObject({
+      status: dispatched ? 'failed' : 'review',
+      queuePaused: true,
+      activeRunId: undefined,
+      restartRecovery: { kind: dispatched ? 'turn' : 'queue', automatic: false },
+      queue: dispatched ? [] : [next],
+    })
+    expect(saved.runAttempt?.inputMessageIds.at(-1)).toBe(dispatched ? 'next' : undefined)
+    expect(saved.runAttempt?.promptAccepted).toBe(dispatched ? false : undefined)
+    expect(saved.error?.includes('not confirmed') ?? false).toBe(dispatched)
+    expect(saved.messages.filter((message) => message.id === 'next')).toEqual(
+      dispatched ? [next] : [],
+    )
+    const actions = store.providerActions.list(id)
+    const uncertainStart = expect.objectContaining({
+      kind: 'start',
+      attemptId: saved.turns?.[1]?.id,
+    })
+    expect(actions.filter((action) => action.state === 'uncertain')).toEqual(
+      dispatched ? [uncertainStart] : [],
+    )
+    expect(run).not.toHaveBeenCalled()
+    const post = (path: 'message' | 'queue', input: Record<string, unknown>) =>
+      fetch(`http://127.0.0.1:${restarted.port}/api/tasks/${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${options.ownerToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, ...input }),
+      })
+    expect((await post('message', { messageId: 'next', text: 'Queued follow-up' })).status).toBe(
+      200,
+    )
+    expect(store.task(id)).toEqual(saved)
+    expect(store.providerActions.list(id)).toEqual(actions)
+    expect(run).not.toHaveBeenCalled()
+    if (dispatched) return
+
+    expect((await post('queue', { action: 'resume' })).status).toBe(200)
+    await waitForRecovery(() =>
+      expect(store.task(id)).toMatchObject({
+        status: 'review',
+        activeRunId: undefined,
+        queue: [],
+        turns: [firstTurn, expect.objectContaining({ status: 'completed' })],
+      }),
+    )
+    expect(run).toHaveBeenCalledOnce()
+    expect(run.mock.calls[0][0].prompt).toContain('Queued follow-up')
+    const finished = store.task(id)
+    expect(finished.messages.filter((message) => message.role === 'assistant')).toMatchObject([
+      { text: 'First reply', turnId: firstTurn?.id },
+      { text: 'Follow-up reply', turnId: finished.turns?.[1]?.id },
+    ])
+    expect(finished.messages.filter((message) => message.id === 'next')).toHaveLength(1)
+  },
+)
 
 it.skipIf(process.platform === 'win32')(
   'retains a steer without replaying it when the runtime dies inside the provider dispatch',

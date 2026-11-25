@@ -29,9 +29,10 @@ async function setup() {
   const primary = await fixture()
   const secondary = await fixture()
   cleanups.push(primary.cleanup, secondary.cleanup)
+  const ownerToken = 'linked-projects-test-token-at-least-32-chars'
   const runtime = await startRuntime({
     databasePath: ':memory:',
-    ownerToken: 'linked-projects-test-token-at-least-32-chars',
+    ownerToken,
     port: 0,
   })
   cleanups.push(() => runtime.close())
@@ -43,7 +44,7 @@ async function setup() {
       { ...secondary.workspace.repositories[0], id: 'backend', name: 'Backend' },
     ],
   }))
-  return { s, primary, secondary }
+  return { s, primary, secondary, port: runtime.port, ownerToken }
 }
 
 async function recoveryFixture() {
@@ -75,6 +76,81 @@ async function recoveryFixture() {
   await writeFile(join(secondary.directory, 'hello.txt'), 'later backend\n')
   return { ...f, task, turn }
 }
+
+it('reuses the published linked after tree when saving is retried after a later edit', async () => {
+  const { s, secondary, port, ownerToken } = await setup()
+  const linkedDirectory = await realpath(secondary.directory)
+  const linkedFile = join(linkedDirectory, 'hello.txt')
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    await writeFile(linkedFile, 'agent edit\n')
+    input.onText('Updated the linked project')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const checkpointChanges = s.git.checkpointChanges.bind(s.git)
+  let rejected = false
+  vi.spyOn(s.git, 'checkpointChanges').mockImplementation(async (cwd, before, after) => {
+    if (cwd === linkedDirectory && !rejected) {
+      rejected = true
+      throw new Error('Linked checkpoint diff was interrupted')
+    }
+    return checkpointChanges(cwd, before, after)
+  })
+  const task = s.tasks.create({
+    title: 'Recover linked checkpoint',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Edit the linked project',
+    linkedCheckouts: [
+      { id: 'backend-link', repositoryId: 'backend', execution: 'main', access: 'edit' },
+    ],
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const interrupted = s.store.task(task.id)
+  expect(interrupted).toMatchObject({
+    status: 'review',
+    runPhase: 'finalizing',
+    error: expect.stringContaining('Linked checkpoint diff was interrupted'),
+  })
+  const turn = interrupted.turns?.at(-1)
+  expect(turn?.status).toBe('completed')
+  const ref = `refs/dovo/checkpoints/${turn?.id}/linked/backend-link/after`
+  const published = (await s.git.command(linkedDirectory, ['rev-parse', ref])).trim()
+  expect(await s.git.command(linkedDirectory, ['show', `${published}:hello.txt`])).toBe(
+    'agent edit\n',
+  )
+  await writeFile(linkedFile, 'later edit\n')
+
+  const response = await fetch(`http://127.0.0.1:${port}/api/tasks/run`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: task.id, saveOnly: true }),
+  })
+  expect(response.status).toBe(200)
+  await waitForRuntime(() =>
+    expect(s.store.task(task.id)).toMatchObject({
+      status: 'review',
+      runPhase: undefined,
+      activeRunId: undefined,
+    }),
+  )
+  const saved = s.store.task(task.id)
+  expect(run).toHaveBeenCalledOnce()
+  expect(saved.turns).toHaveLength(1)
+  expect(saved.messages.filter((message) => message.role === 'assistant')).toMatchObject([
+    { text: 'Updated the linked project', turnId: turn?.id },
+  ])
+  expect(saved.turns?.[0]?.checkpoint?.linked).toMatchObject([
+    {
+      checkoutId: 'backend-link',
+      after: published,
+      files: [expect.objectContaining({ path: 'hello.txt', after: 'agent edit\n' })],
+    },
+  ])
+  expect((await s.git.command(linkedDirectory, ['rev-parse', ref])).trim()).toBe(published)
+  expect(await readFile(linkedFile, 'utf8')).toBe('later edit\n')
+})
 
 it('releases legacy recovery without changing either checkout or losing backup trees', async () => {
   const { s, task, turn, primary, secondary } = await recoveryFixture()
@@ -369,10 +445,7 @@ it('retries selected Git checkout finalization under a folder parent without rer
   const changes = s.git.changes.bind(s.git)
   let failRefresh = true
   vi.spyOn(s.git, 'changes').mockImplementation(async (cwd) => {
-    if (cwd === selectedDirectory && failRefresh) {
-      failRefresh = false
-      throw new Error('Change refresh failed')
-    }
+    if (cwd === selectedDirectory && failRefresh) throw new Error('Change refresh failed')
     return changes(cwd)
   })
   let childId = ''
@@ -414,6 +487,7 @@ it('retries selected Git checkout finalization under a folder parent without rer
     await childFinished.promise
     expect(s.store.task(childId).runPhase).toBe('finalizing')
     expect(s.store.task(childId).error).toContain('Change refresh failed')
+    failRefresh = false
     await (
       await s.tasks.start(childId)
     ).done

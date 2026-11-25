@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -43,6 +45,141 @@ async function setup() {
     post('message', { id, messageId, text, queueOnly: true, ...input })
   return { ...runtime.services, task, send, post, stage }
 }
+
+async function sendQueuedPair(failedReads: number) {
+  const s = await setup()
+  let release = () => {}
+  const finishA = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const starts: Task[] = []
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    const task = s.store.task(s.task.id)
+    starts.push(task)
+    const message = task.runAttempt?.inputMessageIds.at(-1)
+    if (message === 'a') await finishA
+    input.onText(`Reply to ${message}`)
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const refresh = vi.spyOn(s.git, 'changes')
+  try {
+    expect((await s.send('a', 'First input')).status).toBe(200)
+    await waitForRuntime(() => expect(run).toHaveBeenCalledOnce())
+    expect((await s.send('b', 'Second input')).status).toBe(200)
+    expect(s.store.task(s.task.id).queue?.map(({ id }) => id)).toEqual(['b'])
+    refresh.mockClear()
+    for (let i = 0; i < failedReads; i++)
+      refresh.mockRejectedValueOnce(new Error('Diff unavailable'))
+  } finally {
+    release()
+  }
+
+  const expectBothTurnsFinished = async () => {
+    await waitForRuntime(() => {
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(s.store.task(s.task.id).activeRunId).toBeUndefined()
+    })
+    const [first, second] = starts
+    expect(first.runAttempt?.inputMessageIds.at(-1)).toBe('a')
+    expect(second.runAttempt?.inputMessageIds.at(-1)).toBe('b')
+    expect(second.turns?.[0]).toMatchObject({
+      status: 'completed',
+      checkpoint: { after: expect.any(String) },
+    })
+    expect(second.messages.filter((item) => item.role === 'assistant' && item.text)).toMatchObject([
+      { text: 'Reply to a', turnId: second.turns?.[0].id },
+    ])
+    const finished = s.store.task(s.task.id)
+    expect(finished).toMatchObject({ status: 'review', queue: [] })
+    expect(finished.error).toBeUndefined()
+    expect(finished.turns?.map((turn) => turn.status)).toEqual(['completed', 'completed'])
+    expect(finished.messages.filter((item) => item.role === 'assistant')).toMatchObject([
+      { text: 'Reply to a', turnId: finished.turns?.[0].id },
+      { text: 'Reply to b', turnId: finished.turns?.[1].id },
+    ])
+  }
+  return { s, run, refresh, expectBothTurnsFinished }
+}
+
+it.each([0, 1])('saves A before starting queued B with %i failed diff reads', async (failures) => {
+  const pair = await sendQueuedPair(failures)
+  await pair.expectBothTurnsFinished()
+  expect(pair.refresh).toHaveBeenCalledTimes(2 + failures)
+})
+
+it('holds B after both diff reads fail and starts it once after retry and resume', async () => {
+  const { s, run, refresh, expectBothTurnsFinished } = await sendQueuedPair(2)
+  await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+  expect(refresh).toHaveBeenCalledTimes(2)
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(s.task.id)).toMatchObject({
+    runPhase: 'finalizing',
+    queuePaused: true,
+    error: expect.stringContaining('Diff unavailable'),
+    queue: [expect.objectContaining({ id: 'b' })],
+  })
+  expect((await s.post('run', { id: s.task.id, saveOnly: true })).status).toBe(200)
+  await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+  expect(s.store.task(s.task.id).queuePaused).toBe(true)
+  expect(s.store.task(s.task.id).runPhase).toBeUndefined()
+  expect(run).toHaveBeenCalledOnce()
+  expect((await s.post('queue', { id: s.task.id, action: 'resume' })).status).toBe(200)
+  await expectBothTurnsFinished()
+})
+
+it('resuming a held queue finishes the pending save before dispatching the follow-up', async () => {
+  const { s, run, refresh, expectBothTurnsFinished } = await sendQueuedPair(2)
+  await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+  const unavailable = new Error('Diff still unavailable')
+  refresh.mockRejectedValueOnce(unavailable).mockRejectedValueOnce(unavailable)
+  const resume = () => s.post('queue', { id: s.task.id, action: 'resume' })
+  expect((await resume()).status).toBe(200)
+  await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(s.task.id)).toMatchObject({
+    queuePaused: true,
+    runPhase: 'finalizing',
+    error: expect.stringContaining('Diff still unavailable'),
+    queue: [expect.objectContaining({ id: 'b' })],
+  })
+  expect((await resume()).status).toBe(200)
+  await expectBothTurnsFinished()
+})
+
+it.each(['lost acknowledgement', 'competing publication'] as const)(
+  'finishes with the published checkpoint after a %s',
+  async (fault) => {
+    const s = await setup()
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      await writeFile(join(input.cwd, 'hello.txt'), 'Agent edit')
+      input.onText('Saved reply')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const command = s.git.command.bind(s.git)
+    let published: string | undefined
+    vi.spyOn(s.git, 'command').mockImplementation(async (cwd, args, env) => {
+      if (args[0] !== 'update-ref' || !args[1]?.endsWith('/after')) return command(cwd, args, env)
+      if (fault === 'competing publication') {
+        published = (await command(cwd, ['rev-parse', 'HEAD^{tree}'])).trim()
+        await command(cwd, ['update-ref', args[1], published, ''])
+        return command(cwd, args, env)
+      }
+      await command(cwd, args, env)
+      published = args[2]
+      throw new Error('Checkpoint acknowledgement lost')
+    })
+    expect((await s.send('first', 'Finish this turn')).status).toBe(200)
+    await waitForRuntime(() => {
+      expect(run).toHaveBeenCalledOnce()
+      expect(s.store.task(s.task.id).activeRunId).toBeUndefined()
+    })
+    const task = s.store.task(s.task.id)
+    expect(published).toBeTruthy()
+    expect(task.turns?.at(-1)?.checkpoint?.after).toBe(published)
+    expect(task.runPhase).toBeUndefined()
+    expect(task.error).toBeUndefined()
+  },
+)
 
 it('retrying change capture leaves the next message paused until the queue is resumed', async () => {
   const s = await setup()

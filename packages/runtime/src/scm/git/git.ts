@@ -1860,7 +1860,6 @@ export class GitService {
     return preview
   }
 
-  // An alternate index captures staged and unstaged contents without touching the user's index.
   /** A private root commit for an isolated checkout; the source's unborn branch stays untouched. */
   async initialWorktreeCommit(cwd: string) {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-empty-tree-'))
@@ -1886,7 +1885,42 @@ export class GitService {
       await rm(directory, { recursive: true, force: true })
     }
   }
-  async snapshot(cwd: string, ref: string, signal?: AbortSignal) {
+  async turnAfterSnapshot(cwd: string, turnId: string, linkedCheckoutId?: string) {
+    const scope = linkedCheckoutId === undefined ? '' : `/linked/${linkedCheckoutId}`
+    const ref = `refs/dovo/checkpoints/${turnId}${scope}/after`
+    const publishedTree = async () => {
+      try {
+        return (
+          await this.command(cwd, [
+            'rev-parse',
+            '--verify',
+            '--quiet',
+            '--end-of-options',
+            `${ref}^{tree}`,
+          ])
+        ).trim()
+      } catch (error) {
+        if (error instanceof ProcessError && error.code === 1) return undefined
+        throw error
+      }
+    }
+    const saved = await publishedTree()
+    if (saved) return saved
+    try {
+      return await this.snapshot(cwd, ref, undefined, 'create')
+    } catch (error) {
+      const published = await publishedTree()
+      if (published) return published
+      throw error
+    }
+  }
+  /** Capture staged and unstaged contents using a private index. */
+  async snapshot(
+    cwd: string,
+    ref: string,
+    signal?: AbortSignal,
+    publication: 'create' | 'replace' = 'replace',
+  ) {
     signal?.throwIfAborted()
     // Imported sessions can start in a subfolder and edit elsewhere in the same worktree.
     cwd = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')
@@ -1913,7 +1947,8 @@ export class GitService {
       await run(['add', '-A', '--', '.'])
       const tree = (await run(['write-tree'])).trim()
       signal?.throwIfAborted()
-      await this.command(cwd, ['update-ref', ref, tree])
+      // An empty expected value makes Git create the ref only if it is still absent.
+      await this.command(cwd, ['update-ref', ref, tree, ...(publication === 'create' ? [''] : [])])
       return tree
     } finally {
       await rm(directory, {

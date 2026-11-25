@@ -43,6 +43,58 @@ web and mobile, and verify that a later turn writes its own reply even if the fi
 late output. [HTTP retry tests](../packages/runtime/src/http/endpoints/message-resume.test.ts) ·
 [Runtime turn tests](../packages/runtime/src/agents/tasks/tasks.test.ts)
 
+### Bend thread outcomes
+
+The [Bend laws](../verification/thread/LAWS.bend) follow a first-message send with a lost reply and
+a completed turn A with one eligible follow-up B. The send model assumes retries use the same
+thread, message ID and payload. A matching receipt, a matching cached thread and a successful local
+journal removal let the client clear its pending send and the server compact its receipt. Replaying
+the send after compaction still produces one admission. The first-message HTTP tests exercise all
+eight combinations of a lost reply, failed journal removal and lost compaction request across
+restart.
+
+| What happens after A's provider finishes                                                     | What the user can expect                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The worker can continue and the final diff read succeeds, immediately or on its single retry | A finishes saving. B starts once. Only the read is retried.                                                                                                                            |
+| Both reads fail                                                                              | A's reply stays recorded and B stays queued. Retry saving keeps B paused. Resume queue starts B once the save succeeds. Another failed save keeps B paused.                            |
+| The runtime stops after saving A, before claiming B                                          | Restart releases the previous worker's active-run ID and parks B, including when auto-continue is enabled. Replaying the original send keeps B parked. Explicit resume starts it once. |
+| The runtime stops after dispatching B, before the provider acknowledges it                   | The journal records uncertain delivery. A stays saved, B remains in the transcript, and automatic recovery cannot send B a second time.                                                |
+
+The queue model starts with A's reply recorded and its checkpoint captured. It treats read results
+as inputs and successful finalization as atomic. A provider start in the history means dispatch. The
+restart laws cover an unclaimed queue head and a dispatch awaiting acknowledgement. They hold
+through any finite sequence of worker checks and restarts. Queue pause and resume are foreground
+commands. Reissuing resume after a later pause expresses a new resume. Recovery of an acknowledged
+provider session has its own runtime tests.
+
+Git records the end of a turn in a dedicated ref for each primary or linked checkout. The first
+successful publication fixes that checkout's tree for the turn. If the write reports a failure, the
+runtime checks the ref before reporting a capture error. If SQLite still needs the tree after
+restart, recovery uses the published ref even when the user has since edited the working directory.
+The [checkpoint model](../verification/thread/Checkpoint.bend) covers the interval between Git
+publication and the SQLite save.
+
+The [HTTP tests](../packages/runtime/src/http/endpoints/message-resume.test.ts) hold the first
+provider call open until the second message is queued, inject read failures and inspect A's saved
+reply and checkpoint when the second provider call starts. The
+[restart tests](../packages/runtime/src/agents/tasks/restart-recovery.test.ts) kill a separate
+runtime process before claim and after dispatch, reopen the same SQLite database, and replay the
+original send through HTTP. They use real Git and a test provider. The SIGKILL checks run on Linux
+and macOS.
+
+The restart suite also rejects the final SQLite write, edits a file while the runtime is stopped,
+and verifies that Retry saving records the original Git tree. The linked-checkout suite interrupts
+the diff read after publication and checks that a later edit stays out of the completed turn.
+
+Run the model with Bend 2.0.40 and Lean 4.34.0 on PATH for Bend's proof kernel. The existing Lean
+models use their own pin in `verification/lean-toolchain`.
+
+```sh
+bend verification/thread/PROOF.bend --verdict
+pnpm exec vp test run packages/runtime/src/http/endpoints/{thread-start,message-resume}.test.ts packages/runtime/src/agents/tasks/restart-recovery.test.ts
+pnpm exec vp test run packages/runtime/src/scm/tasks/linked-checkouts.test.ts
+```
+
 ## Queue restore, offline sends, and model changes
 
 [ChatRecovery.lean](../verification/ChatRecovery.lean) checks three related boundaries.
