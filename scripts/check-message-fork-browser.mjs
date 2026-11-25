@@ -69,6 +69,11 @@ export const Pressable=({children,accessibilityLabel,accessibilityHint,onPress,d
       contents: 'export const QuoteSelection=()=>null;',
     },
     {
+      path: './suggest-routine',
+      importer: mobileFolder,
+      contents: 'export const SuggestRoutine=()=>null;',
+    },
+    {
       path: '../../../agents/use-model-catalog',
       importer: mobileFolder,
       contents: `export const loadMobileModelCatalog=()=>{throw Error('Unexpected model read')};`,

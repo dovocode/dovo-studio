@@ -34,6 +34,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
               ['../actions/run-in-terminal', 'RunInTerminal'],
               ['../actions/fork-turn', 'ForkTurn'],
               ['../actions/fork-message', 'ForkMessage'],
+              ['../actions/suggest-routine', 'SuggestRoutine'],
               ['../actions/retry-turn', 'RetryTurn'],
               ['./task-activity', 'TaskActivity'],
             ].map(([path, name]) => ({
@@ -48,6 +49,11 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
             },
           ]
         : [
+            {
+              path: './suggest-routine',
+              importer: folder,
+              contents: `export const SuggestRoutine=()=>null;`,
+            },
             {
               path: 'react-native',
               contents: `export const Platform={OS:'web'};export const TextInput=()=>null;export const AccessibilityInfo={announceForAccessibility(){}};export const Alert={alert(){}};export const ActionSheetIOS={showActionSheetWithOptions(){}};export const View=({children})=><div>{children}</div>;export const Pressable=({children,accessibilityLabel,onPress})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;`,
