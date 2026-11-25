@@ -22,6 +22,12 @@ import {
 import type { RuntimeOverview } from './runtime-fleet.js'
 import type { RuntimeProfile } from './runtime-fleet.js'
 import {
+  emptySharedOrganizations,
+  mergeSharedOrganizations,
+  sharedOrganizationsSchema,
+  type SharedOrganizations,
+} from './shared-organizations.js'
+import {
   mergeSharedSettings,
   pendingSharedSettings,
   sharedSettingsSyncSchema,
@@ -34,7 +40,9 @@ type Session = {
   target: Target
   known: SharedSettingsEntry[]
   error: string
+  organizationError?: string
   fingerprint: string
+  organizationExchange?: string
   /** Remote settings revision applied from the legacy endpoint. */
   received?: string
   worker?: Worker
@@ -44,6 +52,8 @@ export interface SharedStateSyncOptions {
   createReplicaId(): string
   readShared(): readonly SharedSettingsEntry[]
   publish(shared: SharedSettingsEntry[]): void
+  readOrganizations?(): SharedOrganizations
+  publishOrganizations?(organizations: SharedOrganizations): void
   request(
     profile: RuntimeProfile,
     path: string,
@@ -66,6 +76,14 @@ const remoteRevision = (target: Target) =>
   JSON.stringify(target.snapshot?.defaults?.scopedSettings?.shared ?? [])
 const sharedValue = (state: DurableState<ScopedSettingsValue>) =>
   sharedSettingsFromVersions(state.latest())
+const organizationSnapshot = (target: Target) =>
+  target.snapshot?.defaults?.sharedOrganizations ?? emptySharedOrganizations()
+const organizationExchangeKey = (target: Target, local: SharedOrganizations) =>
+  JSON.stringify([
+    target.profile.connection.runtimeId ?? target.snapshot?.runtimeId,
+    organizationSnapshot(target),
+    local,
+  ])
 
 /** One durable app replica shared by all paired-runtime sessions. React and native I/O stay
  * in adapters. Snapshot imports migrate existing preferences without inventing new revisions. */
@@ -115,6 +133,7 @@ export class SharedStateSynchronization {
     const fingerprint = JSON.stringify([
       active,
       this.options.readShared(),
+      this.options.readOrganizations?.(),
       targets
         .map((target) =>
           JSON.stringify([
@@ -122,6 +141,8 @@ export class SharedStateSynchronization {
             target.connected,
             target.snapshot?.runtimeId,
             target.snapshot?.settingsScopesSupported,
+            target.snapshot?.sharedOrganizationsSupported,
+            target.snapshot?.defaults?.sharedOrganizations,
             target.snapshot?.defaults?.scopedSettings?.shared ?? [],
           ]),
         )
@@ -201,6 +222,10 @@ export class SharedStateSynchronization {
         previous.known = known
         if (
           changed ||
+          (target.snapshot.sharedOrganizationsSupported &&
+            this.options.readOrganizations &&
+            previous.organizationExchange !==
+              organizationExchangeKey(target, this.options.readOrganizations())) ||
           (previous.received !== undefined && previous.received !== remoteRevision(target))
         )
           previous.worker?.retry()
@@ -242,6 +267,49 @@ export class SharedStateSynchronization {
         await state.importVersions(sharedSettingsVersions(this.options.readShared()))
         if (!valid()) throw new Error('Shared state connection changed')
       }
+      const syncOrganizations = async (signal: AbortSignal) => {
+        const { readOrganizations, publishOrganizations } = this.options
+        const { profile, snapshot } = session.target
+        if (!readOrganizations || !publishOrganizations || !snapshot?.sharedOrganizationsSupported)
+          return
+        const remote = organizationSnapshot(session.target)
+        const local = readOrganizations()
+        let merged = mergeSharedOrganizations(local, remote)
+        const expected = profile.connection.runtimeId ?? snapshot.runtimeId
+        if (organizationExchangeKey(session.target, local) === session.organizationExchange) return
+        const send = JSON.stringify(merged) !== JSON.stringify(remote)
+        if (send) {
+          const result = await this.options.request(
+            profile,
+            '/api/state/organizations',
+            {
+              targetRuntimeId: expected,
+              organizations: merged,
+            },
+            signal,
+          )
+          if (signal.aborted || !valid()) return
+          const received = decode(
+            Schema.Struct({ organizations: sharedOrganizationsSchema }),
+            result,
+          )
+          merged = mergeSharedOrganizations(readOrganizations(), received.organizations)
+        }
+        session.organizationExchange = JSON.stringify([expected, remote, merged])
+        if (JSON.stringify(merged) !== JSON.stringify(readOrganizations()))
+          publishOrganizations(merged)
+        if (send && valid()) await this.options.refreshed?.(profile)
+      }
+      const exchangeOrganizations = async (signal: AbortSignal) => {
+        try {
+          await syncOrganizations(signal)
+          session.organizationError = ''
+        } catch (cause) {
+          if (signal.aborted || !valid()) return
+          const message = cause instanceof Error ? cause.message : String(cause)
+          session.organizationError = `${session.target.profile.name}: ${message}`
+        }
+      }
       if (target.snapshot.stateReplicationVersion === 1) {
         const worker = startReplication({
           state,
@@ -267,6 +335,7 @@ export class SharedStateSynchronization {
             )
             if (expected && !isRuntimeStateSource(response.batch.source, expected))
               throw new Error('Shared state reached a different runtime')
+            await exchangeOrganizations(signal)
             return result
           },
         })
@@ -278,6 +347,7 @@ export class SharedStateSynchronization {
             try: async (signal) => {
               await state.refresh()
               await prepare()
+              await exchangeOrganizations(signal)
               const remote = remoteRevision(session.target)
               const pending = pendingSharedSettings(
                 sharedValue(state),
@@ -339,7 +409,7 @@ export class SharedStateSynchronization {
       this.options.error(
         this.fatal ||
           [...this.sessions.values()]
-            .map((session) => session.error)
+            .map((session) => session.error || session.organizationError)
             .filter(Boolean)
             .join('\n'),
       )

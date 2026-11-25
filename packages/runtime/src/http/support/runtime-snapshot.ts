@@ -278,15 +278,11 @@ export function runtimeSnapshot(
       storedWorkspace,
       repositories.map((repository) => {
         const projected = sharedProjectPresentation(currentDefaults, repository)
-        const organizationId = projectOrganizationId(repository)
+        const organizationId = projectOrganizationId(repository, currentDefaults)
         return organizationId
           ? {
               ...projected,
-              organizationId:
-                repository.organizationId ??
-                (Object.hasOwn(currentDefaults.organizations ?? {}, organizationId)
-                  ? organizationId
-                  : undefined),
+              organizationId: organizations.has(organizationId) ? organizationId : undefined,
               organization: organizations.get(organizationId)?.name,
             }
           : projected
@@ -442,6 +438,7 @@ export function runtimeSnapshot(
       projectTransfersSupported: true,
       projectOrganizationSupported: true,
       organizationSettingsSupported: true,
+      sharedOrganizationsSupported: true,
       projectWorktreeTransfersSupported: true,
       threadHandoffsSupported: true,
       messageForkSupported: true,

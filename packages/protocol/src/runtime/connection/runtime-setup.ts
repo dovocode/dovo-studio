@@ -12,6 +12,7 @@ import {
 } from '../../workspace.js'
 import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
 import { resolveScopedSettings } from './scoped-settings.js'
+import { sharedOrganizationsSchema } from './shared-organizations.js'
 import { resolveDefaultPermissionPolicy } from '../../auth/permission-policy.js'
 import { resolveProviderAccess } from '../../auth/access.js'
 
@@ -21,6 +22,7 @@ export const modelPreferencesSchema = Schema.Record(
 )
 export const runtimeDefaultsSchema = mutableStruct({
   scopedSettings: Schema.optional(scopedSettingsSchema),
+  sharedOrganizations: Schema.optional(sharedOrganizationsSchema),
   organizations: Schema.optional(
     Schema.Record(
       Schema.String,

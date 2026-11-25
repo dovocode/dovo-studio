@@ -12,7 +12,13 @@ import {
 } from '@dovo/protocol'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { serviceUrlsSchema } from '@dovo/protocol'
-import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
+import {
+  emptySharedOrganizations,
+  mergeSharedOrganizations,
+  mergeSharedSettings,
+  sharedOrganizationsSchema,
+  sharedSettingsSchema,
+} from '@dovo/protocol'
 import { nerdFontFamily, terminalFontSizeSchema } from '@dovo/studio-core/fonts'
 import { studioThemeIds } from '@dovo/studio-core/themes'
 import { codeThemeSchema, importedCodeThemesSchema } from '@dovo/studio-core/code-themes'
@@ -45,6 +51,7 @@ const schema = mutableStruct({
   codeTheme: codeThemeSchema,
   importedCodeThemes: importedCodeThemesSchema,
   sharedScopedSettings: sharedSettingsSchema,
+  sharedOrganizations: sharedOrganizationsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
   globalAgentPresets: mutableArray(agentPresetSchema),
@@ -114,6 +121,7 @@ const defaults: MobilePreferences = {
   terminalFontFamily: '',
   terminalFontSize: 12,
   sharedScopedSettings: [],
+  sharedOrganizations: emptySharedOrganizations(),
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,
   globalAgentPresets: [],
@@ -252,6 +260,10 @@ export function loadMobilePreferences(): Promise<void> {
             sharedScopedSettings: mergeSharedSettings(
               restored.sharedScopedSettings,
               edits.sharedScopedSettings ?? [],
+            ),
+            sharedOrganizations: mergeSharedOrganizations(
+              restored.sharedOrganizations,
+              edits.sharedOrganizations ?? emptySharedOrganizations(),
             ),
           }
         : restored

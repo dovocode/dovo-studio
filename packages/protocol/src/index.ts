@@ -232,6 +232,7 @@ export * from './conversation/history.js'
 
 export * from './tasks/agent-configuration.js'
 export * from './runtime/connection/scoped-settings.js'
+export * from './runtime/connection/shared-organizations.js'
 
 export * from './tasks/delegation.js'
 export * from './tasks/side-thread-attention.js'

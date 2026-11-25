@@ -30,7 +30,10 @@ import {
   mergeSharedSettings,
   updateSharedSettingsEntry,
   canonicalSharedSettings,
+  emptySharedOrganizations,
+  organizationGitIdentity,
   type ScopedSettingsValue,
+  type SharedOrganizations,
 } from '@dovo/protocol'
 import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
@@ -39,16 +42,39 @@ import { body } from '../support/body.js'
 import { serviceResult } from '../support/effect.js'
 import type { Services } from '../../services.js'
 
-function changeOrganization(s: Services, raw: unknown) {
+function organizationRevision(shared?: SharedOrganizations) {
+  const rows = shared ? [...shared.names, ...shared.resources, ...shared.projects] : []
+  return {
+    updatedAt: rows.reduce((at, row) => Math.max(at, row.updatedAt + 1), Date.now()),
+    changeId: randomUUID(),
+  }
+}
+
+async function changeOrganization(s: Services, raw: unknown) {
   const input = decode(organizationChangeSchema, raw)
+  const checkout =
+    input.action === 'assign'
+      ? s.store.get().repositories.find((entry) => entry.id === input.repositoryId)
+      : undefined
+  const identity =
+    checkout && !checkout.kind ? await s.git.repositoryIdentity(checkout.path, true) : undefined
   return s.store.transaction(() => {
     const { repositories } = s.store.get()
     const defaults = s.defaults.get()
+    const shared = defaults.sharedOrganizations
+    const revision = organizationRevision(shared)
     const organizations = studioOrganizations(defaults, repositories)
-    const idForName = (name: string) =>
-      [...organizations].find(
+    const idForName = (name: string) => {
+      const matching = [...organizations].filter(
         ([, entry]) => organizationKey(entry.name) === organizationKey(name),
-      )?.[0]
+      )
+      if (matching.length > 1)
+        throw new HttpError(
+          409,
+          'More than one organization uses this name. Rename one before linking a project.',
+        )
+      return matching[0]?.[0]
+    }
     if (input.action === 'rename') {
       const entry = organizations.get(input.organizationId)
       if (!entry) throw new HttpError(404, 'Choose an organization.')
@@ -58,33 +84,77 @@ function changeOrganization(s: Services, raw: unknown) {
       const matchingId = idForName(input.name)
       if (matchingId && matchingId !== input.organizationId)
         throw new HttpError(409, 'An organization already uses this name.')
-      organizations.set(input.organizationId, { ...entry, name: input.name })
-      s.defaults.saveOrganizations(Object.fromEntries(organizations))
+      if (shared?.names.some((row) => row.id === input.organizationId)) {
+        s.defaults.mergeOrganizations({
+          ...emptySharedOrganizations(),
+          names: [{ id: input.organizationId, name: input.name, ...revision }],
+        })
+        return { ok: true as const }
+      }
+      s.defaults.saveOrganizations({
+        ...defaults.organizations,
+        [input.organizationId]: { ...entry, name: input.name },
+      })
       return { ok: true as const }
     }
 
     const repository = repositories.find((entry) => entry.id === input.repositoryId)
     if (!repository || repository.kind === 'scratch') throw new HttpError(404, 'Choose a project.')
+    if (!checkout || repository.path !== checkout.path || repository.kind !== checkout.kind)
+      throw new HttpError(409, 'The project checkout changed. Reload before saving.')
+    const confirmed = { ...repository, gitIdentity: identity, gitIdentityError: undefined }
     const proposedName = input.target && 'name' in input.target ? input.target.name : undefined
     const requestedId = input.target && 'id' in input.target ? input.target.id : undefined
     if (requestedId && !organizations.has(requestedId))
       throw new HttpError(404, 'Choose an organization.')
-    const currentId = projectOrganizationId(repository)
+    const currentId = projectOrganizationId(confirmed, defaults)
     const targetId = requestedId ?? (proposedName ? idForName(proposedName) : undefined)
     if (currentId === targetId && (targetId || input.target === null)) return { ok: true as const }
     if ((currentId ?? null) !== input.before)
       throw new HttpError(409, 'The project organization changed. Reload before saving.')
-    const organizationId = targetId ?? (proposedName ? randomUUID() : undefined)
-    if (organizationId && proposedName && !targetId) {
-      organizations.set(organizationId, { name: proposedName })
-    }
-    if (organizationId && !Object.hasOwn(defaults.organizations ?? {}, organizationId)) {
-      s.defaults.saveOrganizations(Object.fromEntries(organizations))
+    const created =
+      proposedName && !targetId ? { id: randomUUID(), name: proposedName, ...revision } : undefined
+    const organizationId = targetId ?? created?.id
+    const sharedCreation = input.shared ? created : undefined
+    const portable = !!sharedCreation || !!shared?.names.some((row) => row.id === organizationId)
+    const project = organizationGitIdentity(confirmed)
+    const hasSharedLink =
+      project && shared?.projects.find((row) => row.id === project)?.organizationId
+    if (!input.shared && (portable || hasSharedLink))
+      throw new HttpError(409, 'Update this app to change shared organization links.')
+    if (hasSharedLink && organizationId && !portable)
+      throw new HttpError(
+        409,
+        'Clear the shared link before choosing a computer-only organization.',
+      )
+    const sharedLink = project && (portable || hasSharedLink)
+    if (sharedCreation || sharedLink)
+      s.defaults.mergeOrganizations({
+        ...emptySharedOrganizations(),
+        names: sharedCreation ? [sharedCreation] : [],
+        projects: sharedLink
+          ? [{ id: project, organizationId: organizationId ?? null, ...revision }]
+          : [],
+      })
+    if (
+      !portable &&
+      organizationId &&
+      !Object.hasOwn(defaults.organizations ?? {}, organizationId)
+    ) {
+      const local = created ? { name: created.name } : organizations.get(organizationId)
+      if (local)
+        s.defaults.saveOrganizations({ ...defaults.organizations, [organizationId]: local })
     }
     s.store.update((workspace) => ({
       ...workspace,
       repositories: workspace.repositories.map((entry) =>
-        entry.id === repository.id ? { ...entry, organizationId, organization: undefined } : entry,
+        entry.id === repository.id
+          ? {
+              ...confirmed,
+              organizationId: sharedLink ? undefined : organizationId,
+              organization: undefined,
+            }
+          : entry,
       ),
     }))
     return { ok: true as const }
@@ -143,17 +213,34 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
       )
       if (resources.hooks?.length)
         throw new HttpError(400, 'Configure hooks at the computer or project scope.')
-      organizations.set(id, {
-        ...organization,
-        resources:
-          resources.mcpServers.length ||
-          resources.skills.length ||
-          resources.plugins?.length ||
-          resources.additionalInstructions
-            ? resources
-            : undefined,
+      const next =
+        resources.mcpServers.length ||
+        resources.skills.length ||
+        resources.plugins?.length ||
+        resources.additionalInstructions
+          ? resources
+          : undefined
+      if (defaults.sharedOrganizations?.names.some((row) => row.id === id)) {
+        const sharedResources = prepareShared({ resources: next }).resources
+        s.defaults.mergeOrganizations({
+          ...emptySharedOrganizations(),
+          resources: [
+            {
+              id,
+              resources: sharedResources ?? null,
+              ...organizationRevision(defaults.sharedOrganizations),
+            },
+          ],
+        })
+        return s.store.publicValue({
+          value: settingsAtScope(s.defaults.get(), undefined, input.scope, id),
+          inherited,
+        })
+      }
+      s.defaults.saveOrganizations({
+        ...defaults.organizations,
+        [id]: { ...organization, resources: next },
       })
-      s.defaults.saveOrganizations(Object.fromEntries(organizations))
       return s.store.publicValue({
         value: settingsAtScope(s.defaults.get(), undefined, input.scope, id),
         inherited,

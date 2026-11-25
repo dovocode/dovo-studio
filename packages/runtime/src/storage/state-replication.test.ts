@@ -19,6 +19,7 @@ import {
   runtimeProfile,
   snapshotSchema,
   updateSharedSettingsEntry,
+  emptySharedOrganizations,
 } from '@dovo/protocol'
 import { backupRuntimeDatabase } from './backup.js'
 import { restoreRuntimeBackup } from './backups.js'
@@ -266,6 +267,11 @@ it('syncs directly in both directions over authenticated HTTP and removes revoke
   try {
     await a.save('local')
     await b.save('remote')
+    const sharedOrganization = {
+      ...emptySharedOrganizations(),
+      names: [{ id: 'platform', name: 'Platform', updatedAt: 100, changeId: 'create' }],
+    }
+    b.runtime.services.defaults.mergeOrganizations(sharedOrganization)
     const before = global(b)
     pair(a, b, false)
     await a.runtime.services.stateReplication.refresh()
@@ -273,6 +279,9 @@ it('syncs directly in both directions over authenticated HTTP and removes revoke
     pair(a, b)
     await a.runtime.services.stateReplication.refresh()
     await expect.poll(() => global(a)).toBe(before)
+    await expect
+      .poll(() => a.runtime.services.defaults.get().sharedOrganizations)
+      .toEqual(sharedOrganization)
     expect(
       (await b.runtime.services.stateReplication.history('global')).map(
         (entry) => entry.value?.taskDefaults?.setupCommand,

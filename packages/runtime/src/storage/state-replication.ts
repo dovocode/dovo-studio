@@ -16,12 +16,15 @@ import {
   sharedSettingsVersionEntry,
   mergeSharedSettings,
   updateSharedSettingsEntry,
+  emptySharedOrganizations,
+  sharedOrganizationsSchema,
   type ScopedSettingsValue,
   type SharedSettingsEntry,
   type RuntimeConnection,
 } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Schema } from 'effect'
+import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { RuntimeDefaults } from './runtime-defaults.js'
 import type { RetrievalPeers } from '../retrieval/peers.js'
@@ -33,10 +36,15 @@ import { sharedStateJournal } from './shared-state-journal.js'
 const channel = 'shared-settings:v1'
 /** At most one settings list per import; `sharedSettingsSchema` accepts 300 entries. */
 const HISTORY_PAGE = 100
+const organizationExchangeSchema = Schema.Struct({
+  targetRuntimeId: Schema.optional(Schema.String),
+  organizations: sharedOrganizationsSchema,
+})
 type Session = {
   name: string
   runtimeId: string
   error: string | null
+  organizationError?: string
   connected: boolean
   lastSuccess: string | null
   connection: ReturnType<typeof startReplication<ScopedSettingsValue>>
@@ -171,10 +179,11 @@ export class SharedStateReplication {
           exchange: async (request, signal) => {
             // Re-check durable grants before every transfer, including after credential changes.
             if (!this.authorized(peer)) throw new HttpError(403, 'Shared state pairing was removed')
+            const client = createRuntimeClient(peer.connection)
             const result = await runClientEffect(
-              createRuntimeClient(peer.connection).requestEffect(
+              client.requestEffect(
                 '/api/state/exchange',
-                { ...request, targetRuntimeId: peer.connection.runtimeId },
+                { ...request, targetRuntimeId: peer.connection.runtimeId, organizationSync: true },
                 Schema.Unknown,
                 {
                   method: 'POST',
@@ -185,7 +194,10 @@ export class SharedStateReplication {
             )
             if (!this.authorized(peer)) throw new HttpError(403, 'Shared state pairing was removed')
             const identity = decode(
-              Schema.Struct({ batch: Schema.Struct({ source: Schema.String }) }),
+              Schema.Struct({
+                batch: Schema.Struct({ source: Schema.String }),
+                organizationRevision: Schema.optional(Schema.String),
+              }),
               result,
             )
             if (
@@ -196,6 +208,31 @@ export class SharedStateReplication {
                 409,
                 'This pairing reached a different runtime. Refresh the saved connection.',
               )
+            try {
+              const local = this.organizationState()
+              if (
+                identity.organizationRevision &&
+                identity.organizationRevision !== local.revision
+              ) {
+                const response = await runClientEffect(
+                  client.requestEffect(
+                    '/api/state/organizations',
+                    {
+                      targetRuntimeId: peer.connection.runtimeId,
+                      organizations: local.organizations,
+                    },
+                    Schema.Struct({ organizations: sharedOrganizationsSchema }),
+                    { method: 'POST', timeoutMs: 15000 },
+                  ),
+                  signal,
+                )
+                if (!signal.aborted && this.authorized(peer))
+                  this.defaults.mergeOrganizations(response.organizations)
+              }
+              session.organizationError = undefined
+            } catch (cause) {
+              session.organizationError = cause instanceof Error ? cause.message : String(cause)
+            }
             return result
           },
           onError: (error) => {
@@ -222,14 +259,33 @@ export class SharedStateReplication {
   async exchange(input: unknown) {
     if (this.failure) throw new HttpError(503, this.failure)
     if (this.stopped) throw new HttpError(503, 'Shared state replication is stopping')
-    const target = decode(Schema.Struct({ targetRuntimeId: Schema.optional(Schema.String) }), input)
+    const target = decode(
+      Schema.Struct({
+        targetRuntimeId: Schema.optional(Schema.String),
+        organizationSync: Schema.optional(Schema.Boolean),
+      }),
+      input,
+    )
     if (target.targetRuntimeId && target.targetRuntimeId !== this.runtimeId)
       throw new HttpError(409, 'This state exchange targets a different runtime')
     const state = await this.ready
     await this.capture(state)
     const response = await state.exchange(input)
     this.publish(state)
-    return response
+    return target.organizationSync
+      ? { ...response, organizationRevision: this.organizationState().revision }
+      : response
+  }
+  private organizationState() {
+    const organizations = this.defaults.get().sharedOrganizations ?? emptySharedOrganizations()
+    const revision = createHash('sha256').update(JSON.stringify(organizations)).digest('hex')
+    return { organizations, revision }
+  }
+  exchangeOrganizations(raw: unknown) {
+    const input = decode(organizationExchangeSchema, raw)
+    if (input.targetRuntimeId && input.targetRuntimeId !== this.runtimeId)
+      throw new HttpError(409, 'This state exchange targets a different runtime')
+    return { organizations: this.defaults.mergeOrganizations(input.organizations) }
   }
   async history(key: string) {
     if (this.failure) throw new HttpError(503, this.failure)
@@ -290,7 +346,7 @@ export class SharedStateReplication {
         runtimeId: session.runtimeId,
         name: session.name,
         connected: session.connected,
-        error: session.error,
+        error: session.error ?? session.organizationError ?? null,
         lastSuccess: session.lastSuccess,
       })),
     }

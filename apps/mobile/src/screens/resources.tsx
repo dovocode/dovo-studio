@@ -104,6 +104,10 @@ function ComputerResources({
           name={repository.organization ?? ''}
           assignment={{
             repository,
+            sharedGit:
+              !!snapshot.sharedOrganizationsSupported &&
+              !!repository.gitIdentity &&
+              !repository.kind,
             organizations: scopes.flatMap((scope) =>
               scope.organizationId ? [{ id: scope.organizationId, name: scope.item.name }] : [],
             ),
@@ -127,7 +131,11 @@ function ComputerResources({
               title={scope.item.name}
               subtitle={
                 scope.scope === 'organization'
-                  ? uiText('Organization · This computer')
+                  ? snapshot?.defaults?.sharedOrganizations?.names.some(
+                      (row) => row.id === scope.organizationId,
+                    )
+                    ? uiText('Organization · Paired computers')
+                    : uiText('Organization · This computer')
                   : uiText('{value0} · {value1} MCP · {value2} skills · {value3} hooks{value4}', {
                       value0: scope.label,
                       value1: resources.mcpServers.length,
@@ -162,13 +170,19 @@ function ComputerResources({
 }
 function OrganizationNameEditor(
   props: { name: string } & (
-    | { assignment: { repository: Repository; organizations: { id: string; name: string }[] } }
+    | {
+        assignment: {
+          repository: Repository
+          sharedGit: boolean
+          organizations: { id: string; name: string }[]
+        }
+      }
     | { organizationId: string }
   ),
 ) {
   const uiText = useInterfaceText()
   const { styles } = useTheme()
-  const { connected, callEffect, refresh } = useRuntime()
+  const { connected, callEffect, refresh, snapshot } = useRuntime()
   const { act, busy, error } = useAction()
   const [draft, setDraft] = useApplicationState<string | null>(null)
   const assignment = 'assignment' in props
@@ -182,7 +196,13 @@ function OrganizationNameEditor(
         onChangeText={setDraft}
         maxLength={80}
       />
-      {assignment && <Text style={styles.muted}>{uiText('Saved on this computer.')}</Text>}
+      {assignment && (
+        <Text style={styles.muted}>
+          {props.assignment.sharedGit
+            ? uiText('Shared organizations link matching Git clones across paired computers.')
+            : uiText('Saved on this computer.')}
+        </Text>
+      )}
       <Action
         label={uiText(assignment ? 'Save organization' : 'Rename organization')}
         disabled={
@@ -198,6 +218,7 @@ function OrganizationNameEditor(
                       props.assignment.repository,
                       value,
                       props.assignment.organizations,
+                      snapshot?.sharedOrganizationsSupported,
                     )
                   : {
                       action: 'rename',
@@ -513,7 +534,9 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             disabled={!connected || busy}
             save={save}
           />
-          {scope.scope === 'organization' ? (
+          {(scope.scope === 'organization' ||
+            (snapshot?.sharedOrganizationsSupported &&
+              (scope.scope === 'project' || scope.scope === 'environment-project'))) && (
             <View style={styles.card}>
               <SettingsField
                 label={uiText('Additional AGENTS.md instructions')}
@@ -538,7 +561,8 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                 }
               />
             </View>
-          ) : (
+          )}
+          {scope.scope !== 'organization' && (
             <HookSettings
               hooks={resources.hooks ?? []}
               inherited={inherited?.hooks ?? []}

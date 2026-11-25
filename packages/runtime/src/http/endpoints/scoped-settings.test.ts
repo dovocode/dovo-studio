@@ -22,6 +22,8 @@ import {
   type ScopedSettingsValue,
   updateSharedSettingsEntry,
   taskSchema,
+  resolveScopedSettings,
+  runtimeDefaultsSchema,
 } from '@dovo/protocol'
 
 async function fixture() {
@@ -188,6 +190,148 @@ it('renames an organization without changing its projects or inherited resources
   } finally {
     await f.close()
     await rm(folder, { recursive: true, force: true })
+  }
+})
+
+it('shares organization resources and Git links while keeping folder links on their computer', async () => {
+  const first = await fixture()
+  const second = await fixture()
+  const resources = decode(resourceSettingsSchema, {
+    additionalInstructions: 'Review changes with the platform team.',
+    mcpServers: [
+      { name: 'tracker', enabled: true, transport: 'http', url: 'https://mcp.example.com' },
+    ],
+    skills: [
+      { name: 'review', enabled: true, description: 'Review changes', content: 'Check the diff.' },
+    ],
+  })
+  const assign = (
+    f: typeof first,
+    repositoryId: string,
+    before: string | null,
+    target: { name: string } | { id: string } | null,
+  ) =>
+    f.call('settings/organization', {
+      action: 'assign',
+      repositoryId,
+      before,
+      target,
+      shared: true,
+    })
+  const exchange = async (
+    f: typeof first,
+    organizations: unknown = { names: [], resources: [], projects: [] },
+  ) => {
+    const response = await fetch(`http://127.0.0.1:${f.runtime.port}/api/state/organizations`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${f.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetRuntimeId: f.runtime.services.runtimeId, organizations }),
+    })
+    expect(response.status).toBe(200)
+    const defaults = decode(runtimeDefaultsSchema, {
+      sharedOrganizations: (await response.json()).organizations,
+    })
+    expect(defaults.sharedOrganizations).toBeDefined()
+    return defaults.sharedOrganizations!
+  }
+  const snapshot = async (f: typeof first) =>
+    decode(
+      snapshotSchema,
+      await (
+        await fetch(`http://127.0.0.1:${f.runtime.port}/api/snapshot`, {
+          headers: { Authorization: `Bearer ${f.token}` },
+        })
+      ).json(),
+    )
+  try {
+    for (const f of [first, second]) {
+      f.runtime.services.store.update((workspace) => ({
+        ...workspace,
+        repositories: [
+          ...workspace.repositories,
+          { id: 'folder', kind: 'folder', name: 'Notes', path: f.directory, branch: '' },
+        ],
+      }))
+    }
+    expect((await assign(first, 'project', null, { name: 'Platform' })).status).toBe(200)
+    const organization = (await exchange(first)).names[0]!
+    expect((await assign(first, 'folder', null, { id: organization.id })).status).toBe(200)
+    const saveResources = (value: typeof resources) =>
+      first.call('settings/save', {
+        scope: 'organization',
+        organizationId: organization.id,
+        before: {},
+        after: { resources: value },
+      })
+    expect(
+      (
+        await saveResources({
+          ...resources,
+          mcpServers: [{ ...resources.mcpServers[0]!, headerValues: { authorization: 'fixture' } }],
+        })
+      ).status,
+    ).toBe(400)
+    expect((await saveResources(resources)).status).toBe(200)
+    await exchange(second, await exchange(first))
+    const received = await vi.waitFor(async () => {
+      const current = await snapshot(second)
+      expect(
+        current.workspace.repositories.find((entry) => entry.id === 'project')?.gitIdentity,
+      ).toBe('github.com/team/project')
+      return current
+    })
+    const repo = received.workspace.repositories.find((entry) => entry.id === 'project')!
+    const folder = received.workspace.repositories.find((entry) => entry.id === 'folder')!
+    expect(received.sharedOrganizationsSupported).toBe(true)
+    expect(repo).toMatchObject({ organization: 'Platform', organizationId: organization.id })
+    expect(resolveScopedSettings(received.defaults, repo).resources).toMatchObject(resources)
+    expect(
+      (
+        await second.call('settings/organization', {
+          action: 'assign',
+          repositoryId: 'project',
+          before: organization.id,
+          target: null,
+        })
+      ).status,
+    ).toBe(409)
+    const projectInstructions = 'Review the repository configuration.'
+    expect(
+      (
+        await second.save('project', {
+          resources: decode(resourceSettingsSchema, {
+            additionalInstructions: projectInstructions,
+          }),
+        })
+      ).status,
+    ).toBe(200)
+    const withProject = await snapshot(second)
+    expect(
+      resolveScopedSettings(withProject.defaults, repo).resources?.additionalInstructions,
+    ).toBe(`${resources.additionalInstructions}\n\n${projectInstructions}`)
+    expect(folder.organizationId).toBeUndefined()
+    expect(
+      resolveScopedSettings(received.defaults, folder).resources?.additionalInstructions,
+    ).toBeUndefined()
+    expect((await assign(second, 'folder', null, { id: organization.id })).status).toBe(200)
+    const linked = await snapshot(second)
+    expect(
+      resolveScopedSettings(
+        linked.defaults,
+        linked.workspace.repositories.find((entry) => entry.id === 'folder'),
+      ).resources,
+    ).toMatchObject(resources)
+    expect((await assign(second, 'project', organization.id, null)).status).toBe(200)
+    await exchange(first, await exchange(second))
+    const unlinked = await snapshot(first)
+    expect(
+      unlinked.workspace.repositories.find((entry) => entry.id === 'project')?.organizationId,
+    ).toBeUndefined()
+    expect(
+      unlinked.workspace.repositories.find((entry) => entry.id === 'folder')?.organizationId,
+    ).toBe(organization.id)
+  } finally {
+    await Promise.all([first.close(), second.close()])
   }
 })
 

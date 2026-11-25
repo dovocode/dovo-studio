@@ -93,6 +93,10 @@ function ComputerResources({
           name={repository.organization ?? ''}
           assignment={{
             repository,
+            sharedGit:
+              !!snapshot.sharedOrganizationsSupported &&
+              !!repository.gitIdentity &&
+              !repository.kind,
             organizations: choices.flatMap((entry) =>
               entry.organizationId ? [{ id: entry.organizationId, name: entry.item.name }] : [],
             ),
@@ -131,7 +135,11 @@ function ComputerResources({
                   : `${label} · ${item.name}`
           const where =
             scope === 'organization'
-              ? 'Organization · This computer'
+              ? snapshot?.defaults?.sharedOrganizations?.names.some(
+                  (row) => row.id === organizationId,
+                )
+                ? 'Organization · Paired computers'
+                : 'Organization · This computer'
               : collection === 'settings' && scope
                 ? `${settingsScopeLabels[scope]}${repository ? ` · ${repository.name}` : ''}`
                 : undefined
@@ -176,11 +184,17 @@ function ComputerResources({
 }
 function OrganizationNameEditor(
   props: { name: string } & (
-    | { assignment: { repository: Repository; organizations: { id: string; name: string }[] } }
+    | {
+        assignment: {
+          repository: Repository
+          sharedGit: boolean
+          organizations: { id: string; name: string }[]
+        }
+      }
     | { organizationId: string }
   ),
 ) {
-  const { connected, request, refreshRuntime, runtimes, activeRuntimeId } = useWorkspace()
+  const { connected, request, refreshRuntime, runtimes, activeRuntimeId, snapshot } = useWorkspace()
   const uiText = useInterfaceText()
   const listId = useId()
   const [draft, setDraft] = useApplicationState<string | null>(null)
@@ -199,6 +213,7 @@ function OrganizationNameEditor(
               props.assignment.repository,
               value,
               props.assignment.organizations,
+              snapshot?.sharedOrganizationsSupported,
             )
           : {
               action: 'rename',
@@ -235,7 +250,11 @@ function OrganizationNameEditor(
               <option key={id} value={name} />
             ))}
           </datalist>
-          <p className="text-xs text-muted-foreground">{uiText('Saved on this computer.')}</p>
+          <p className="text-xs text-muted-foreground">
+            {assignment.sharedGit
+              ? uiText('Shared organizations link matching Git clones across paired computers.')
+              : uiText('Saved on this computer.')}
+          </p>
         </>
       )}
       <Button
@@ -592,7 +611,9 @@ function ResourceScopeView({
             disabled={disabled}
             change={change}
           />
-          {settingsScope === 'organization' ? (
+          {(settingsScope === 'organization' ||
+            (snapshot?.sharedOrganizationsSupported &&
+              (settingsScope === 'project' || settingsScope === 'environment-project'))) && (
             <div className="space-y-2">
               <FormField label={uiText('Additional AGENTS.md instructions')}>
                 <Textarea
@@ -618,7 +639,8 @@ function ResourceScopeView({
                 {uiText('Save instructions')}
               </Button>
             </div>
-          ) : (
+          )}
+          {settingsScope !== 'organization' && (
             <HookSettings
               hooks={settings.hooks ?? []}
               inherited={inherited?.hooks ?? []}

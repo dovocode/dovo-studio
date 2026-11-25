@@ -136,6 +136,7 @@ export function WorkspaceProvider({
     inputPreview,
     backgroundActivity,
     sharedScopedSettings,
+    sharedOrganizations,
     globalAgentPresets,
     retiredGlobalAgentPresets,
     globalModelPreferences,
@@ -2111,6 +2112,8 @@ export function WorkspaceProvider({
       storage: browserSharedStateStorage,
       createReplicaId: () => `app:${randomUUID()}`,
       readShared: () => readAppPreferences().sharedScopedSettings,
+      readOrganizations: () => readAppPreferences().sharedOrganizations,
+      publishOrganizations: (sharedOrganizations) => updateAppPreferences({ sharedOrganizations }),
       publish: (shared) =>
         updateAppPreferences({
           sharedScopedSettings: mergeSharedSettings(
@@ -2154,7 +2157,7 @@ export function WorkspaceProvider({
       visibleRuntimes,
       ready && (inputPreview || document.visibilityState === 'visible'),
     )
-  }, [visibleRuntimes, sharedScopedSettings, ready, inputPreview])
+  }, [visibleRuntimes, sharedScopedSettings, sharedOrganizations, ready, inputPreview])
   const readCache = useMemo(
     () =>
       connection

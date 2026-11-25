@@ -11,6 +11,12 @@ import { snapshotSchema } from './runtime.js'
 import { mergeSharedSettings } from './scoped-settings.js'
 import { sharedSettingsVersions } from './shared-state-values.js'
 import { SharedStateSynchronization, type SharedStateSyncOptions } from './shared-state-sync.js'
+import {
+  emptySharedOrganizations,
+  sharedOrganizationsSchema,
+  mergeSharedOrganizations,
+} from './shared-organizations.js'
+import { Schema } from 'effect'
 
 const controllers: SharedStateSynchronization[] = []
 afterEach(async () => {
@@ -144,6 +150,59 @@ it('migrates existing settings, receives full remote versions, and bridges paire
   const calls = request.mock.calls.length
   await vi.advanceTimersByTimeAsync(90000)
   expect(request).toHaveBeenCalledTimes(calls)
+})
+
+it('carries organizations to a second supporting computer after the first goes offline', async () => {
+  vi.useFakeTimers()
+  const source = target('source')
+  const destination = target('destination')
+  const older = target('older')
+  const peers = new Map(
+    await Promise.all(
+      ['source', 'destination', 'older'].map(async (id) => [id, await peer(id)] as const),
+    ),
+  )
+  const shared = {
+    ...emptySharedOrganizations(),
+    names: [{ id: 'platform', name: 'Platform', updatedAt: 1, changeId: 'create' }],
+  }
+  source.snapshot!.sharedOrganizationsSupported = true
+  source.snapshot!.defaults!.sharedOrganizations = shared
+  destination.snapshot!.sharedOrganizationsSupported = true
+  const exchangeSchema = Schema.Struct({ organizations: sharedOrganizationsSchema })
+  const request = vi.fn<SharedStateSyncOptions['request']>(async (profile, path, input) => {
+    const id = profile.connection.runtimeId!
+    if (path === '/api/state/exchange') return peers.get(id)!.exchange(input)
+    expect(path).toBe('/api/state/organizations')
+    expect(id).toBe('destination')
+    const result = decode(exchangeSchema, input)
+    destination.snapshot!.defaults!.sharedOrganizations = result.organizations
+    return result
+  })
+  let stored = emptySharedOrganizations()
+  const sync = new SharedStateSynchronization({
+    storage: memory(),
+    createReplicaId: () => 'app:organization-test',
+    readShared: () => [],
+    publish: () => {},
+    readOrganizations: () => stored,
+    publishOrganizations: (next) => {
+      stored = mergeSharedOrganizations(stored, next)
+    },
+    request,
+    error: () => {},
+    intervalMs: null,
+  })
+  controllers.push(sync)
+  sync.update([source], true)
+  await flush()
+  expect(stored).toEqual(shared)
+  sync.update([{ ...source, connected: false }, destination, older], true)
+  await flush()
+  expect(destination.snapshot!.defaults!.sharedOrganizations).toEqual(shared)
+  expect(request.mock.calls.filter((call) => call[1] === '/api/state/organizations')).toHaveLength(
+    1,
+  )
 })
 
 it('retries an unchanged edit after an offline failure without another form save', async () => {

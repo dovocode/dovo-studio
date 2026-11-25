@@ -880,6 +880,12 @@ export function route(
         )
       }
       if (method === 'GET' && path === '/api/state/status') return s.stateReplication.status()
+      if (method === 'POST' && path === '/api/state/organizations') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Organization settings require a paired human client')
+        const input = yield* serviceResult(body(request, STATE_MAX_EXCHANGE_BYTES))
+        return s.stateReplication.exchangeOrganizations(input)
+      }
       if (method === 'POST' && path === '/api/state/exchange') {
         const input = yield* serviceResult(body(request, STATE_MAX_EXCHANGE_BYTES))
         return yield* serviceResult(

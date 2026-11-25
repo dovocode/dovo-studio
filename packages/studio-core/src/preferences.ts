@@ -18,6 +18,8 @@ import {
   dictationLanguageSchema,
   dictationProviderSchema,
   sharedSettingsSchema,
+  sharedOrganizationsSchema,
+  emptySharedOrganizations,
 } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
@@ -46,6 +48,7 @@ const schema = mutableStruct({
   preferredRepositoryOpenTarget: Schema.optional(repositoryOpenTargetSchema),
   ...serviceUrlsSchema.fields,
   sharedScopedSettings: sharedSettingsSchema,
+  sharedOrganizations: sharedOrganizationsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
   globalAgentPresets: mutableArray(agentPresetSchema),
@@ -181,6 +184,7 @@ export const defaultAppPreferences: AppPreferences = {
   connectOrigin: '',
   artifactsOrigin: '',
   sharedScopedSettings: [],
+  sharedOrganizations: emptySharedOrganizations(),
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,
   globalAgentPresets: [],

@@ -1705,6 +1705,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [presetSyncError, setPresetSyncError] = useApplicationState('')
   const {
     sharedScopedSettings,
+    sharedOrganizations,
     globalAgentPresets,
     retiredGlobalAgentPresets,
     globalModelPreferences,
@@ -1813,6 +1814,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       storage: mobileSharedStateStorage,
       createReplicaId: () => `app:${randomUUID()}`,
       readShared: () => readMobilePreferences().sharedScopedSettings,
+      readOrganizations: () => readMobilePreferences().sharedOrganizations,
+      publishOrganizations: (sharedOrganizations) =>
+        updateMobilePreferences({ sharedOrganizations }),
       publish: (shared) =>
         updateMobilePreferences({
           sharedScopedSettings: mergeSharedSettings(
@@ -1838,7 +1842,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [computerRefresh, setSettingsSyncError])
   useEffect(() => {
     sharedStateSync.current?.update(overviews, ready && appForeground)
-  }, [overviews, sharedScopedSettings, ready, appForeground])
+  }, [overviews, sharedScopedSettings, sharedOrganizations, ready, appForeground])
   const pendingMessages = useCallback(
     (task: Task) => (connection ? mutations.pendingMessages(connection, task) : []),
     [connection, mutations],

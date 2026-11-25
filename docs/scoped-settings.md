@@ -72,19 +72,23 @@ inherited definition. The editors show inherited entries that can be copied into
 and changed or disabled. Hooks override by name across the four scopes; custom-agent hooks still
 append to the resolved project hooks.
 
-In **MCP, skills & hooks**, select a project and enter its **Project organization**. Give other
-projects the same name to group them, including local folders and repositories from different forges
-or GitHub owners. Clear the name and save to remove the project from its group.
+In **MCP, skills & hooks**, select a project, enter its **Project organization** and choose **Save
+organization**. A new organization shares its resources across paired computers. Matching Git clones
+belong to the same organization after synchronization. To add another repository or a local folder,
+select it and enter the existing organization name. Link each local folder on its computer. Clear
+the name and save to remove the link.
 
 Open the organization's resource section to manage its MCP servers, skills, agent plugins, and
 additional `AGENTS.md` instructions. Set an installed Claude Code plugin to **On** to share it with
 the organization's projects only; see [Agent plugins](agent-plugins.md). This layer applies after
 computer settings and before project settings. Project and agent tools can override matching names.
 The additional instructions join the agent's instructions on the next turn. Clear the text and save
-to remove them. Organization assignments and resources are saved on the selected computer. Thread
-project pickers show organization sections. To rename a group, open that organization's resource
-section, edit **Organization name**, and choose **Rename organization**. Its assigned projects, MCP
-servers, skills and instructions stay with the group.
+to remove them. A project or a specific folder can add its own instructions after the organization's
+instructions. Shared MCP settings reference environment variables on each computer, and shared
+skills use portable instructions. Organizations created on older versions retain their existing
+computer-specific settings. Thread project pickers show organization sections. To rename a group,
+open that organization's resource section, edit **Organization name**, and choose **Rename
+organization**. Its assigned projects, MCP servers, skills and instructions stay with the group.
 
 Project fallback icon colours and initials use canonical Git identity, so differently named
 checkouts on different computers look the same. Uploaded project icons also synchronize through

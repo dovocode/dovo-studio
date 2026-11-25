@@ -16,6 +16,7 @@ import {
 } from '../../workspace.js'
 import type { RuntimeDefaults } from './runtime-setup.js'
 import { builtInAgentPresets } from '../../tasks/agent-presets.js'
+import { organizationGitIdentity } from './shared-organizations.js'
 
 export const scopedSettingsReadSchema = mutableStruct({
   includeAgents: Schema.optional(Schema.Boolean),
@@ -28,6 +29,7 @@ export const organizationChangeSchema = Schema.Union([
     action: Schema.Literal('assign'),
     repositoryId: Schema.String,
     before: Schema.NullOr(organizationIdSchema),
+    shared: Schema.optional(Schema.Literal(true)),
     target: Schema.NullOr(
       Schema.Union([
         mutableStruct({ id: organizationIdSchema }),
@@ -98,8 +100,13 @@ export function sharedProjectKey(repository: Repository | undefined) {
     : undefined
 }
 export const organizationKey = (name?: string) => name?.trim().toLowerCase() || undefined
-export function projectOrganizationId(repository?: Repository) {
+export function projectOrganizationId(repository?: Repository, runtime?: RuntimeDefaults) {
   if (repository?.kind === 'scratch') return undefined
+  const identity = organizationGitIdentity(repository)
+  const assignment = identity
+    ? runtime?.sharedOrganizations?.projects.find((row) => row.id === identity)
+    : undefined
+  if (assignment?.organizationId) return assignment.organizationId
   return repository?.organizationId ?? organizationKey(repository?.organization)
 }
 export function studioOrganizations(
@@ -113,20 +120,29 @@ export function studioOrganizations(
     if (id && !repository.organizationId && repository.organization && !organizations.has(id))
       organizations.set(id, { name: repository.organization })
   }
+  const shared = runtime?.sharedOrganizations
+  if (shared) {
+    const resources = new Map(shared.resources.map((row) => [row.id, row.resources]))
+    for (const row of shared.names)
+      organizations.set(row.id, { name: row.name, resources: resources.get(row.id) ?? undefined })
+  }
   return organizations
 }
 export function projectOrganizationAssignment(
   repository: Repository,
   name: string,
   organizations: readonly { id: string; name: string }[],
+  shared = false,
 ): typeof organizationChangeSchema.Type {
-  const id = organizations.find(
+  const matching = organizations.filter(
     (entry) => organizationKey(entry.name) === organizationKey(name),
-  )?.id
+  )
+  const id = matching.length === 1 ? matching[0]?.id : undefined
   return {
     action: 'assign',
     repositoryId: repository.id,
     before: projectOrganizationId(repository) ?? null,
+    ...(shared ? { shared: true as const } : {}),
     target: id ? { id } : name.trim() ? { name: name.trim() } : null,
   }
 }
@@ -283,10 +299,15 @@ export function settingsAtScope(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,
   scope: SettingsScope,
-  organizationId = projectOrganizationId(repository),
+  organizationId = projectOrganizationId(repository, runtime),
 ): ScopedSettingsValue {
   if (scope === 'environment') return environmentSettings(runtime)
   if (scope === 'organization') {
+    const shared = runtime?.sharedOrganizations
+    if (shared?.names.some((row) => row.id === organizationId)) {
+      const resources = shared.resources.find((row) => row.id === organizationId)?.resources
+      return resources ? { resources } : {}
+    }
     const organizations = runtime?.organizations
     const resources =
       organizationId && organizations && Object.hasOwn(organizations, organizationId)
@@ -407,6 +428,10 @@ export function resolveScopedSettings(
       },
       resources: {
         ...mergeResources(result.resources, value.resources),
+        additionalInstructions:
+          [result.resources?.additionalInstructions, value.resources?.additionalInstructions]
+            .filter(Boolean)
+            .join('\n\n') || undefined,
         hooks: [
           ...new Map(
             [...(result.resources?.hooks ?? []), ...(value.resources?.hooks ?? [])].map((hook) => [

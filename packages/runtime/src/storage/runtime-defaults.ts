@@ -9,11 +9,17 @@ import {
   sharedSettingsEntrySchema,
   mergeSharedSettings,
   initializeScopedSettings,
+  emptySharedOrganizations,
+  mergeSharedOrganizations,
+  sharedOrganizationsSchema,
+  sharedSettingsIssue,
   type RuntimeDefaults as RuntimeDefaultsValue,
+  type SharedOrganizations,
   type SharedSettingsEntry,
   type TaskHarness,
 } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
+import { STATE_MAX_BATCH_BYTES } from '@dovo/durable-connections'
 import { environmentSettings } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 
@@ -30,9 +36,13 @@ function readDefaults(db: Database.Database) {
   const read = db.prepare('SELECT value FROM documents WHERE id = ?').pluck()
   const defaults = read.get('runtime-defaults')
   const organizations = read.get('organization-settings')
+  const sharedOrganizations = read.get('shared-organization-settings')
   return decode(runtimeDefaultsSchema, {
     ...(typeof defaults === 'string' ? JSON.parse(defaults) : {}),
     ...(typeof organizations === 'string' ? { organizations: JSON.parse(organizations) } : {}),
+    ...(typeof sharedOrganizations === 'string'
+      ? { sharedOrganizations: JSON.parse(sharedOrganizations) }
+      : {}),
   })
 }
 
@@ -123,6 +133,30 @@ export class RuntimeDefaults {
       .run('organization-settings', JSON.stringify(organizations))
     defaultsCache.delete(this.db)
   }
+  mergeOrganizations(input: SharedOrganizations) {
+    for (const entry of input.resources) {
+      if (entry.resources?.hooks?.length)
+        throw new HttpError(400, 'Configure hooks at the computer or project scope.')
+      const issue = sharedSettingsIssue({ resources: entry.resources ?? undefined })
+      if (issue) throw new HttpError(400, issue)
+    }
+    return this.db.transaction(() => {
+      const before = this.get().sharedOrganizations ?? emptySharedOrganizations()
+      const after = decode(sharedOrganizationsSchema, mergeSharedOrganizations(before, input))
+      if (!isDeepStrictEqual(before, after)) {
+        const serialized = JSON.stringify(after)
+        if (Buffer.byteLength(serialized) > STATE_MAX_BATCH_BYTES)
+          throw new HttpError(413, 'Shared organization settings exceed the synchronization limit.')
+        this.db
+          .prepare(
+            'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+          )
+          .run('shared-organization-settings', serialized)
+        defaultsCache.delete(this.db)
+      }
+      return after
+    })()
+  }
   save(value: unknown, configure = true) {
     const settings = decode(runtimeDefaultsSchema, value)
     validateDefaultHarness(settings.harness)
@@ -155,6 +189,7 @@ export class RuntimeDefaults {
           JSON.stringify({
             ...settings,
             organizations: undefined,
+            sharedOrganizations: undefined,
             configured: configure || settings.configured,
           }),
         )
