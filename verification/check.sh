@@ -23,3 +23,4 @@ check_cases RuntimeRegistry.lean runtime-registry-cases.jsonl
 check_cases SendReceipts.lean send-receipt-cases.jsonl
 check_cases RemoteMcp.lean remote-mcp-cases.jsonl
 check_cases BotInvocation.lean bot-invocation-cases.jsonl
+check_cases BotWorkflows.lean bot-workflows-cases.jsonl
