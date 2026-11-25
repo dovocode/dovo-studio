@@ -23,6 +23,7 @@ export const subagentSchema = mutableStruct({
   sessionId: Schema.optional(Schema.String),
   /** Provider transcript identity, when different from its background-task identity. */
   threadId: Schema.optional(Schema.String),
+  forkedSkill: Schema.optional(Schema.Literal(true)),
   result: Schema.optional(Schema.String),
   /** Durable delivery of a native result; provider events remain the source of its outcome. */
   completionId: Schema.optional(Schema.String),

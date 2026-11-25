@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
   '@dovo/studio-core': `export const useAppPreferences=()=>({projectGrouping:'name',projectOrder:'name'});export const projectActivity=()=>0;export const useWorkspace=()=>window.store;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ProjectIcon} from './src/project-icon';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const TaskDefaultSettings=()=>null;export const ProjectOrganizationSettings=()=>null;`,
+  '@dovo/studio-ui': `export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ProjectIcon} from './src/project-icon';export {CreateOrganizationDialog} from './src/create-organization-dialog';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const TaskDefaultSettings=()=>null;export const ProjectOrganizationSettings=()=>null;`,
   './repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Close adding</button></div>;`,
   './import-codex-session': 'export const ImportCodexSession=()=>null;',
   './import-pi-session': 'export const ImportPiSession=()=>null;',
@@ -20,7 +20,52 @@ const built = await build({
   stdin: {
     resolveDir: root + '/packages/studio-ui',
     loader: 'tsx',
-    contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {ProjectsMenu} from '../extension-scm/src/connections/projects-menu';function App(){const [multiple,setMultiple]=useState(false),[connected,setConnected]=useState(true),[repositories,setRepositories]=useState([]);window.setRepositories=setRepositories;window.configure=(multiple,connected=true)=>{setMultiple(multiple);setConnected(connected)};window.store={workspace:{repositories,tasks:[]},activeRuntimeId:'local',connected,runtimes:[{profile:{id:'local',name:'Desktop',nameIsCustom:true},connected,snapshot:null},...(multiple?[{profile:{id:'remote',name:'Remote',nameIsCustom:true},connected:false,snapshot:null}]:[])],switchRuntime:async()=>{throw Error('Unexpected switch')}};return <ProjectsMenu value="" onChange={()=>{}} allDevices/>};createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `
+      import {useState} from 'react'
+      import {createRoot} from 'react-dom/client'
+      import {ProjectsMenu} from '../extension-scm/src/connections/projects-menu'
+
+      window.assignments = []
+      window.refreshes = []
+      function App() {
+        const [multiple, setMultiple] = useState(false)
+        const [connected, setConnected] = useState(true)
+        const [repositories, setRepositories] = useState([])
+        window.setRepositories = setRepositories
+        window.configure = (multiple, connected = true) => {
+          setMultiple(multiple)
+          setConnected(connected)
+        }
+        window.store = {
+          workspace: { repositories, tasks: [] },
+          activeRuntimeId: 'local',
+          connected,
+          snapshot: {
+            organizationSettingsSupported: true,
+            sharedOrganizationsSupported: true,
+            defaults: { organizations: { existing: { name: 'Existing group' } } },
+          },
+          runtimes: [
+            { profile: { id: 'local', name: 'Desktop', nameIsCustom: true }, connected, snapshot: null },
+            ...(multiple ? [{ profile: { id: 'remote', name: 'Remote', nameIsCustom: true }, connected: false, snapshot: null }] : []),
+          ],
+          switchRuntime: async () => { throw Error('Unexpected switch') },
+          request: async (path, input) => {
+            window.assignments.push({ path, input })
+            return { ok: true }
+          },
+          refreshRuntime: async ({ id }) => {
+            window.refreshes.push(id)
+            const { repositoryId, target } = window.assignments.at(-1).input
+            setRepositories(current => current.map(project => project.id === repositoryId
+              ? { ...project, organization: target.name }
+              : project))
+          },
+        }
+        return <ProjectsMenu value="" onChange={() => {}} allDevices />
+      }
+      createRoot(document.getElementById('app')).render(<App />)
+    `,
   },
   plugins: [
     {
@@ -61,6 +106,7 @@ try {
   await page.evaluate(() => window.configure(false, false))
   await open()
   assert.equal(await add().isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: 'New organization' }).isDisabled(), true)
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.configure(true))
   await open()
@@ -101,9 +147,55 @@ try {
   await filters.getByRole('button', { name: 'Old', exact: true }).waitFor()
   assert.deepEqual(await projectButtons(), ['All projects', 'Zulu', 'Alpha', 'Old'])
   await filters.getByRole('button', { name: 'Settings for Old', exact: true }).waitFor()
+
+  const create = () => page.getByRole('button', { name: 'New organization', exact: true }).click()
+  const form = page.getByRole('dialog', { name: 'New organization', exact: true })
+  await create()
+  await form.waitFor()
+  await form.getByRole('textbox', { name: 'Organization name' }).fill(' existing GROUP ')
+  assert.equal(
+    await form
+      .getByRole('combobox', { name: 'First project' })
+      .getByRole('option', { name: 'Old' })
+      .count(),
+    0,
+  )
+  await form.getByRole('combobox', { name: 'First project' }).selectOption('alpha')
+  await form.getByRole('alert').getByText('An organization already uses this name.').waitFor()
+  const save = form.getByRole('button', { name: 'Create and link organization' })
+  assert.equal(await save.isDisabled(), true)
+  await page.keyboard.press('Escape')
+  await form.waitFor({ state: 'detached' })
+  assert.deepEqual(await page.evaluate(() => window.assignments), [])
+
+  await open()
+  await create()
+  await form.getByRole('textbox', { name: 'Organization name' }).fill(' Flight tools ')
+  await form.getByRole('combobox', { name: 'First project' }).selectOption('alpha')
+  await save.click()
+  await form.waitFor({ state: 'detached' })
+  assert.deepEqual(await page.evaluate(() => window.assignments), [
+    {
+      path: '/api/agents/settings/organization',
+      input: {
+        action: 'assign',
+        repositoryId: 'alpha',
+        before: null,
+        target: { name: 'Flight tools' },
+        shared: true,
+      },
+    },
+  ])
+  assert.deepEqual(await page.evaluate(() => window.refreshes), ['local'])
+  await open()
+  await filters
+    .getByRole('heading', { name: 'Flight tools', exact: true })
+    .locator('..')
+    .getByRole('button', { name: 'Alpha', exact: true })
+    .waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    'Single computer: direct project creation and offline protection. Multiple computers: picker retained, including offline hosts. Pinned projects first; archived projects collapsed but reachable. Passed.',
+    'Project creation, offline controls, computer selection, pinning, archiving and organization creation passed.',
   )
 } finally {
   await browser.close()

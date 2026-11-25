@@ -668,6 +668,7 @@ export async function studioTool(
         })),
       }
     if (command.action === 'readRun') return { run: s.jobs.summary(command.id) }
+    if (command.action === 'runsBySubject') return { runs: s.jobs.list(undefined, command.subject) }
     if (command.action === 'definition' || command.action === 'restore') {
       const run = s.jobs.detail(command.id)
       const current = workspace.automations.find((item) => item.id === run.automationId)
@@ -786,7 +787,7 @@ export async function studioTool(
     const flow = workspace.automations.find((item) => item.id === command.id)
     if (!flow) throw new HttpError(404, 'Automation not found')
     if (command.action === 'read') return { automation: flow }
-    if (command.action === 'runs') return { runs: s.jobs.list(flow.id) }
+    if (command.action === 'runs') return { runs: s.jobs.list(flow.id, command.subject) }
     if (command.action === 'eventStatus') {
       if (!flow.nodes.some(({ data }) => data.kind === 'trigger' && data.trigger === 'mcp-event'))
         throw new HttpError(400, 'This automation does not use an MCP event trigger')
@@ -810,7 +811,8 @@ export async function studioTool(
     const issues = command.action === 'run' || command.enabled ? validateFlow(s, flow, policy) : []
     if (issues.length && (command.action === 'run' || command.enabled))
       throw new HttpError(400, issues.join('\n'))
-    if (command.action === 'run') return { id: s.jobs.startManual(command.id, command.requestId) }
+    if (command.action === 'run')
+      return { id: s.jobs.startManual(command.id, command.requestId, command.subject) }
     return patchWorkspace(
       s,
       {

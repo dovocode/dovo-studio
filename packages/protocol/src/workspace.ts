@@ -802,6 +802,13 @@ export const taskSchema = mutableStruct({
       turnSettings: Schema.optional(turnSettingsSchema),
       promptAccepted: Schema.Boolean,
       providerStartup: Schema.optional(providerStartupStepSchema),
+      cursorRun: Schema.optional(
+        mutableStruct({
+          id: maxValue(minValue(Schema.String, 1), 200),
+          sessionId: maxValue(minValue(Schema.String, 1), 200),
+          inputMessageIds: mutableArray(Schema.String),
+        }),
+      ),
     }),
   ),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),

@@ -53,10 +53,21 @@ const session = { configOptions, ...(!configMode && { modes }) };
 let pendingPrompt
 const permissionKinds = ${JSON.stringify(permissionKinds)}
 let permissionIndex = 0
-const requestPermission = () => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 'permission-' + permissionIndex, method: 'session/request_permission', params: {
-  sessionId: 'session', toolCall: { toolCallId: 'tool-' + permissionIndex, kind: permissionKinds[permissionIndex], title: 'Tool request' },
-  options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject', name: 'Reject', kind: 'reject_once' }]
-} }) + '\\n')
+const requestPermission = () => {
+  const kind = permissionKinds[permissionIndex]
+  const toolCallId = 'tool-' + permissionIndex
+  const toolCall = { toolCallId, kind: kind.startsWith('edit-') ? 'edit' : kind, title: 'Tool request' }
+  if (kind === 'edit-inside' || kind === 'edit-outside') {
+    const path = kind === 'edit-inside' ? 'source/new.txt' : '../outside.txt'
+    process.stdout.write(JSON.stringify({jsonrpc: '2.0', method: 'session/update', params: {
+      sessionId: 'session', update: { sessionUpdate: 'tool_call', ...toolCall, rawInput: { path } }
+    } }) + '\\n')
+  }
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 'permission-' + permissionIndex, method: 'session/request_permission', params: {
+    sessionId: 'session', toolCall,
+    options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject', name: 'Reject', kind: 'reject_once' }]
+  } }) + '\\n')
+}
 createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line)
   messages.push(input)
@@ -510,23 +521,27 @@ it('closes and deletes an ephemeral ACP utility session when supported', async (
   expect(messages.map((item) => item.method)).toContain('session/delete')
 })
 
-it('auto-accepts ACP edits while asking for commands in auto-accept edits mode', async () => {
-  const { cwd, record, launch } = await fixture(false, false, false, ['edit', 'execute'])
+it('auto-accepts ACP edits only when the reported paths are inside the thread workspace', async () => {
+  const { cwd, record, launch } = await fixture(false, false, false, [
+    'edit-inside',
+    'edit-outside',
+    'edit',
+    'execute',
+  ])
   const approve = vi.fn<AgentRun['approve']>(async () => 'deny' as const)
   const input = run(cwd, launch, { approve })
   input.run.agent.permission = 'workspace-write'
   await acpAdapter.run(input.run)
   const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{
-    id?: string
+    id?: string | number
     result?: { outcome?: { optionId?: string } }
   }>
-  expect(messages.find((message) => message.id === 'permission-0')?.result?.outcome?.optionId).toBe(
-    'allow',
-  )
-  expect(messages.find((message) => message.id === 'permission-1')?.result?.outcome?.optionId).toBe(
-    'reject',
-  )
-  expect(approve).toHaveBeenCalledOnce()
+  expect(
+    messages
+      .filter((message) => typeof message.id === 'string' && message.id.startsWith('permission-'))
+      .map((message) => message.result?.outcome?.optionId),
+  ).toEqual(['allow', 'reject', 'reject', 'reject'])
+  expect(approve).toHaveBeenCalledTimes(3)
 })
 it('classifies ACP fetch permissions independently of display titles and keeps edits supervised', async () => {
   const { cwd, launch } = await fixture(false, false, false, ['fetch', 'edit', 'execute'])

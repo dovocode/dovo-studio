@@ -8,7 +8,7 @@ import {
   type ForgeIssueDetail,
   type ForgeWorkOptions,
 } from '@dovo/studio-core'
-import { Button, MessageResponse } from '@dovo/studio-ui'
+import { AutomationSubjectRuns, Button, MessageResponse } from '@dovo/studio-ui'
 import { WorkTaskLinks } from './work-task-links'
 import { formatDate } from './format-date'
 
@@ -155,6 +155,7 @@ export function IssueDetail({
           )}
         </div>
         {!preview && taskLinks}
+        {!preview && <AutomationSubjectRuns subject={{ kind: 'url', url: issue.url }} />}
       </header>
       {notice && (
         <p role="status" className="text-xs text-muted-foreground">

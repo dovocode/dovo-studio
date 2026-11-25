@@ -3,6 +3,7 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useIssueDiscussion } from './use-issue-discussion'
 import { usePipelineSections } from './use-pipeline-sections'
 import { PipelineSectionStatus } from './pipeline-section-status'
+import { AutomationSubjectRuns } from '../../jobs/automation-subject-runs'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useSourceReader } from '../source-reader'
 import { useLinkOrigin } from '../../ui/content/link-origin'
@@ -979,6 +980,7 @@ function WorkItemContent({
                 </Text>
               )}
             </View>
+            <AutomationSubjectRuns subject={{ kind: 'url', url: issue.issue.url }} />
             <View style={[styles.card, { padding: 16, borderRadius: 14, gap: 12 }]}>
               <Text
                 accessibilityRole="header"

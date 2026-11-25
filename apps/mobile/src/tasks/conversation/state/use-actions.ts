@@ -86,6 +86,9 @@ export function useConversationActions(task: Task) {
       ? JSON.stringify([activeId, task.id, task.activeRunId])
       : undefined
   const cancellation = useAction(stopScope)
+  const [stoppedRun, setStoppedRun] = useApplicationState<string | undefined>(undefined)
+  const stopping = cancellation.busy || (!!stoppedRun && stoppedRun === task.activeRunId)
+  const pendingStop = useRef<Promise<unknown> | null>(null)
   const currentStopScope = useRef(stopScope)
   currentStopScope.current = stopScope
   const [draftTurnSettings, setTurnSettings] = useApplicationState<TurnSettings | null>(
@@ -443,7 +446,6 @@ export function useConversationActions(task: Task) {
     (connected ||
       (!!profile && !editing && (!task.autoProject || snapshot?.messageSetupSupported === true))) &&
     !busy &&
-    !cancellation.busy &&
     !storedDraft.pendingRestore &&
     !storedDraft.pendingFork &&
     draft.ready &&
@@ -501,6 +503,7 @@ export function useConversationActions(task: Task) {
       JSON.stringify(task.draftAttachments?.map((file) => file.id) ?? [])
   const defaultSendMode =
     !retryAutomaticAddition &&
+    !stopping &&
     stageSupported &&
     ((!!stageIntent && !stageIntentObserved) ||
       retryStage ||
@@ -596,6 +599,8 @@ export function useConversationActions(task: Task) {
     providedInput?: string,
     startInBackground?: (attemptId: string) => BackgroundStart,
   ) => {
+    const stop = pendingStop.current
+    if ((stop || stopping) && mode === 'steer') mode = 'queue'
     let submittedId: string | undefined
     let background: BackgroundStart | undefined
     let backgroundOutcome: Parameters<BackgroundStart['settled']>[0] = 'failed'
@@ -688,6 +693,8 @@ export function useConversationActions(task: Task) {
         ...(plan ? { plan: true } : {}),
         preserveQueuePause:
           mode === 'queue' &&
+          !stop &&
+          !stopping &&
           defaultSendMode !== 'stage' &&
           !task.queuePaused &&
           snapshot?.queuePausePreservationSupported === true,
@@ -754,6 +761,7 @@ export function useConversationActions(task: Task) {
       }
       return yield* mobileWorkflow(function* () {
         let messageAcknowledged = false
+        if (stop) yield* nativeEffect(() => stop)
         const request = callEffect(
           mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
           {
@@ -1071,12 +1079,12 @@ export function useConversationActions(task: Task) {
           )
         : task.draftAttachments,
     call,
-    stopping: cancellation.busy,
+    stopping,
     stop: () => {
       const runId = task.activeRunId
       const run = () => {
-        if (currentStopScope.current !== stopScope) return
-        return cancellation.run(() =>
+        if (currentStopScope.current !== stopScope || pendingStop.current) return
+        const stopped = cancellation.run(() =>
           callEffect(
             '/api/tasks/cancel',
             {
@@ -1084,8 +1092,12 @@ export function useConversationActions(task: Task) {
               runId,
             },
             responses.ok,
-          ),
+          ).pipe(Effect.tap(() => Effect.sync(() => setStoppedRun(runId)))),
         )
+        pendingStop.current = stopped
+        return stopped.finally(() => {
+          if (pendingStop.current === stopped) pendingStop.current = null
+        })
       }
       // Settings → General → Confirm before stopping a running task.
       if (!readMobilePreferences().confirmStop) return run()

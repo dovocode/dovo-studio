@@ -100,3 +100,15 @@ to check the draft.
 On 2026-11-25, the current Release build passed on an iPad Air 11-inch (M4) simulator running iOS
 27.0. The composer and Send control stayed above the keyboard in portrait and landscape. The same
 draft returned when the thread was reopened after relaunch.
+
+## iPad thread switching and CSV preview
+
+On the iPad (A16) simulator running iOS 27.0, a Release build opened two threads with one reply each
+from a paired fixture runtime. Measure from the first recorded frame with the destination title to
+the first with its reply. The first thread's reply appeared 165 ms after its title. The second
+thread's first visit and all four repeat switches showed the title and reply in the same recorded
+frame. Tap-to-render latency and physical-device timing require separate measurements.
+
+In the same build, open **Thread actions → Files** and select a CSV with two columns. Select **Table
+preview**. In portrait and landscape, verify the numbered column headings and check that the CSV's
+first row and values appear beneath them.

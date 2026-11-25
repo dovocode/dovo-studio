@@ -211,7 +211,9 @@ export function Composer({
   }
   const [error, setError] = useApplicationState(''),
     [submitBusy, setSending] = useApplicationState(false),
-    [stopping, setStopping] = useApplicationState(false)
+    [stopInFlight, setStopping] = useApplicationState(false)
+  const [stoppedRun, setStoppedRun] = useApplicationState<string | undefined>(undefined)
+  const stopping = stopInFlight || (!!stoppedRun && stoppedRun === task.activeRunId)
   const [localMachineMoving, setLocalMachineMoving] = useApplicationState(false)
   const setMachineMoving = (moving: boolean) => {
     setLocalMachineMoving(moving)
@@ -679,10 +681,12 @@ export function Composer({
       : planModeIssue(agent)
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
   const preferences = useAppPreferences()
+  const pendingStop = useRef<Promise<unknown> | null>(null)
   const defaultSteerFirst =
     !editing &&
     preferences.followUp === 'steer' &&
     task.status === 'running' &&
+    !stopping &&
     !turnSettings &&
     !plan
   const other = defaultSteerFirst ? 'queue' : 'steer'
@@ -714,7 +718,8 @@ export function Composer({
       document.removeEventListener('visibilitychange', visibility)
     }
   }, [task.status, hasBackgroundAction])
-  const alternative = !editing && altPressed && task.status === 'running' && !turnSettings && !plan
+  const alternative =
+    !editing && !stopping && altPressed && task.status === 'running' && !turnSettings && !plan
   const retryAutomaticAddition =
     attempt.current?.preserveQueuePause === true &&
     attempt.current.text === composerDraft.controller.text.trim() &&
@@ -726,6 +731,7 @@ export function Composer({
     !retryAutomaticAddition && (alternative ? !defaultSteerFirst : defaultSteerFirst)
   const stageFirst =
     !retryAutomaticAddition &&
+    !stopping &&
     snapshot?.promptQueueStagingSupported === true &&
     (stagingGapActive || (!!task.queue?.length && !!(task.queuePaused || task.queue[0]?.paused)))
   const backgroundPreview = hasBackgroundAction && altPressed
@@ -750,7 +756,6 @@ export function Composer({
     const taskId = task.id
     const isCurrent = () => mounted.current && currentStopScope.current === stopScope
     stopLock.current = true
-    setStopping(true)
     try {
       if (
         readAppPreferences().confirmStop &&
@@ -764,11 +769,16 @@ export function Composer({
         return
       if (!isCurrent()) return
       setStopError('')
-      await request('/api/tasks/cancel', { id: taskId, runId }, responses.ok)
+      setStopping(true)
+      const cancellation = request('/api/tasks/cancel', { id: taskId, runId }, responses.ok)
+      pendingStop.current = cancellation
+      await cancellation
+      if (mounted.current) setStoppedRun(runId)
     } catch (e) {
       if (mounted.current) setStopError(e instanceof Error ? e.message : String(e))
     } finally {
       stopLock.current = false
+      pendingStop.current = null
       if (mounted.current) setStopping(false)
     }
   }
@@ -849,6 +859,8 @@ export function Composer({
     background = false,
   ) => {
     if (editing) return saveEdit()
+    const cancellation = pendingStop.current
+    if ((cancellation || stopping) && mode === 'steer') mode = 'queue'
     if (mode === 'stage' && (!connected || snapshot?.promptQueueStagingSupported !== true)) return
     if (mode === 'direct' && (!connected || snapshot?.directMessageSupported !== true)) return
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
@@ -881,7 +893,6 @@ export function Composer({
       attachments.failedUploads.length > 0 ||
       sendingRequest.current ||
       asideRequest.current === 'saving' ||
-      stopping ||
       (attachments.busy && !attachments.canSubmitWhileUploading) ||
       task.archivedAt ||
       pendingQuestion
@@ -913,6 +924,8 @@ export function Composer({
         runId: mode === 'steer' ? task.activeRunId : undefined,
         preserveQueuePause:
           mode === 'queue' &&
+          !cancellation &&
+          !stopping &&
           !stageFirst &&
           !task.queuePaused &&
           snapshot?.queuePausePreservationSupported === true,
@@ -996,6 +1009,7 @@ export function Composer({
       }
       let acknowledged = false
       if (connection) {
+        await cancellation?.catch(() => undefined)
         const result = await request(
           mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
           {
@@ -1286,7 +1300,6 @@ export function Composer({
     sending ||
     !!awaitingQueuedSubmission ||
     hasFailedSubmissionAttachments ||
-    stopping ||
     attachments.failedUploads.length > 0 ||
     (attachments.busy && !attachments.canSubmitWhileUploading) ||
     !!task.archivedAt ||
@@ -1588,7 +1601,7 @@ export function Composer({
                             </span>
                           </DropdownMenu.Item>
                         )}
-                        {task.status === 'running' && (
+                        {task.status === 'running' && !stopping && (
                           <DropdownMenu.Item
                             className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
                             disabled={

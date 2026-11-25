@@ -9,6 +9,7 @@ export const agentsExtension = defineStudioExtension(
         'Skills',
         'Agent loop hooks',
         'Project organization',
+        'New organization',
         'Organization name',
         'Additional AGENTS.md instructions',
       ],
@@ -23,7 +24,8 @@ export const agentsExtension = defineStudioExtension(
       icon: 'agents',
       order: 2.3,
       settingsSection: 'agents',
-      keywords: 'mcp servers skills tools registry integrations hooks formatting checks',
+      keywords:
+        'mcp servers skills tools registry integrations hooks formatting checks organizations groups',
       load: () => import('./resources/view'),
     },
     {

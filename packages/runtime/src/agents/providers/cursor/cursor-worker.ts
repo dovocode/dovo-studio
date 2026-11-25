@@ -1,5 +1,5 @@
 import { createMessageConnection, IPCMessageReader, IPCMessageWriter } from 'vscode-jsonrpc/node'
-import { Cursor } from '@cursor/sdk'
+import { createAgentPlatform, Cursor } from '@cursor/sdk'
 import { cursorInputSchema, cursorModels, cursorSession } from './cursor-runtime.js'
 import { z } from 'zod'
 
@@ -15,6 +15,15 @@ rpc.onRequest('probe', async () => {
 rpc.onRequest('run', async (input: unknown) => session.run(cursorInputSchema.parse(input)))
 rpc.onRequest('steer', async (text: unknown) => session.steer(z.string().parse(text)))
 rpc.onRequest('cancel', async () => session.cancel())
+rpc.onRequest<boolean, unknown>('checkpoint', async (raw: unknown) => {
+  const { cwd, sessionId, runId } = z
+    .object({ cwd: z.string().min(1), sessionId: z.string().min(1), runId: z.string().min(1) })
+    .parse(raw)
+  const { store } = await createAgentPlatform({ workspaceRef: cwd })
+  const run = await store.getRun(sessionId, runId)
+  const latest = run?.latestCheckpointRef?.blobId
+  return !!latest && latest !== run?.startCheckpointRef?.blobId
+})
 process.on('disconnect', () => {
   void session.cancel().finally(() => process.exit())
 })

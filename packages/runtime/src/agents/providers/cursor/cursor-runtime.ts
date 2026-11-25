@@ -32,6 +32,7 @@ export const cursorEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('boundary') }),
   z.object({ type: z.literal('session'), id: z.string().min(1) }),
+  z.object({ type: z.literal('run'), id: z.string().min(1), sessionId: z.string().min(1) }),
   z.object({ type: z.literal('accepted'), steer: z.boolean() }),
   z.object({ type: z.literal('event'), name: z.string(), payload: z.unknown() }),
 ])
@@ -185,6 +186,7 @@ export function cursorSession(emit: (event: CursorEvent) => void, factory: Curso
           await active.cancel()
           throw new Error('Cursor run cancelled')
         }
+        if (!input.compact) emit({ type: 'run', id: active.id, sessionId: agent.agentId })
         emit({ type: 'accepted', steer: !input.compact && typeof active.steer === 'function' })
         const stream = async () => {
           for await (const message of active!.stream()) {

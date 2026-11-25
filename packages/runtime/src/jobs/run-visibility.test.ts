@@ -79,6 +79,9 @@ it('keeps an older review in the snapshot and reads an exact retained run by aut
           JSON.stringify({
             id,
             automationId: background.id,
+            ...(index === 0
+              ? { subject: { kind: 'url', url: 'https://github.com/demo/project/pull/42' } }
+              : {}),
             flow: background,
             triggerPayload: { private: 'fixture' },
             status: 'completed',
@@ -116,6 +119,22 @@ it('keeps an older review in the snapshot and reads an exact retained run by aut
     expect(saved).not.toHaveProperty('flow')
     expect(saved).not.toHaveProperty('triggerPayload')
     expect((await readRun(review.id)).status).toBe(404)
+    expect(snapshot.automationRunSubjectSupported).toBe(true)
+    const find = (subject: unknown) =>
+      fetch(`${base}/api/jobs/runs-by-subject`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ subject }),
+      })
+    const subjectRuns = await find({
+      kind: 'url',
+      url: 'https://GITHUB.COM/demo/project/pull/42#discussion',
+    })
+    expect(subjectRuns.status).toBe(200)
+    expect(await subjectRuns.json()).toMatchObject({ runs: [{ id: historical }] })
+    const unrelated = await find({ kind: 'thread', threadId: 'unrelated' })
+    expect(await unrelated.json()).toEqual({ runs: [] })
+    expect((await find({ kind: 'url', url: 'file:///private' })).status).toBe(400)
 
     const event = { name: 'automation.run_finished', arguments: { runIds: [waiting] } } as const
     const feed = runtime.services.activity.remoteMcpEvents

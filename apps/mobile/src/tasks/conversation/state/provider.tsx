@@ -254,6 +254,10 @@ export function ConversationProvider({
   )
   const projectMessages = useMemo(() => createConversationMessages(), [])
   const { id, status, turns, compactions, messages: taskMessages } = task
+  const announcementSteps = useMemo(
+    () => taskToolEvents({ id, status, turns }, activity.events),
+    [id, status, turns, activity.events],
+  )
   const startingMessage = startingConversationMessage(task)
   const messages = useMemo(() => {
     return projectMessages(
@@ -341,7 +345,7 @@ export function ConversationProvider({
     actions,
     openCheckpoint: showCheckpoint,
     openTerminal: showTerminal,
-    announcementSteps: taskToolEvents(task, activity.events),
+    announcementSteps,
     legacyEvents,
     activityError: activity.error,
     collapsedTurns,

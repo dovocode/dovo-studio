@@ -407,6 +407,7 @@ async function checkComposerSend() {
   await page.evaluate(() => {
     window.setComposerPreferences({ confirmStop: false })
     window.stopFailure = 'Stop confirmation timed out'
+    window.setTask((task) => ({ ...task, activeRunId: 'run-three' }))
   })
   await stop.click()
   const stopError = page.getByText('Stop confirmation timed out', { exact: false })

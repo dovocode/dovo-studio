@@ -130,6 +130,16 @@ Deletion is blocked until active runs and their threads have stopped. It removes
 configuration, future triggers and webhook credential; existing threads and stored run history
 remain.
 
+## Find runs about an issue, pull request or thread
+
+Open **Automation runs** on an issue, pull request, or the thread's Agents panel. Choose a result to
+open the exact retained run. GitHub-triggered runs use the issue or pull request URL. Runs started
+from a reviewed action use the source thread. The list shows runs on the selected computer.
+
+For manual runs through `studio_automations`, pass a `subject` with `kind: "url"` and `url`, or
+`kind: "thread"` and `threadId`. Use `runsBySubject` to search that computer, or add the subject to
+`runs` to filter one automation.
+
 ## Run a manual automation with an MCP event
 
 An agent can preview and run a saved Manual automation using an unread

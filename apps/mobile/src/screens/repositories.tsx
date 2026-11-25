@@ -3,7 +3,8 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from '../ui/layout/content-column'
 import { EmptyState } from '../ui/content/empty-state'
 import { useNavigation } from '../shell/navigation'
-import { runtimeComputerName } from '@dovo/protocol'
+import { projectOrganizationSections, runtimeComputerName } from '@dovo/protocol'
+import { Fragment } from 'react'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -27,6 +28,7 @@ import { CreationTarget } from '../runtime/connection/creation-target'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { DeleteProjectAction } from '../scm/connections/project-deletion'
+import { CreateOrganization } from '../scm/connections/create-organization'
 export default function RepositoriesScreen() {
   const uiText = useInterfaceText()
 
@@ -35,6 +37,7 @@ export default function RepositoriesScreen() {
   const { overviews } = useRuntime()
   const { navigate } = useNavigation()
   const [adding, setAdding] = useApplicationState(false)
+  const [organizationRuntime, setOrganizationRuntime] = useApplicationState<string | null>(null)
   return (
     <View style={styles.screen}>
       <ScreenHeader
@@ -82,6 +85,19 @@ export default function RepositoriesScreen() {
               {runtimeComputerName(entry)}
               {entry.connected ? '' : uiText(' · Offline')}
             </Text>
+            {entry.snapshot?.organizationSettingsSupported && (
+              <>
+                <Action
+                  secondary
+                  label={uiText('New organization')}
+                  disabled={!entry.connected}
+                  onPress={() => setOrganizationRuntime(entry.profile.id)}
+                />
+                {organizationRuntime === entry.profile.id && (
+                  <CreateOrganization onClose={() => setOrganizationRuntime(null)} />
+                )}
+              </>
+            )}
             {!entry.snapshot?.workspace.repositories.length && (
               <EmptyState
                 icon="projects"
@@ -110,12 +126,25 @@ export default function RepositoriesScreen() {
                 }
               />
             )}
-            {entry.snapshot?.workspace.repositories.map((repository) => (
-              <View key={repository.id} style={{ gap: 8 }}>
-                <RepositoryCheckouts repository={repository} />
-                {repository.kind !== 'scratch' && <DeleteProjectAction repository={repository} />}
-              </View>
-            ))}
+            {projectOrganizationSections(entry.snapshot?.workspace.repositories ?? []).map(
+              ({ name, projects }) => (
+                <Fragment key={name ?? ''}>
+                  {name && (
+                    <Text accessibilityRole="header" style={styles.text}>
+                      {name}
+                    </Text>
+                  )}
+                  {projects.map((repository) => (
+                    <View key={repository.id} style={{ gap: 8 }}>
+                      <RepositoryCheckouts repository={repository} />
+                      {repository.kind !== 'scratch' && (
+                        <DeleteProjectAction repository={repository} />
+                      )}
+                    </View>
+                  ))}
+                </Fragment>
+              ),
+            )}
           </RuntimeScope>
         ))}
       </ScrollView>

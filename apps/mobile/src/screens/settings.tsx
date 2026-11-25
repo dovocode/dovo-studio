@@ -241,7 +241,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           tint: '#5ac8bd',
           path: '/settings/resources',
           group: 'Agent setup',
-          keywords: 'resources integrations servers registry tools',
+          keywords:
+            'resources integrations servers registry tools organizations organisations groups',
         },
         {
           title: uiText('Memory'),

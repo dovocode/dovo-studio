@@ -34,6 +34,7 @@ export function RunProgress({
   anotherActive?: boolean
 }) {
   const uiText = useInterfaceText()
+  const subject = run.subject
 
   const { colors, styles } = useTheme()
 
@@ -140,6 +141,15 @@ export function RunProgress({
       )}
       {expanded && snapshot?.runAuditSupported && (
         <RunAudit key={`${profile?.id}:${run.id}`} runId={run.id} />
+      )}
+      {expanded && subject && (
+        <Action
+          label={uiText(subject.kind === 'thread' ? 'Open subject thread' : 'Open subject link')}
+          onPress={() => {
+            if (subject.kind === 'thread') navigate('tasks', subject.threadId, profile?.id)
+            else act(() => openAppLink(subject.url, true))
+          }}
+        />
       )}
       <Pressable
         accessibilityRole="button"

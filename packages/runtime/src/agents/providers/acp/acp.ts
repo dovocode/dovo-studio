@@ -33,6 +33,7 @@ import {
   type SubagentUpdate,
   type McpServer,
   type SessionConfigOption,
+  type ToolCallUpdate,
 } from '@agentclientprotocol/sdk/unstable'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { executableAvailable } from '../../../process.js'
@@ -218,6 +219,8 @@ export function createAcpAdapter(): AgentAdapter {
           (id) => (id === sessionId && (nativeState?.prompting ?? prompting)) || ownsChild(id),
         ))
       let prompting = false
+      const permissionTools = new Map<string, ToolCallUpdate>()
+      const toolKey = (session: string, tool: string) => JSON.stringify([session, tool])
       const handlers: AcpClient = {
         ...tools.client,
         createElicitation: async (params) => {
@@ -264,22 +267,27 @@ export function createAcpAdapter(): AgentAdapter {
             return { outcome: { outcome: 'cancelled' } }
           if (prompting) run.onPromptAccepted?.()
           run.onEvent?.('permission', params)
-          const disposition = acpPermissionDisposition(
+          const toolCall = {
+            ...permissionTools.get(toolKey(params.sessionId, params.toolCall.toolCallId)),
+            ...params.toolCall,
+          }
+          const disposition = await acpPermissionDisposition(
             owner,
-            ['read', 'search', 'think'].includes(params.toolCall.kind ?? '')
+            ['read', 'search', 'think'].includes(toolCall.kind ?? '')
               ? 'read'
-              : params.toolCall.kind === 'edit'
+              : toolCall.kind === 'edit'
                 ? 'edit'
                 : 'other',
             permissionProvider,
+            toolCall,
           )
           const allow =
             disposition === 'allow' ||
             (disposition === 'ask' &&
               (await owner.approve(
-                params.toolCall.title ?? 'ACP tool request',
-                JSON.stringify(params.toolCall, null, 2),
-                params.toolCall.kind === 'fetch' ? 'web' : undefined,
+                toolCall.title ?? 'ACP tool request',
+                JSON.stringify(toolCall, null, 2),
+                toolCall.kind === 'fetch' ? 'web' : undefined,
               )) !== 'deny')
           if (cancelling || run.signal.aborted) return { outcome: { outcome: 'cancelled' } }
           const option = params.options.find(
@@ -297,6 +305,16 @@ export function createAcpAdapter(): AgentAdapter {
           }
         },
         sessionUpdate: (params) => {
+          const { update } = params
+          if (
+            (params.sessionId === sessionId || ownsChild(params.sessionId)) &&
+            (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update')
+          ) {
+            const key = toolKey(params.sessionId, update.toolCallId)
+            if (update.status === 'completed' || update.status === 'failed')
+              permissionTools.delete(key)
+            else permissionTools.set(key, { ...permissionTools.get(key), ...update })
+          }
           // Cold load can replay child identities before session setup returns. Only
           // child announcements from the requested parent may establish ownership.
           const parentId = sessionId ?? (loading ? run.sessionId : undefined)
@@ -347,7 +365,6 @@ export function createAcpAdapter(): AgentAdapter {
             run.onPromptAccepted?.()
           if (params.update.sessionUpdate === 'tool_call') run.onTextBoundary?.()
           run.onEvent?.(params.update.sessionUpdate, params)
-          const update = params.update
           if (checkOutcome && failPrompt) {
             if (update.sessionUpdate === 'usage_update') sawUsage = true
             if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text')

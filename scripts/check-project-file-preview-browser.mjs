@@ -329,6 +329,38 @@ try {
     beforeReopen,
     'Reopening a loaded subtree avoids network reads',
   )
+  await page.evaluate(async () => {
+    const tree = document.querySelector('nav[aria-label="Project folders"]')
+    const docs = tree.querySelector('summary[aria-label="Folder docs"]')
+    tree.style.maxHeight = '64px'
+    tree.style.overflow = 'auto'
+    tree.scrollTop = 0
+    await new Promise((resolve) => {
+      const observer = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) return
+        observer.disconnect()
+        resolve()
+      })
+      observer.observe(docs)
+    })
+  })
+  await page.evaluate(() => {
+    window.folderCalls = []
+  })
+  await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+  await page.waitForFunction(() => window.folderCalls.some(({ directory }) => directory === 'src'))
+  assert.equal(
+    await page.evaluate(() => window.folderCalls.some(({ directory }) => directory === 'docs')),
+    false,
+  )
+  await folder('docs').evaluate((element) => element.scrollIntoView())
+  await page.waitForFunction(() => window.folderCalls.some(({ directory }) => directory === 'docs'))
+  await page.evaluate(() => {
+    const tree = document.querySelector('nav[aria-label="Project folders"]')
+    tree.style.maxHeight = ''
+    tree.style.overflow = ''
+  })
+  const beforeOffline = await page.evaluate(() => window.folderCalls.length)
   await page.evaluate(() => {
     window.runtime.connected = false
     document.dispatchEvent(new Event('visibilitychange'))
@@ -340,7 +372,7 @@ try {
     true,
     'Loaded folders remain browsable offline',
   )
-  assert.equal(await page.evaluate(() => window.folderCalls.length), beforeReopen)
+  assert.equal(await page.evaluate(() => window.folderCalls.length), beforeOffline)
   await page.evaluate(() => {
     window.runtime.connected = true
     document.dispatchEvent(new Event('visibilitychange'))

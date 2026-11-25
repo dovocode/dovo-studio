@@ -5,6 +5,7 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
+import { AutomationSubjectRuns } from '../../jobs/automation-subject-runs'
 
 export function TaskWorkflows({
   task,
@@ -19,9 +20,10 @@ export function TaskWorkflows({
   const { colors, styles } = useTheme()
   const { navigate } = useNavigation()
   const workflows = taskWorkflows(task, snapshot?.workspace.tasks ?? [])
-  if (!workflows.length) return null
+  if (!workflows.length && !snapshot?.automationRunSubjectSupported) return null
   return (
     <View accessibilityLabel={uiText('Workflows')} style={{ gap: 12, marginBottom: 16 }}>
+      <AutomationSubjectRuns subject={{ kind: 'thread', threadId: task.id }} />
       {workflows.map((workflow) => (
         <View
           key={workflow.id}

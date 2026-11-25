@@ -2,6 +2,7 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@dovo/studio-ui/tabs'
 import { PullReadinessPanel } from './readiness'
 import { PullLinkedThreads } from './linked-threads'
+import { AutomationSubjectRuns } from '@dovo/studio-ui'
 import { AuthorAvatar } from '../author-avatar'
 import {
   buildPullReviewObjective,
@@ -694,6 +695,9 @@ function PullDetailContent({
               />
             </PullReadinessPanel>
             {tab === 'overview' && <PullLinkedThreads pull={detail.pull} />}
+            {tab === 'overview' && (
+              <AutomationSubjectRuns subject={{ kind: 'url', url: detail.pull.url }} />
+            )}
             {error && (
               <p
                 role="alert"

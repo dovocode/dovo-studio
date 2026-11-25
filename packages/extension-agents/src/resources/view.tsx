@@ -1,6 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PluginActivations } from './plugin-activations'
-import { Disclosure } from '@dovo/studio-ui'
+import { CreateOrganizationDialog, Disclosure } from '@dovo/studio-ui'
 import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
   resolveScopedSettings,
@@ -69,7 +69,9 @@ function ComputerResources({
   selectedScope: SettingsScope
   repositoryId?: string
 }) {
-  const { workspace, snapshot } = useWorkspace()
+  const { workspace, snapshot, connected, activeRuntimeId } = useWorkspace()
+  const uiText = useInterfaceText()
+  const [creating, setCreating] = useApplicationState<string | null>(null)
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const organization = projectOrganizationId(repository)
   const choices = resourceScopeChoices(
@@ -87,6 +89,26 @@ function ComputerResources({
   )
   return (
     <div className="space-y-3">
+      {activeRuntimeId && snapshot?.organizationSettingsSupported && (
+        <Button
+          size="sm"
+          variant="outline"
+          data-setting-label="New organization"
+          disabled={!connected}
+          onClick={() => setCreating(activeRuntimeId)}
+        >
+          <Plus className="size-3.5" />
+          {uiText('New organization')}
+        </Button>
+      )}
+      {creating && creating === activeRuntimeId && (
+        <CreateOrganizationDialog
+          repositoryId={
+            repository && !organization && repository.kind !== 'scratch' ? repository.id : undefined
+          }
+          onClose={() => setCreating(null)}
+        />
+      )}
       {repository && repository.kind !== 'scratch' && snapshot?.organizationSettingsSupported && (
         <OrganizationNameEditor
           key={repository.id}

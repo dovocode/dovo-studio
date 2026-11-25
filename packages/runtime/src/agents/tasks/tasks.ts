@@ -141,6 +141,7 @@ type Running = {
   preserveNativeSession?: boolean
   shutdownUnconfirmed?: OwnedProcessShutdownError
   controller: AbortController
+  followUpsAfterStop?: Set<string>
   fiber?: Fiber.Fiber<void, RuntimeFailure>
   cwd?: string
   directories?: string[]
@@ -1725,6 +1726,18 @@ export class Tasks {
                 plan,
               },
             )
+            const running = this.running.get(id)
+            if (
+              added &&
+              resumePaused &&
+              !preserveQueuePause &&
+              !queueOnly &&
+              running?.controller.signal.aborted &&
+              errorMessage(running.controller.signal.reason) === userCancellationMessage
+            ) {
+              running.followUpsAfterStop ??= new Set()
+              running.followUpsAfterStop.add(messageId)
+            }
             if (added && parent) {
               const input = this.store
                 .taskSummary(id)
@@ -1909,6 +1922,8 @@ export class Tasks {
       if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
       if (expectedRunId !== undefined && run.id !== expectedRunId)
         throw new HttpError(409, 'This run ended. Send your instruction as a follow-up instead.')
+      if (run.controller.signal.aborted)
+        throw new HttpError(409, 'The turn is stopping. Queue this message instead.')
       // Steered input would join the read-only plan turn instead of the access the user expects.
       if (planModeRequested(this.store.task(id).messages))
         throw new HttpError(409, 'The agent is planning read-only. Queue this message instead.')
@@ -2761,10 +2776,18 @@ export class Tasks {
                     ),
                   )
                 this.deliverCompletions(true, id)
-                const next = this.store.taskSummary(id)
+                let next = this.store.taskSummary(id)
+                const followUpAfterStop =
+                  next.status === 'cancelled' &&
+                  !next.error &&
+                  next.queue?.some((message) => run.followUpsAfterStop?.has(message.id))
+                if (!this.stopping && followUpAfterStop && !this.running.has(id)) {
+                  this.store.updateTask(id, (task) => ({ ...task, queuePaused: false }))
+                  next = this.store.taskSummary(id)
+                }
                 if (
                   !this.stopping &&
-                  !run.controller.signal.aborted &&
+                  (!run.controller.signal.aborted || followUpAfterStop) &&
                   !next.queuePaused &&
                   !botPaused(next) &&
                   hasAgentInput(next)

@@ -119,7 +119,10 @@ try {
   assert.equal(await options.filter({ hasText: /^New thread$/ }).count(), 1)
   assert.equal(await options.filter({ hasText: /^Open workspace$/ }).count(), 1)
   await input.press('End')
-  assert.equal(await input.getAttribute('aria-activedescendant'), 'command-option-4')
+  assert.equal(
+    await input.getAttribute('aria-activedescendant'),
+    await options.filter({ hasText: /^Search conversations…$/ }).getAttribute('id'),
+  )
   await input.press('Home')
   await input.press('ArrowDown')
   assert.equal(

@@ -30,6 +30,7 @@ import { IdleProviders, releaseIdleProvider } from '../../execution/warm-process
 import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { readClaudeThread } from './claude-thread.js'
+import { claudeForkedSkillResult } from './claude-forked-skill.js'
 import { ClaudeBackgroundTasks } from './claude-background-tasks.js'
 import { isContextRejection } from '../../execution/handover.js'
 import { nativeWait } from '../shared/native.js'
@@ -729,7 +730,7 @@ export function createClaudeAdapter(): AgentAdapter {
       active.add(session)
       session.consumer = (async () => {
         try {
-          for await (const message of stream) {
+          for await (let message of stream) {
             if (message.type === 'system' && message.subtype === 'init') {
               capabilities.unanswered =
                 message.capabilities?.includes('ask_user_question_unanswered_v1') ?? false
@@ -745,6 +746,28 @@ export function createClaudeAdapter(): AgentAdapter {
               session.sessionId = message.session_id
               turn?.run.onSession(message.session_id)
               if (turn) publish(session, turn.run)
+            }
+            const completedTaskId =
+              message.type === 'system' &&
+              message.subtype === 'task_notification' &&
+              message.status === 'completed'
+                ? message.task_id
+                : undefined
+            if (
+              completedTaskId &&
+              session.sessionId &&
+              session.nativeAgents.some(
+                (agent) => agent.id === completedTaskId && agent.forkedSkill,
+              )
+            ) {
+              const result = await claudeForkedSkillResult(
+                session.owner,
+                session.sessionId,
+                completedTaskId,
+                session.controller.signal,
+              )
+              if (result && message.type === 'system' && message.subtype === 'task_notification')
+                message = { ...message, summary: result }
             }
             session.nativeAgents = updateSubagents(
               session.nativeAgents,

@@ -115,6 +115,14 @@ export interface AgentRun {
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {
+  /** Cursor sessions keep a request only after its run saves its own checkpoint. */
+  cursorRunCheckpointed?: (
+    agent: Agent,
+    cwd: string,
+    sessionId: string,
+    runId: string,
+    signal: AbortSignal,
+  ) => Promise<boolean>
   /** Confirm work from a persisted, externally hosted session without starting an agent turn. */
   recoveredSessionIdle?: (
     agent: Agent,

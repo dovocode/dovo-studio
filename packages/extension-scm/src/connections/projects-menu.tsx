@@ -6,8 +6,13 @@ import {
   projectOrganization,
   projectOrganizationSections,
 } from '@dovo/protocol'
-import { ProjectOrganizationSettings, TaskDefaultSettings } from '@dovo/studio-ui'
+import {
+  CreateOrganizationDialog,
+  ProjectOrganizationSettings,
+  TaskDefaultSettings,
+} from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'
 import {
   FolderGit2,
@@ -56,6 +61,7 @@ export function ProjectsMenu({
   compact?: boolean
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
   const preferences = useAppPreferences()
   const { workspace, activeRuntimeId, runtimes, connected, switchRuntime, snapshot } =
     useWorkspace()
@@ -67,6 +73,7 @@ export function ProjectsMenu({
     id: string
   } | null>(null)
   const [menuOpen, setMenuOpen] = useApplicationState(false)
+  const [organizationRuntime, setOrganizationRuntime] = useApplicationState<string | null>(null)
   const [query, setQuery] = useApplicationState('')
   const [showArchived, setShowArchived] = useApplicationState(false)
   const [busy, setBusy] = useApplicationState(false)
@@ -75,6 +82,9 @@ export function ProjectsMenu({
     if (adding && adding.runtimeId !== activeRuntimeId) setAdding(null)
     if (managing && managing.runtimeId !== activeRuntimeId) setManaging(null)
   }, [activeRuntimeId, adding, managing])
+  useEffect(() => {
+    if (organizationRuntime && organizationRuntime !== activeRuntimeId) setOrganizationRuntime(null)
+  }, [activeRuntimeId, organizationRuntime])
   const activeComputer = runtimes.find((entry) => entry.profile.id === activeRuntimeId)
   const sources = [
     {
@@ -444,10 +454,27 @@ export function ProjectsMenu({
                   </DropdownMenu.Portal>
                 </DropdownMenu.Root>
               )}
+              {activeRuntimeId && snapshot?.organizationSettingsSupported && (
+                <Button
+                  variant="ghost"
+                  className="h-9 w-full justify-start gap-2 px-2 text-xs font-normal"
+                  disabled={busy || !connected}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setOrganizationRuntime(activeRuntimeId)
+                  }}
+                >
+                  <Plus className="size-3.5" />
+                  {uiText('New organization')}
+                </Button>
+              )}
             </div>
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      {organizationRuntime && organizationRuntime === activeRuntimeId && (
+        <CreateOrganizationDialog onClose={() => setOrganizationRuntime(null)} />
+      )}
       {error && (
         <p role="alert" className="px-2 py-1 text-xs text-destructive">
           {error}

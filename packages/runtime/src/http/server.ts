@@ -527,6 +527,7 @@ export function createRuntimeServer(
               else client.send(data)
             })
         const viewer = terminalViewers.join(ticket.resourceId)
+        let paste: { chunks: string[]; length: number } | undefined
         const leave = () => {
           try {
             viewer.leave()
@@ -565,10 +566,27 @@ export function createRuntimeServer(
               if (!stream) throw new Error('Unexpected terminal acknowledgement')
               stream.ack(input.bytes)
             } else if (input.type === 'input') {
-              recordInput(ticket.resourceId, input.data.length)
+              let data = input.data
+              if (input.paste) {
+                if (input.paste === 'start') paste = { chunks: [], length: 0 }
+                if (!paste) throw new Error('Terminal paste did not start')
+                paste.length += data.length
+                if (paste.length > 4 * 1024 * 1024) {
+                  paste = undefined
+                  stream?.stop()
+                  client.close(1009, 'Terminal paste is too large. Paste it in smaller sections.')
+                  return
+                }
+                paste.chunks.push(data)
+                if (input.paste !== 'end') return
+                data = paste.chunks.join('')
+              }
+              // An unfinished paste never writes partial escape sequences to the terminal.
+              paste = undefined
+              recordInput(ticket.resourceId, data.length)
               viewer.input()
               try {
-                services.terminals.input(ticket.resourceId, input.data)
+                services.terminals.input(ticket.resourceId, data)
               } catch (error) {
                 // A holder outage refuses input and notes it on the terminal. Keep the viewer.
                 if (!(error instanceof HttpError && error.status === 503)) throw error

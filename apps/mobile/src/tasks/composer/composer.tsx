@@ -607,7 +607,7 @@ export function Composer({
             title: uiText('Steer agent'),
             label: uiText('Steer agent'),
             icon: 'steer',
-            disabled: !canSend || busy || !!turnSettings || plan,
+            disabled: !canSend || busy || stopping || !!turnSettings || plan,
             onPress: () => send('steer'),
           },
           {

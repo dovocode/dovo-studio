@@ -198,7 +198,10 @@ export function ProjectSpreadsheet({
           )}
           <ScrollView horizontal style={{ flexGrow: 0 }}>
             <View>
-              <View style={{ flexDirection: 'row' }}>
+              <View
+                accessibilityLabel={uiText('Spreadsheet column headings')}
+                style={{ flexDirection: 'row' }}
+              >
                 <Text style={[cellStyle, { width: 44, backgroundColor: colors.surface }]}>#</Text>
                 {preview.rows[0]?.map((_, index) => (
                   <Text

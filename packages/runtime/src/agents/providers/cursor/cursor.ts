@@ -55,6 +55,20 @@ export function openCursorWorker(agent: AgentDiscovery, cwd: string, entry?: URL
 
 export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter {
   return {
+    async cursorRunCheckpointed(agent, cwd, sessionId, runId, signal) {
+      const worker = openWorker(agent, cwd)
+      try {
+        return (
+          (await nativeWait(
+            worker.rpc.sendRequest<unknown>('checkpoint', { cwd, sessionId, runId }),
+            AbortSignal.any([signal, worker.signal]),
+            30000,
+          )) === true
+        )
+      } finally {
+        await worker.close()
+      }
+    },
     async models(agent) {
       const worker = openWorker(agent, homedir())
       try {
@@ -141,6 +155,7 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
             if (event.type === 'text') run.onText(event.text)
             else if (event.type === 'boundary') run.onTextBoundary?.()
             else if (event.type === 'session') run.onSession(event.id)
+            else if (event.type === 'run') run.onEvent?.('cursor/run', event)
             else if (event.type === 'event') {
               if (event.name === 'cursor/tool_call') run.onActivity('Cursor tool activity')
               run.onEvent?.(event.name, event.payload)

@@ -130,6 +130,28 @@ it('lets the typing viewer control the grid of a terminal watched by several soc
     await resize(reconnected, 70, 25)
     await waitForRuntime(() => expect(grid()).toBe('70x25'))
     expect(await type(reconnected, 'r')).toBe('70x25')
+
+    // Hold a split paste until it is complete, even if a different viewer types.
+    const observer = await connect(false)
+    const input = vi.spyOn(s.terminals, 'input')
+    await send(reconnected, { type: 'input', data: '\x1b[200~first', paste: 'start' })
+    await settle(reconnected)
+    expect(input).not.toHaveBeenCalled()
+    await send(observer, { type: 'input', data: 'k' })
+    await settle(observer)
+    await send(reconnected, { type: 'input', data: 'last\x1b[201~', paste: 'end' })
+    await settle(reconnected)
+    expect(input.mock.calls).toEqual([
+      [terminal.id, 'k'],
+      [terminal.id, '\x1b[200~firstlast\x1b[201~'],
+    ])
+    await send(reconnected, { type: 'input', data: '\x1b[200~abandoned', paste: 'start' })
+    await settle(reconnected)
+    reconnected.terminate()
+    await send(observer, { type: 'input', data: 'z' })
+    await settle(observer)
+    expect(input.mock.calls.at(-1)).toEqual([terminal.id, 'z'])
+    expect(input).toHaveBeenCalledTimes(3)
   } finally {
     for (const socket of sockets) socket.terminate()
     await runtime.close()

@@ -19,6 +19,8 @@ const mocks = {
   '../runtime/connection/provider':
     'export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=>children;',
   '../scm/connections/project-deletion': 'export const DeleteProjectAction=()=>null;',
+  '../scm/connections/create-organization':
+    'export const CreateOrganization=({onClose})=><div role="dialog" aria-label="New organization"><button onClick={onClose}>Close</button></div>;',
   '../shell/navigation': 'export const useNavigation=()=>({navigate:view=>window.navigated=view});',
   '../ui/content/empty-state':
     'export const EmptyState=({title,description,action})=><div><h2>{title}</h2>{description}{action}</div>;',
@@ -169,6 +171,38 @@ try {
   await page.getByRole('heading', { name: 'No projects yet', exact: true }).waitFor()
   for (const button of await page.getByRole('button', { name: 'Add project', exact: true }).all())
     assert.equal(await button.isEnabled(), true)
+  const newOrganization = page.getByRole('button', { name: 'New organization', exact: true })
+  assert.equal(await newOrganization.count(), 0)
+  await page.evaluate(() =>
+    window.showProjects([
+      {
+        profile: {
+          id: 'mac',
+          name: 'Mac Studio',
+          nameIsCustom: true,
+          connection: { address: 'http://mac', token: 'paired' },
+        },
+        connected: true,
+        snapshot: { organizationSettingsSupported: true, workspace: { repositories: [] } },
+      },
+      {
+        profile: {
+          id: 'linux',
+          name: 'Linux',
+          nameIsCustom: true,
+          connection: { address: 'http://linux', token: 'paired' },
+        },
+        connected: false,
+        snapshot: { organizationSettingsSupported: true, workspace: { repositories: [] } },
+      },
+    ]),
+  )
+  await newOrganization.first().click()
+  const organizationDialog = page.getByRole('dialog', { name: 'New organization' })
+  await organizationDialog.waitFor()
+  await organizationDialog.getByRole('button', { name: 'Close' }).click()
+  await organizationDialog.waitFor({ state: 'detached' })
+  assert.equal(await newOrganization.last().isDisabled(), true)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile Dovo Projects need only a name; local/GitHub selection preserves custom names and submits the visible value.',

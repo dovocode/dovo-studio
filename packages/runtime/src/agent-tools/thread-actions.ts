@@ -989,6 +989,8 @@ function sendAutomationAction(s: Services, value: unknown) {
           automationSent: { runId, sentAt: now },
         })
       },
+      undefined,
+      { kind: 'thread', threadId: input.sourceTaskId },
     )
   } catch (error) {
     // A committed receipt wins even if acknowledgement or launch failed afterwards.

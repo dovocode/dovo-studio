@@ -955,7 +955,9 @@ web rule. Commands, file changes, read-only restrictions and policy review retai
   advertised Read only modes; unsupported selections are disabled and rejected before running.
 
 Auto-accept edits allows workspace changes while retaining approvals for actions outside the
-provider's automatic edit scope. Cursor offers its native Auto-review instead of interactive
+provider's automatic edit scope. For ACP permission requests, each reported edit path must resolve
+inside the thread workspace or an editable linked checkout. ACP asks for approval when a path is
+outside those folders or missing. Cursor offers its native Auto-review instead of interactive
 approvals, and clearly labels the SDK’s automatic-execution fallback. For other providers, Auto is
 harness review, not an unattended/bypass alias. Full access opts into the provider's broadest mode;
 host and organization policies still apply. See the
@@ -1412,6 +1414,13 @@ continuation** to remove it, or **Retry** to try immediately. A newer run or que
 the scheduled retry. Older runtimes continue to offer **Retry**.
 
 ## Project organization and managed runtimes
+
+Open **Projects → New organization** or **Settings → MCP, skills & hooks → New organization**. Enter
+a name, choose an ungrouped project or folder on the connected computer, and select **Create and
+link organization**. Open the organization scope in **MCP, skills & hooks** to add skills, MCP
+servers, and AGENTS.md instructions. To move or unlink a project later, edit **Project
+organization** in its settings. Matching Git clones inherit the link on paired computers. Link
+ordinary folders on each computer.
 
 Project settings now include **Pin project** and **Archive project**. Pinned projects sort first.
 Archived projects stay available in settings for restoration and retain their threads and files, but

@@ -385,6 +385,7 @@ export function runtimeSnapshot(
       freezeProfilesSupported: true,
       runAuditSupported: true,
       automationRunLookupSupported: true,
+      automationRunSubjectSupported: true,
       automationExplainSupported: true,
       routineSuggestionsSupported: true,
       automationDryRunScenariosSupported: true,

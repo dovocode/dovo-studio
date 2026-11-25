@@ -15,6 +15,7 @@ import { defaultTaskHarness, type Agent, type Task } from '@dovo/protocol'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child'
+import { runClientEffect } from '@dovo/client-runtime'
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -717,6 +718,50 @@ it('queues follow-ups during a turn, deduplicates retries and drains in the chos
   ])
   expect(s.store.task(task.id).messages.filter((m) => m.id === 'second')).toHaveLength(1)
 })
+it('queues a new follow-up during Stop and starts it after the stopped provider exits', async () => {
+  const s = await setup()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    input.onSession('stop-session')
+    if (run.mock.calls.length === 1) {
+      input.onText('Partially completed')
+      await gate
+      input.signal.throwIfAborted()
+    } else input.onText('Follow-up complete')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Stop then send',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'First request',
+  })
+  const execution = await s.tasks.start(task.id)
+  const stopped = expect(execution.done).rejects.toThrow('Cancelled by user')
+  try {
+    await waitForTask(() => expect(run).toHaveBeenCalledOnce())
+    s.tasks.cancel(task.id)
+    const send = () =>
+      runClientEffect(
+        s.tasks.sendEffect(task.id, 'after-stop', 'Follow up after stopping', [], false, true),
+      )
+    await send()
+    await send()
+    expect(run).toHaveBeenCalledOnce()
+    expect(s.store.task(task.id).queue?.map(({ id }) => id)).toEqual(['after-stop'])
+  } finally {
+    release()
+  }
+  await stopped
+  await waitForTask(() => expect(s.store.task(task.id).status).toBe('review'))
+  expect(run).toHaveBeenCalledTimes(2)
+  expect(run.mock.calls[1]?.[0].prompt).toContain('Follow up after stopping')
+  expect(s.store.task(task.id).messages.filter(({ id }) => id === 'after-stop')).toHaveLength(1)
+})
+
 it('pauses remaining input on cancellation and retains failed input on resume', async () => {
   const s = await setup()
   vi.spyOn(s.agents, 'get').mockResolvedValue({

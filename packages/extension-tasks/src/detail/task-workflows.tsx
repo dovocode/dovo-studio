@@ -1,6 +1,7 @@
 import { taskWorkflows, workflowStateLabel, type Subagent, type TaskMetadata } from '@dovo/protocol'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { ChevronRight, Workflow } from 'lucide-react'
+import { AutomationSubjectRuns } from '@dovo/studio-ui'
 
 export function TaskWorkflows({
   task,
@@ -9,12 +10,13 @@ export function TaskWorkflows({
   task: TaskMetadata
   onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
 }) {
-  const { workspace, connected, activeRuntimeId } = useWorkspace()
+  const { workspace, connected, activeRuntimeId, snapshot } = useWorkspace()
   const host = useStudioHost()
   const workflows = taskWorkflows(task, workspace.tasks)
-  if (!workflows.length) return null
+  if (!workflows.length && !snapshot?.automationRunSubjectSupported) return null
   return (
     <div className="space-y-3 px-4 pt-4" aria-label="Workflows">
+      <AutomationSubjectRuns subject={{ kind: 'thread', threadId: task.id }} />
       {workflows.map((workflow) => (
         <section
           key={workflow.id}

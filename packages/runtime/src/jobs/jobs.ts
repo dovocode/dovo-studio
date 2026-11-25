@@ -27,6 +27,10 @@ import type Database from 'better-sqlite3'
 import { CronExpressionParser } from 'cron-parser'
 import {
   jobRunSchema,
+  automationRunSubjectKey,
+  automationRunSubjectSchema,
+  decodeResult,
+  type AutomationRunSubject,
   dryRunScenariosSchema,
   type DryRunScenariosCommand,
   type JobRun,
@@ -189,7 +193,21 @@ export class Jobs {
         db,
         new GithubEvents(git),
         () => store.get().automations,
-        (id, key, payload) => this.start(id, key, payload),
+        (id, key, payload) => {
+          const item = payload.context.item
+          const subject = decodeResult(automationRunSubjectSchema, {
+            kind: 'url',
+            url: item && typeof item === 'object' && 'url' in item ? item.url : undefined,
+          })
+          return this.start(
+            id,
+            key,
+            payload,
+            undefined,
+            undefined,
+            subject.success ? subject.data : undefined,
+          )
+        },
         (id, message) => {
           console.error(message)
           this.activity?.add('job', id, message)
@@ -380,9 +398,14 @@ export class Jobs {
       return retained
     })()
   }
-  list(automationId?: string): JobRun[] {
+  list(automationId?: string, subject?: AutomationRunSubject): JobRun[] {
+    const subjectKey = subject && automationRunSubjectKey(subject)
     return [...this.runs.values()]
-      .filter((run) => automationId === undefined || run.automationId === automationId)
+      .filter(
+        (run) =>
+          (automationId === undefined || run.automationId === automationId) &&
+          (!subjectKey || (run.subject && automationRunSubjectKey(run.subject) === subjectKey)),
+      )
       .reverse()
       .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
       .filter((run, index) => index < 100 || run.status === 'running' || run.status === 'waiting')
@@ -670,13 +693,20 @@ export class Jobs {
       this.launch(run.id)
     }
   }
-  startManual(id: string, requestId?: string) {
+  startManual(id: string, requestId?: string, subject?: AutomationRunSubject) {
     const key = requestId ? `manual:${requestId}` : undefined
     const existing =
       key &&
       [...this.runs.values()].find((run) => run.automationId === id && run.deliveryKey === key)
-    if (existing) return existing.id
-    return this.start(id, key)
+    if (existing) {
+      if (
+        (existing.subject && automationRunSubjectKey(existing.subject)) !==
+        (subject && automationRunSubjectKey(subject))
+      )
+        throw new HttpError(409, 'This run request already used a different subject.')
+      return existing.id
+    }
+    return this.start(id, key, undefined, undefined, undefined, subject)
   }
   startFromMcpEvent(
     id: string,
@@ -710,6 +740,7 @@ export class Jobs {
     triggerPayload?: unknown,
     commit?: (runId: string) => undefined,
     mcpEvent?: JobRun['mcpEvent'],
+    subject?: AutomationRunSubject,
   ) {
     if (key?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     const flow = this.store.get().automations.find((flow) => flow.id === id)
@@ -734,6 +765,7 @@ export class Jobs {
       automationId: id,
       flow: structuredClone(flow),
       triggerPayload,
+      ...(subject ? { subject } : {}),
       ...(mcpEvent ? { mcpEvent } : {}),
       deliveryKey: key,
       status: queued ? 'waiting' : 'running',

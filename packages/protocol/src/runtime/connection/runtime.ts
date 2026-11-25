@@ -18,6 +18,7 @@ import { memorySettingsSchema } from '../memory.js'
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
 import { artifactRetentionSchema } from '../../conversation/artifacts.js'
 import { repositoryOpenTargetsSchema } from '../../scm/repositories/repository-tools.js'
+import { automationRunSubjectSchema } from '../../automation/run-subject.js'
 export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
 import { mutableStruct, mutableArray, isoDateTime } from '../../shared/schema.js'
@@ -256,6 +257,7 @@ export const jobRunFailureSchema = mutableStruct({
 })
 export type JobRunFailure = typeof jobRunFailureSchema.Type
 export const jobRunSchema = mutableStruct({
+  subject: Schema.optional(automationRunSubjectSchema),
   queuedForAdmission: Schema.optional(Schema.Literal(true)),
   waitingForStepPool: Schema.optional(Schema.String),
   pause: Schema.optional(
@@ -472,6 +474,7 @@ export const snapshotSchema = mutableStruct({
   freezeProfilesSupported: Schema.optional(Schema.Literal(true)),
   runAuditSupported: Schema.optional(Schema.Literal(true)),
   automationRunLookupSupported: Schema.optional(Schema.Literal(true)),
+  automationRunSubjectSupported: Schema.optional(Schema.Literal(true)),
   automationExplainSupported: Schema.optional(Schema.Literal(true)),
   routineSuggestionsSupported: Schema.optional(Schema.Literal(true)),
   automationDryRunScenariosSupported: Schema.optional(Schema.Literal(true)),
@@ -652,6 +655,7 @@ export const terminalInputSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('input'),
     data: maxValue(Schema.String, 65536),
+    paste: Schema.optional(Schema.Literals(['start', 'continue', 'end'])),
   }),
   mutableStruct({
     type: Schema.Literal('resize'),
@@ -760,6 +764,7 @@ const rtfSpan = mutableStruct({
 export type RtfSpan = typeof rtfSpan.Type
 
 export const responses = {
+  automationSubjectRuns: mutableStruct({ runs: mutableArray(jobRunSchema) }),
   relaySettings: relaySettingsSchema,
   internetStatus: internetStatusSchema,
   internetSetup: internetSetupSchema,

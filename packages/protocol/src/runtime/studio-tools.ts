@@ -9,6 +9,7 @@ import {
   taskModelSchema,
 } from '../workspace.js'
 import { routineSourceInputSchema } from '../automation/routine-provenance.js'
+import { automationRunSubjectSchema } from '../automation/run-subject.js'
 import {
   automationDryRunInputSchema,
   automationDryRunStopAtSchema,
@@ -164,7 +165,6 @@ export const studioAutomationsCommandSchema = Schema.Union([
       'read',
       'definition',
       'readRun',
-      'runs',
       'cancel',
       'pause',
       'resume',
@@ -194,7 +194,18 @@ export const studioAutomationsCommandSchema = Schema.Union([
     enabled: Schema.Boolean,
     source: Schema.optional(routineSourceInputSchema),
   }),
-  mutableStruct({ action: Schema.Literal('run'), id, requestId: id }),
+  mutableStruct({
+    action: Schema.Literal('run'),
+    id,
+    requestId: id,
+    subject: Schema.optional(automationRunSubjectSchema),
+  }),
+  mutableStruct({
+    action: Schema.Literal('runs'),
+    id,
+    subject: Schema.optional(automationRunSubjectSchema),
+  }),
+  mutableStruct({ action: Schema.Literal('runsBySubject'), subject: automationRunSubjectSchema }),
   mutableStruct({
     action: Schema.Literals(['previewFromEvent', 'runFromEvent']),
     id,

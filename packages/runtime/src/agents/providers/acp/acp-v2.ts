@@ -130,9 +130,16 @@ export function createAcpV2Adapter() {
                 return { outcome: { outcome: 'cancelled' } }
               const subject = params.subject
               let operation: 'read' | 'edit' | 'execute' | 'other' = 'other'
+              const toolCall =
+                subject && RequestPermissionSubject.isToolCall(subject)
+                  ? {
+                      ...state.updates?.tools.get(subject.toolCall.toolCallId),
+                      ...subject.toolCall,
+                    }
+                  : undefined
               if (subject && RequestPermissionSubject.isToolCall(subject)) {
                 if (phase === 'prompt') state.updates?.tool(subject.toolCall, params.sessionId)
-                const kind = subject.toolCall.kind
+                const kind = toolCall?.kind
                 operation = ['read', 'search', 'think'].includes(kind ?? '')
                   ? 'read'
                   : kind === 'edit'
@@ -140,13 +147,18 @@ export function createAcpV2Adapter() {
                     : 'other'
               } else if (subject && RequestPermissionSubject.isCommand(subject))
                 operation = 'execute'
-              const disposition = acpPermissionDisposition(owner, operation, permissionProvider)
+              const disposition = await acpPermissionDisposition(
+                owner,
+                operation,
+                permissionProvider,
+                toolCall,
+              )
               const allow =
                 disposition === 'allow' ||
                 (disposition === 'ask' &&
                   (await owner.approve(
                     params.title,
-                    [params.description, JSON.stringify(subject, null, 2)]
+                    [params.description, JSON.stringify(toolCall ?? subject, null, 2)]
                       .filter(Boolean)
                       .join('\n'),
                     operation === 'execute' ? 'command' : undefined,

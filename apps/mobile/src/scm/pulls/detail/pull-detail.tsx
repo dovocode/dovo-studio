@@ -4,6 +4,7 @@ import { PullReadinessPanel } from './readiness'
 import { MobilePullCodeReview } from './code-review'
 import { PullAgentChat } from './agent-chat'
 import { PullLinkedThreads } from './linked-threads'
+import { AutomationSubjectRuns } from '../../../jobs/automation-subject-runs'
 import { PullSectionStatus } from './section-status'
 import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
 import {
@@ -601,6 +602,9 @@ export function PullDetail({
                     setChangesOpened(true)
                   }}
                 />
+                {tab === 'overview' && (
+                  <AutomationSubjectRuns subject={{ kind: 'url', url: detail.pull.url }} />
+                )}
                 {snapshot?.codeReviewsEnabled && (
                   <MobilePullCodeReview
                     key={JSON.stringify([

@@ -136,6 +136,7 @@ export function RunDetails({
       </div>
     )
   const steps = runSteps(run, flow)
+  const subject = run.subject
   const inputStep = steps.find(
     (step) => step.status === 'running' && pendingTaskInput(snapshot, step.taskId),
   )
@@ -196,6 +197,35 @@ export function RunDetails({
         <RunAudit key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
       )}
       <div className="space-y-3 border-b p-4">
+        {subject?.kind === 'url' && (
+          <a
+            className="block truncate text-xs text-primary underline"
+            href={subject.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {subject.url}
+          </a>
+        )}
+        {subject?.kind === 'thread' && (
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
+            onClick={() =>
+              host.openThread?.({
+                runtimeId: activeRuntimeId,
+                threadId: subject.threadId,
+                title:
+                  workspace.tasks.find(({ id }) => id === subject.threadId)?.title ??
+                  'Subject thread',
+              })
+            }
+            disabled={!host.openThread}
+          >
+            Open subject thread
+          </Button>
+        )}
         {run.mcpEvent && (
           <p className="text-xs text-muted-foreground">
             MCP event · {run.mcpEvent.name} · {run.mcpEvent.server}

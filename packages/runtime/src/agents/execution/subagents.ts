@@ -6,6 +6,7 @@ import { mutableArray, nativeAgentWorking } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Subagent } from '@dovo/protocol'
+import { isClaudeForkedSkill } from '../providers/claude/claude-forked-skill.js'
 const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
@@ -264,7 +265,9 @@ export function updateSubagents(
           event.task_type === 'local_bash'
             ? `Background: ${text(event.description) ?? id}`
             : (text(event.description) ?? text(event.subagent_type) ?? id),
-        threadId: text(event.agent_id) ?? previous?.threadId,
+        ...(isClaudeForkedSkill(event)
+          ? { threadId: id, forkedSkill: true }
+          : { threadId: text(event.agent_id) ?? previous?.threadId }),
         status: 'working',
         background:
           typeof event.is_backgrounded === 'boolean' ? event.is_backgrounded : previous?.background,
@@ -289,10 +292,11 @@ export function updateSubagents(
         ...(event.subtype === 'task_notification'
           ? {
               result: text(event.summary)?.slice(-64000),
-              threadId:
-                text(event.output_file)?.match(
-                  /(?:^|[/\\])(?:agent-)?([^/\\]+)\.(?:output|jsonl)$/,
-                )?.[1] ?? previous.threadId,
+              threadId: previous.forkedSkill
+                ? previous.threadId
+                : (text(event.output_file)?.match(
+                    /(?:^|[/\\])(?:agent-)?([^/\\]+)\.(?:output|jsonl)$/,
+                  )?.[1] ?? previous.threadId),
             }
           : {}),
       })

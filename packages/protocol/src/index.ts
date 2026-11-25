@@ -441,6 +441,7 @@ export * from './automation/run-audit.js'
 export * from './automation/dry-run.js'
 export * from './automation/pipeline-wait.js'
 export * from './automation/routine-provenance.js'
+export * from './automation/run-subject.js'
 export * from './automation/routine-suggestion.js'
 export * from './automation/dry-run-scenarios.js'
 

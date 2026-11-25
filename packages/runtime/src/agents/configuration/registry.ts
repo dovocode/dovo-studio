@@ -136,7 +136,24 @@ export class AgentRegistry {
       const models = adapter.models
       const readNativeThread = adapter.readNativeThread
       const recoveredSessionIdle = adapter.recoveredSessionIdle
+      const cursorRunCheckpointed = adapter.cursorRunCheckpointed
       return {
+        ...(cursorRunCheckpointed
+          ? {
+              cursorRunCheckpointed: (
+                agent: Agent,
+                cwd: string,
+                sessionId: string,
+                runId: string,
+                signal: AbortSignal,
+              ) =>
+                this.secretReferences
+                  .resolve(this.configure(agent), signal)
+                  .then((resolved) =>
+                    cursorRunCheckpointed(resolved, cwd, sessionId, runId, signal),
+                  ),
+            }
+          : {}),
         ...(recoveredSessionIdle
           ? {
               recoveredSessionIdle: (

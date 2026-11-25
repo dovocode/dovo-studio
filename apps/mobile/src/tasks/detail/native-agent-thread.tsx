@@ -1,12 +1,7 @@
+import { useNativeThreadHistory } from '@dovo/studio-core'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useEffect, useState } from 'react'
 import { Image, ScrollView, View } from 'react-native'
-import {
-  nativeThreadPageSchema,
-  subagentMetadata,
-  type NativeThreadPage,
-  type Subagent,
-} from '@dovo/protocol'
+import { subagentMetadata, type Subagent } from '@dovo/protocol'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { Text } from '../../ui/content/text'
 import { Markdown } from '../../ui/content/markdown'
@@ -29,60 +24,12 @@ export function NativeAgentThread({
 
   const { connected, call } = useRuntime()
   const { colors, styles } = useTheme()
-  const [page, setPage] = useState<NativeThreadPage>()
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [load, setLoad] = useState<{ before?: string; revision: number }>({ revision: 0 })
-  useEffect(() => {
-    let active = true
-    if (!connected) {
-      setBusy(false)
-      return
-    }
-    setBusy(true)
-    setError('')
-    void call(
-      '/api/tasks/native-thread',
-      {
-        taskId,
-        id: agent.id,
-        provider: agent.provider,
-        sessionId: agent.sessionId,
-        before: load.before,
-      },
-      nativeThreadPageSchema,
-    ).then(
-      (next) => {
-        if (!active) return
-        setPage((previous) => {
-          if (!load.before || !previous) return next
-          const ids = new Set(next.entries.map((entry) => entry.id))
-          return {
-            ...next,
-            entries: [...next.entries, ...previous.entries.filter((entry) => !ids.has(entry.id))],
-          }
-        })
-        setBusy(false)
-      },
-      (error: unknown) => {
-        if (!active) return
-        setError(error instanceof Error ? error.message : String(error))
-        setBusy(false)
-      },
-    )
-    return () => {
-      active = false
-    }
-  }, [
+  const { page, error, busy, refresh, loadBefore } = useNativeThreadHistory(
     call,
     connected,
     taskId,
-    agent.id,
-    agent.provider,
-    agent.sessionId,
-    agent.workflowId ? agent.updatedAt : undefined,
-    load,
-  ])
+    agent,
+  )
   return (
     <View style={{ flex: 1 }} accessibilityLabel={uiText('Native agent thread')}>
       <ScreenHeader
@@ -93,7 +40,7 @@ export function NativeAgentThread({
             label: uiText('Refresh thread'),
             icon: 'refresh',
             disabled: !connected || busy,
-            onPress: () => setLoad(({ revision }) => ({ revision: revision + 1 })),
+            onPress: refresh,
           },
         ]}
       />
@@ -117,9 +64,7 @@ export function NativeAgentThread({
             secondary
             label={uiText('Load older messages')}
             disabled={!connected || busy}
-            onPress={() =>
-              setLoad(({ revision }) => ({ before: page.before, revision: revision + 1 }))
-            }
+            onPress={() => loadBefore(page.before)}
           />
         )}
         {busy && (

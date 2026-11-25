@@ -179,14 +179,29 @@ function FolderEntry({ path, active, ...props }: BranchProps & { path: string; a
   const uiText = useInterfaceText()
   const [expanded, setExpanded] = useState(() => !!props.selected?.startsWith(`${path}/`))
   const [visited, setVisited] = useState(expanded)
+  const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined')
+  const branch = useRef<HTMLDivElement>(null)
+  const selectedInside = !!props.selected?.startsWith(`${path}/`)
   useEffect(() => {
-    if (props.selected?.startsWith(`${path}/`)) {
+    if (selectedInside) {
       setExpanded(true)
       setVisited(true)
     }
-  }, [props.selected, path])
+  }, [props.selected, selectedInside])
+  useEffect(() => {
+    if (!active || !expanded || !branch.current || typeof IntersectionObserver === 'undefined')
+      return
+    const observer = new IntersectionObserver(([entry]) =>
+      setVisible(entry?.isIntersecting === true),
+    )
+    observer.observe(branch.current)
+    return () => {
+      observer.disconnect()
+      setVisible(false)
+    }
+  }, [active, expanded])
   return (
-    <div className="relative">
+    <div className="relative" ref={branch}>
       <details
         open={expanded}
         onToggle={(event) => {
@@ -212,7 +227,13 @@ function FolderEntry({ path, active, ...props }: BranchProps & { path: string; a
           <span className="truncate">{path.split('/').at(-1)}</span>
         </summary>
         <div className="ml-3 border-l border-border/50 pl-1">
-          {visited && <Directory {...props} path={path} active={active && expanded} />}
+          {visited && (
+            <Directory
+              {...props}
+              path={path}
+              active={active && expanded && (visible || selectedInside)}
+            />
+          )}
         </div>
       </details>
       {props.onPreviewFolder && (

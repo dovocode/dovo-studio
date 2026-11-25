@@ -473,7 +473,7 @@ function input(text: string, paste = false) {
   }
   if (paste) text = text.replace(/\r?\n/g, '\r')
   if (paste && terminal.hasBracketedPaste()) text = `\x1b[200~${text}\x1b[201~`
-  for (const frame of terminalInputFrames(text)) send(frame)
+  for (const frame of terminalInputFrames(text, paste)) send(frame)
   follow = true
   selection = undefined
   updateSelection()

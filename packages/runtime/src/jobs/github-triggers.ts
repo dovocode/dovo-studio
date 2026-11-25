@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { Automation, GithubTrigger } from '@dovo/protocol'
-import { GithubEvents, githubDeliverySchema } from './github-events.js'
+import { GithubEvents, githubDeliverySchema, type GithubDelivery } from './github-events.js'
 import { HttpError, errorMessage } from '../errors.js'
 
 const stateSchema = z.object({
@@ -31,7 +31,7 @@ export class GithubTriggers {
     private db: Database.Database,
     private events: Pick<GithubEvents, 'collect'> & Partial<Pick<GithubEvents, 'dispose'>>,
     private flows: () => Automation[],
-    private start: (id: string, key: string, payload: unknown) => unknown,
+    private start: (id: string, key: string, payload: GithubDelivery) => unknown,
     private report: (id: string, message: string) => void,
     private pollingSeed = '',
   ) {}

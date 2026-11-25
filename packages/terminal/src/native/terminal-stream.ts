@@ -373,7 +373,8 @@ export function openTerminalStream(options: TerminalStreamOptions): TerminalStre
         return
       }
       if (!ready) return
-      for (const frame of terminalInputFrames(data)) if (!send(JSON.stringify(frame))) return
+      const paste = data.startsWith('\x1b[200~') && data.endsWith('\x1b[201~')
+      for (const frame of terminalInputFrames(data, paste)) if (!send(JSON.stringify(frame))) return
     },
     resize(size) {
       if (opened) sendSize(size)

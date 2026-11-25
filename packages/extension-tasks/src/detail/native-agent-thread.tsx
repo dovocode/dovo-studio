@@ -1,11 +1,5 @@
-import { useEffect, useState } from 'react'
-import {
-  nativeThreadPageSchema,
-  subagentMetadata,
-  type NativeThreadPage,
-  type Subagent,
-} from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
+import { subagentMetadata, type Subagent } from '@dovo/protocol'
+import { useNativeThreadHistory, useWorkspace } from '@dovo/studio-core'
 import {
   Button,
   HeaderContent,
@@ -33,60 +27,12 @@ export function NativeAgentThread({
   windowRightEdge?: boolean
 }) {
   const { request, connected } = useWorkspace()
-  const [page, setPage] = useState<NativeThreadPage>()
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [load, setLoad] = useState<{ before?: string; revision: number }>({ revision: 0 })
-  useEffect(() => {
-    let active = true
-    if (!connected) {
-      setBusy(false)
-      return
-    }
-    setBusy(true)
-    setError('')
-    void request(
-      '/api/tasks/native-thread',
-      {
-        taskId,
-        id: agent.id,
-        provider: agent.provider,
-        sessionId: agent.sessionId,
-        before: load.before,
-      },
-      nativeThreadPageSchema,
-    ).then(
-      (next) => {
-        if (!active) return
-        setPage((previous) => {
-          if (!load.before || !previous) return next
-          const ids = new Set(next.entries.map((entry) => entry.id))
-          return {
-            ...next,
-            entries: [...next.entries, ...previous.entries.filter((entry) => !ids.has(entry.id))],
-          }
-        })
-        setBusy(false)
-      },
-      (error: unknown) => {
-        if (!active) return
-        setError(error instanceof Error ? error.message : String(error))
-        setBusy(false)
-      },
-    )
-    return () => {
-      active = false
-    }
-  }, [
+  const { page, error, busy, refresh, loadBefore } = useNativeThreadHistory(
     request,
     connected,
     taskId,
-    agent.id,
-    agent.provider,
-    agent.sessionId,
-    agent.workflowId ? agent.updatedAt : undefined,
-    load,
-  ])
+    agent,
+  )
   return (
     <section
       className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
@@ -112,12 +58,7 @@ export function NativeAgentThread({
             <span className="studio-titlebar-divider">/</span>
             <span className="studio-titlebar-task min-w-0">{agent.name}</span>
           </h1>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!connected || busy}
-            onClick={() => setLoad(({ revision }) => ({ revision: revision + 1 }))}
-          >
+          <Button variant="ghost" size="sm" disabled={!connected || busy} onClick={refresh}>
             Refresh thread
           </Button>
         </header>
@@ -141,9 +82,7 @@ export function NativeAgentThread({
               variant="outline"
               size="sm"
               disabled={!connected || busy}
-              onClick={() =>
-                setLoad(({ revision }) => ({ before: page.before, revision: revision + 1 }))
-              }
+              onClick={() => loadBefore(page.before)}
             >
               Load older messages
             </Button>

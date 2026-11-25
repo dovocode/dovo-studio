@@ -20,14 +20,14 @@ it.skipIf(process.platform === 'win32')(
   async () => {
     const f = await fixture()
     cleanups.push(f.cleanup)
-    const launcher = spawn(
-      process.execPath,
-      ['-e', "process.stdout.write('ready'); setInterval(() => {}, 1000)"],
-      { detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
-    )
+    const launcher = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      detached: true,
+      stdio: 'ignore',
+    })
     cleanups.push(() => stopOwnedChild(launcher))
-    await once(launcher.stdout, 'data')
-    let at = Date.now()
+    await once(launcher, 'spawn')
+    const now = Date.now()
+    let at = now
     vi.spyOn(Date, 'now').mockImplementation(() => at)
     vi.spyOn(memory, 'readProcessMemory').mockImplementation(async () => ({
       total: 8 * 1024 ** 3,
@@ -55,15 +55,14 @@ it.skipIf(process.platform === 'win32')(
     cleanups.push(() => runtime.close())
     const s = runtime.services
     s.store.update(() => f.workspace)
-    let entered!: () => void
-    const ready = new Promise<void>((resolve) => {
-      entered = resolve
-    })
+    const protection = s.tasks.memoryProtection
+    const sample = protection.sample.bind(protection)
+    // Only the test drives samples against its controlled clock.
+    vi.spyOn(protection, 'sample').mockResolvedValue(undefined)
     const run = vi.fn<AgentAdapter['run']>(async (run) => {
       run.onOwnedProcess?.(launcher)
       run.onSession('saved-session')
       run.onText('Saved partial response')
-      entered()
       try {
         await new Promise<void>((_resolve, reject) => {
           const abort = () => reject(run.signal.reason)
@@ -83,12 +82,16 @@ it.skipIf(process.platform === 'win32')(
     })
     const execution = await s.tasks.start(task.id)
     const finished = execution.done.catch((error: unknown) => error)
-    await ready
+    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce(), { timeout: 10000 })
     await s.tasks.send(task.id, 'waiting-input', 'Keep this request queued')
-    for (const step of [0, 5000, 10000, 15000]) {
-      at += step === 0 ? 0 : 5000
-      await s.tasks.memoryProtection.sample()
+    for (const offset of [0, 5000, 10000, 15000]) {
+      at = now + offset
+      await sample()
     }
+    expect(protection.report().lastStop).toMatchObject({ taskId: task.id })
+    await vi.waitFor(() => expect(s.store.task(task.id).status).toBe('cancelled'), {
+      timeout: 10000,
+    })
     await finished
     expect(run).toHaveBeenCalledOnce()
     expect(s.store.task(task.id)).toMatchObject({
@@ -134,14 +137,14 @@ it.skipIf(process.platform === 'win32')(
   async () => {
     const f = await fixture()
     cleanups.push(f.cleanup)
-    const launcher = spawn(
-      process.execPath,
-      ['-e', "process.stdout.write('ready'); setInterval(() => {}, 1000)"],
-      { detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
-    )
+    const launcher = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      detached: true,
+      stdio: 'ignore',
+    })
     cleanups.push(() => stopOwnedChild(launcher))
-    await once(launcher.stdout, 'data')
-    let at = Date.now()
+    await once(launcher, 'spawn')
+    const now = Date.now()
+    let at = now
     vi.spyOn(Date, 'now').mockImplementation(() => at)
     vi.spyOn(memory, 'readProcessMemory').mockImplementation(async () => ({
       total: 8 * 1024 ** 3,
@@ -168,6 +171,9 @@ it.skipIf(process.platform === 'win32')(
     cleanups.push(() => runtime.close())
     const s = runtime.services
     s.store.update(() => f.workspace)
+    const protection = s.tasks.memoryProtection
+    const sample = protection.sample.bind(protection)
+    vi.spyOn(protection, 'sample').mockResolvedValue(undefined)
     const stopped = vi.fn<() => Promise<void>>()
     vi.spyOn(s.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
@@ -197,9 +203,9 @@ it.skipIf(process.platform === 'win32')(
       await s.tasks.start(task.id)
     ).done
     expect(s.store.taskSummary(task.id).status).toBe('review')
-    for (let step = 0; step < 4; step++) {
-      if (step) at += 5000
-      await s.tasks.memoryProtection.sample()
+    for (const offset of [0, 5000, 10000, 15000]) {
+      at = now + offset
+      await sample()
     }
     expect(stopped).toHaveBeenCalledOnce()
     expect(s.store.task(task.id)).toMatchObject({

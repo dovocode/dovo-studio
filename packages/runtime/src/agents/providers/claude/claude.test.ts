@@ -7,6 +7,7 @@ import type { AgentRun, NativeAgentSession } from '../../execution/types.js'
 import type { Options, SDKUserMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 
 const mocks = vi.hoisted(() => ({
+  getSubagentMessages: vi.fn<typeof import('@anthropic-ai/claude-agent-sdk').getSubagentMessages>(),
   prewarm: vi.fn<(input: unknown) => Promise<unknown>>(async () => {
     throw new Error('No spare in this fixture')
   }),
@@ -15,7 +16,10 @@ const mocks = vi.hoisted(() => ({
       (input: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }) => unknown
     >(),
 }))
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: mocks.query }))
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: mocks.query,
+  getSubagentMessages: mocks.getSubagentMessages,
+}))
 vi.mock('@anthropic-ai/claude-agent-sdk/core', () => ({ prewarm: mocks.prewarm }))
 vi.mock('../../configuration/claude-command.js', () => ({
   claudeCommand: async () => '/bin/claude',
@@ -595,6 +599,95 @@ it('continues native-agent discovery after a warm parent turn ends and rebinds i
     release()
     await adapter.dispose?.()
     pressure.mockRestore()
+  }
+})
+
+it('reads a forked Claude skill under its task ID and reports the transcript result', async () => {
+  const adapter = createClaudeAdapter()
+  let finish = () => {}
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  let reported = false
+  mocks.getSubagentMessages.mockImplementation(async () => [
+    {
+      type: 'assistant',
+      uuid: 'skill-activity',
+      session_id: 'session',
+      parent_tool_use_id: null,
+      parent_agent_id: null,
+      message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'README.md' } }] },
+    },
+    ...(reported
+      ? [
+          {
+            type: 'assistant' as const,
+            uuid: 'skill-report',
+            session_id: 'session',
+            parent_tool_use_id: null,
+            parent_agent_id: null,
+            message: { content: [{ type: 'text', text: 'The review found one missing check.' }] },
+          },
+        ]
+      : []),
+  ])
+  mocks.query.mockImplementation(({ prompt }) => ({
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt === 'string') throw new Error('Expected streaming input')
+      for await (const _message of prompt) {
+        yield {
+          type: 'system',
+          subtype: 'task_started',
+          session_id: 'session',
+          task_id: 'fork-task',
+          task_type: 'local_agent',
+          description: '/review',
+        }
+        await finished
+        reported = true
+        yield {
+          type: 'system',
+          subtype: 'task_notification',
+          session_id: 'session',
+          task_id: 'fork-task',
+          status: 'completed',
+          summary: '/review',
+        }
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+        break
+      }
+    },
+    close: finish,
+  }))
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const input = nativeRun(native)
+  const pending = adapter.run(input)
+  try {
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'system',
+        expect.objectContaining({ subtype: 'task_started', task_id: 'fork-task' }),
+        'session',
+      ),
+    )
+    expect(
+      await adapter.readNativeThread?.(input.agent, 'fork-task', 'session', input.cwd),
+    ).toEqual([expect.objectContaining({ role: 'tool', label: 'Read' })])
+    finish()
+    await pending
+    expect(native).toHaveBeenCalledWith(
+      'system',
+      expect.objectContaining({
+        subtype: 'task_notification',
+        summary: 'The review found one missing check.',
+      }),
+      'session',
+    )
+  } finally {
+    finish()
+    await pending.catch(() => {})
+    await adapter.dispose?.()
+    mocks.getSubagentMessages.mockReset()
   }
 })
 

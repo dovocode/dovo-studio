@@ -42,6 +42,7 @@ import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
 import { SettingSource } from '../runtime/preferences/setting-source'
+import { CreateOrganization } from '../scm/connections/create-organization'
 export default function ResourcesScreen() {
   const uiText = useInterfaceText()
 
@@ -67,8 +68,9 @@ function ComputerResources({
 
   const { styles } = useTheme()
 
-  const { snapshot, connected } = useRuntime()
+  const { snapshot, connected, activeId } = useRuntime()
   const [selected, setSelected] = useApplicationState('')
+  const [creating, setCreating] = useApplicationState<string | null>(null)
   const scopes = resourceScopeChoices(
     snapshot?.defaults,
     snapshot?.workspace ?? { repositories: [], agents: [] },
@@ -91,6 +93,22 @@ function ComputerResources({
         gap: 12,
       }}
     >
+      {activeId && snapshot?.organizationSettingsSupported && (
+        <Action
+          secondary
+          label={uiText('New organization')}
+          disabled={!connected}
+          onPress={() => setCreating(activeId)}
+        />
+      )}
+      {creating === activeId && creating && snapshot?.organizationSettingsSupported && (
+        <CreateOrganization
+          repositoryId={
+            repository && !organization && repository.kind !== 'scratch' ? repository.id : undefined
+          }
+          onClose={() => setCreating(null)}
+        />
+      )}
       <Text style={styles.muted}>
         <InterfaceText>
           {

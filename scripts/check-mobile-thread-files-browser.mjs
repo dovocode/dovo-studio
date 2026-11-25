@@ -203,6 +203,8 @@ try {
   await page.getByRole('button', { name: 'data.csv', exact: true }).click()
   await page.getByRole('button', { name: 'Edit file', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Table preview', exact: true }).click()
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await page.getByLabel('Spreadsheet column headings').getByText('1', { exact: true }).waitFor()
   await page
     .getByText('First table cell', { exact: true })
     .waitFor({ timeout: 8000 })
@@ -210,6 +212,8 @@ try {
       console.error(errors, await page.locator('body').innerText())
       throw error
     })
+  await page.setViewportSize({ width: 768, height: 1024 })
+  assert.equal(await page.getByLabel('Spreadsheet column headings').isVisible(), true)
   await page.getByRole('button', { name: 'Text view', exact: true }).click()
   await page.getByRole('button', { name: 'Edit file', exact: true }).click()
   await page

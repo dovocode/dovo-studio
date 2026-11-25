@@ -53,6 +53,8 @@ import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
 import type { AcpLaunch, AgentSteer, AgentRun, NativeAgentSession } from './types.js'
 import {
   decodeResult,
+  minValue,
+  maxValue,
   claudeProviderRetry,
   REVIEW_MODE_INSTRUCTION,
   PLAN_MODE_INSTRUCTION,
@@ -507,6 +509,28 @@ export class TaskTurnRunner {
             task.importedPiSession?.privatePath === task.sessionId)
         const resumeId =
           task.sessionAgentId === fingerprint || importedResume ? task.sessionId : undefined
+        const cursorRun = task.runAttempt?.cursorRun
+        const cursorReplay = new Set<string>()
+        if (
+          continuingAfterRestart &&
+          agent.provider === 'cursor' &&
+          resumeId &&
+          cursorRun?.sessionId === resumeId
+        ) {
+          const kept = yield* runtimeOperation(async () => {
+            const adapter = await this.registry.get('cursor')
+            return adapter.cursorRunCheckpointed?.(
+              agent,
+              cwd,
+              resumeId,
+              cursorRun.id,
+              controller.signal,
+            )
+          })
+          controller.signal.throwIfAborted()
+          if (kept === false)
+            for (const messageId of cursorRun.inputMessageIds) cursorReplay.add(messageId)
+        }
         const compactRequested =
           currentMessages.filter((message) => !previouslyConsumedIds.has(message.id)).length ===
             1 && currentMessages.at(-1)?.text.trim() === '/compact'
@@ -625,8 +649,10 @@ export class TaskTurnRunner {
           if (server) server.envValues = { ...server.envValues, DOVO_TASK_RUN_ID: toolBinding.id }
         }
         const consumedMessageIds = sessionId
-          ? (task.consumedMessageIds ??
-            currentMessages.slice(0, lastAssistant + 1).map((message) => message.id))
+          ? (
+              task.consumedMessageIds ??
+              currentMessages.slice(0, lastAssistant + 1).map((message) => message.id)
+            ).filter((id) => !cursorReplay.has(id))
           : [...importedMessageIds]
         const consumedIds = new Set(consumedMessageIds)
         const messages = sessionId
@@ -718,6 +744,7 @@ export class TaskTurnRunner {
               inputMessageIds: currentMessages.map((m) => m.id),
               promptAccepted: false,
               providerStartup: 'starting',
+              cursorRun: undefined,
             },
             checkoutBranch: branch,
             error: undefined,
@@ -1724,6 +1751,27 @@ export class TaskTurnRunner {
                 },
                 onEvent: (name, payload, retainedOutput) => {
                   if (!acceptsProviderEvents()) return
+                  if (name === 'cursor/run' && agent.provider === 'cursor') {
+                    const value = decodeResult(
+                      Schema.Struct({
+                        id: maxValue(minValue(Schema.String, 1), 200),
+                        sessionId: maxValue(minValue(Schema.String, 1), 200),
+                      }),
+                      payload,
+                    )
+                    if (value.success && value.data.sessionId === nativeSessionId)
+                      this.store.updateTask(id, (task) => ({
+                        ...task,
+                        runAttempt: task.runAttempt && {
+                          ...task.runAttempt,
+                          cursorRun: {
+                            ...value.data,
+                            inputMessageIds: messages.map(({ id }) => id),
+                          },
+                        },
+                      }))
+                    return
+                  }
                   if (name === 'dovo/opencode/capabilities') {
                     const value = decodeResult(
                       Schema.Struct({ sessionId: Schema.String, goals: Schema.Boolean }),

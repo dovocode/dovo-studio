@@ -474,6 +474,56 @@ it('remembers graceful runtime shutdown separately from a user Stop', async () =
   expect(run.mock.calls[0][0].prompt).not.toContain('Original request')
   expect(run.mock.calls[0][0].prompt).not.toContain('Partial result before shutdown')
 })
+it.each([false, true])(
+  'resends Cursor input after restart only without a checkpoint (%s)',
+  async (checkpointed) => {
+    const { options, id } = await seed(false, {
+      status: 'draft',
+      agentId: '',
+      harness: { ...defaultTaskHarness('cursor'), permission: 'full-access' },
+    })
+    adapter(async (run) => {
+      run.onSession('cursor-session')
+      run.onEvent?.('cursor/run', { id: 'cursor-attempt', sessionId: 'cursor-session' })
+      run.onPromptAccepted?.()
+      await new Promise<void>((_resolve, reject) => {
+        if (run.signal.aborted) reject(run.signal.reason)
+        else run.signal.addEventListener('abort', () => reject(run.signal.reason), { once: true })
+      })
+    })
+    const first = await startRuntime(options)
+    cleanups.push(first.close)
+    first.services.preferences.save({ autoContinueAfterRestart: true })
+    await first.services.tasks.start(id)
+    await waitForRecovery(() =>
+      expect(first.services.store.task(id).runAttempt?.promptAccepted).toBe(true),
+    )
+    await first.close()
+    const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Recovered'))
+    const checkpoint = vi.fn<NonNullable<AgentAdapter['cursorRunCheckpointed']>>(
+      async () => checkpointed,
+    )
+    vi.spyOn(AgentRegistry.prototype, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run,
+      cursorRunCheckpointed: checkpoint,
+    })
+    const second = await startRuntime(options)
+    cleanups.push(second.close)
+    await waitForRecovery(() => expect(second.services.store.task(id).status).toBe('review'))
+    expect(checkpoint).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'cursor' }),
+      expect.any(String),
+      'cursor-session',
+      'cursor-attempt',
+      expect.any(AbortSignal),
+    )
+    expect(run).toHaveBeenCalledOnce()
+    expect(run.mock.calls[0]?.[0].sessionId).toBe('cursor-session')
+    expect(run.mock.calls[0]?.[0].prompt.includes('Original request')).toBe(!checkpointed)
+  },
+)
+
 it('leaves a failed automatic continuation paused with a manual recovery action', async () => {
   const { options, id } = await seed(true)
   adapter(async () => {

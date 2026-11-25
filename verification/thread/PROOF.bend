@@ -4,6 +4,7 @@ import ./McpSignIn.bend as M
 import ./LinkedRead.bend as A
 import ./FilePages.bend as F
 import ./QuoteDraft.bend as C
+import ./TerminalPaste.bend as T
 
 def Laws.saved_reply_starts_next(reply, next, retry):
   {==}
@@ -115,4 +116,19 @@ def C.cancelled_quote_leaves_draft_intact(reference, comment, transcript, quotes
   {==}
 
 def C.confirmed_quote_includes_latest_comment_once(reference, comment, transcript, quotes):
+  {==}
+
+def T.first_chunk_writes_nothing(first):
+  {==}
+
+def T.middle_chunk_writes_nothing(first, second):
+  {==}
+
+def T.end_writes_the_whole_paste_once(first, second, last):
+  {==}
+
+def T.disconnected_paste_writes_nothing(chunks):
+  {==}
+
+def T.a_duplicate_end_writes_nothing(chunk):
   {==}

@@ -129,6 +129,20 @@ it('keeps usable sources when an independent discovery command fails', async () 
   ])
 })
 
+it('lists physical Android phones on a host with adb and no emulator', async () => {
+  setup()
+  command.mockImplementation(respond)
+  vi.mocked(files.access).mockImplementation(async (path) => {
+    if (basename(String(path)) === 'emulator')
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+  })
+  const result = await previewDevices()
+  expect(result.devices.filter((device) => device.platform === 'android')).toMatchObject([
+    { id: 'physical-android:usb', kind: 'physical', state: 'booted' },
+  ])
+  expect(command.mock.calls.some(([file]) => basename(file) === 'emulator')).toBe(false)
+})
+
 it('reports the actual iPhone command failure while preserving simulator discovery', async () => {
   setup()
   command.mockImplementation(async (file, args) => {

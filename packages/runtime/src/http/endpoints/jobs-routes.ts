@@ -19,6 +19,7 @@ import {
   routineSuggestionSaveSchema,
 } from '@dovo/protocol'
 import { dryRunScenariosCommandSchema } from '@dovo/protocol'
+import { automationRunSubjectSchema } from '@dovo/protocol'
 import { defaultTaskHarness, SCRATCH_PROJECT_ID, type Task } from '@dovo/protocol'
 import { runtimeAutomationIssues } from '../../jobs/validation.js'
 import { recordRoutineChange } from '../../jobs/routine-provenance.js'
@@ -202,16 +203,24 @@ export function jobsRoute(
         return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/jobs/run') {
-        const { id, requestId } = decode(
+        const { id, requestId, subject } = decode(
           mutableStruct({
             id: idSchema,
             requestId: Schema.optional(idSchema),
+            subject: Schema.optional(automationRunSubjectSchema),
           }),
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult({
-          id: s.jobs.startManual(id, requestId),
+          id: s.jobs.startManual(id, requestId, subject),
         })
+      }
+      if (method === 'POST' && path === '/api/jobs/runs-by-subject') {
+        const { subject } = decode(
+          mutableStruct({ subject: automationRunSubjectSchema }),
+          yield* serviceResult(body(request, 8192)),
+        )
+        return { runs: s.jobs.list(undefined, subject) }
       }
       if (method === 'POST' && path === '/api/jobs/dry-run') {
         // Evaluation only: no run, delivery, thread, schedule cursor or notification is written.
