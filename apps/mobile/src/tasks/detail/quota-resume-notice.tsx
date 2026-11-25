@@ -22,17 +22,16 @@ export function QuotaResumeNotice({ task }: { task: Task }) {
   const at = continuation?.at ?? offer?.at
   const quota = useAction(JSON.stringify([activeId, task.id, turnId]))
   if (!at) return null
+  const time = new Date(at).toLocaleString()
   return (
     <View style={{ padding: 12, gap: 8 }}>
       <Text style={styles.muted}>
-        {uiText(
-          continuation
-            ? continuation.resume
-              ? 'Scheduled to resume at {value0}'
-              : 'Snoozed until {value0}'
-            : 'Rate limit resets at {value0}',
-          { value0: new Date(at).toLocaleString() },
-        )}
+        {continuation
+          ? uiText('{value0} at {value1}', {
+              value0: continuation.resume ? uiText('Scheduled to resume') : uiText('Snoozed'),
+              value1: time,
+            })
+          : uiText('Rate limit resets at {value0}', { value0: time })}
       </Text>
       {offer && (
         <Action

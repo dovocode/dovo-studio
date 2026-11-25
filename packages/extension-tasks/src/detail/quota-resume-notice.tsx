@@ -52,20 +52,19 @@ export function QuotaResumeNotice({ task, command }: { task: Task; command?: boo
   }, [act, canCancel, canSchedule, cancelLabel, command, connected, registerCommand, scheduleLabel])
   const at = continuation?.at ?? offer?.at
   if (!at) return null
+  const time = formatDateTime(at)
   return (
     <div
       role="status"
       className="mx-auto flex w-full max-w-[var(--chat-max)] flex-wrap items-center gap-2 px-5 py-2 text-xs text-muted-foreground"
     >
       <span className="min-w-0 flex-1">
-        {uiText(
-          continuation
-            ? continuation.resume
-              ? 'Scheduled to resume at {value0}'
-              : 'Snoozed until {value0}'
-            : 'Rate limit resets at {value0}',
-          { value0: formatDateTime(at) },
-        )}
+        {continuation
+          ? uiText('{value0} at {value1}', {
+              value0: continuation.resume ? uiText('Scheduled to resume') : uiText('Snoozed'),
+              value1: time,
+            })
+          : uiText('Rate limit resets at {value0}', { value0: time })}
       </span>
       {offer && (
         <Button
