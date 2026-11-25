@@ -634,7 +634,8 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
                 'task-pipeline-progress': 'TaskPipelineProgress',
                 // Machine handoff controls have a separate desktop/mobile suite.
                 'machine-handoff-notice': 'MachineHandoffNotice',
-                // Spend controls do not affect pending messages or history paging.
+                // Quota controls have a separate desktop/mobile retry suite.
+                'quota-resume-notice': 'QuotaResumeNotice',
                 'spend-pause-notice': 'SpendPauseNotice',
               }
               const name = names[args.path.split('/').at(-1)]
