@@ -159,3 +159,28 @@ it('keeps the PTY paused until every pressured subscriber releases it', async ()
   pty.exit!({ exitCode: 0 })
   await terminals.dispose()
 })
+
+it('reattaches after a clipped terminal title and preserves the next split escape', async () => {
+  const { terminals, id } = terminal()
+  const replay: string[] = []
+  const live: string[] = []
+  try {
+    const title = 'Long title '.repeat(100000)
+    pty.data!(`\x1b]0;${title}`)
+    const detach = terminals.attachScreen(
+      id,
+      (data) => replay.push(data),
+      (data) => live.push(data),
+    )
+    await vi.waitFor(() => expect(replay).toHaveLength(1))
+    expect(replay[0]).toHaveLength(0)
+    pty.data!('still the old title')
+    pty.data!('\x1b')
+    pty.data!(']0;new title\x07visible text')
+    expect(live).toEqual(['\x1b]0;new title\x07visible text'])
+    detach()
+  } finally {
+    pty.exit!({ exitCode: 0 })
+    await terminals.dispose()
+  }
+})

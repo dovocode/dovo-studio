@@ -41,7 +41,7 @@ const stubs = [
   {
     path: '../../ui/content/text',
     importer: mobile,
-    contents: `export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;`,
+    contents: `export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={Object.assign({},...[].concat(style??{}))}>{children}</span>;`,
   },
   {
     path: './text',
@@ -116,6 +116,12 @@ try {
   await writeFile(join(directory, 'src', 'hello.ts'), 'export const hello = 1\n')
   await writeFile(join(directory, 'empty.txt'), '')
   await writeFile(join(directory, 'data.csv'), 'Name,Value\nFirst table cell,42\n')
+  const longPrefix = 'x'.repeat(128 * 1024 - 1)
+  await writeFile(join(directory, 'long.txt'), longPrefix + '😃 tail of one long line')
+  await writeFile(
+    join(directory, 'book.rtf'),
+    String.raw`{\rtf1\b First page\b0\page Next chapter}`,
+  )
   await writeFile(join(linked, 'linked.txt'), 'linked contents\n')
   await writeFile(
     join(directory, 'pixel.png'),
@@ -160,7 +166,11 @@ try {
       window.task = task
       window.runtime = {
         connected: true,
-        snapshot: { workspace: { repositories: [] } },
+        snapshot: {
+          projectFilePagingSupported: true,
+          projectRtfPreviewSupported: true,
+          workspace: { repositories: [] },
+        },
         connection: { address: `http://127.0.0.1:${port}`, token },
       }
     },
@@ -168,6 +178,28 @@ try {
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'empty.txt', exact: true }).waitFor()
+  const browse = page.getByRole('button', { name: 'Browse files', exact: true })
+  await page.getByRole('button', { name: 'long.txt', exact: true }).click()
+  await page.getByRole('button', { name: 'Next page', exact: true }).click()
+  await page.getByText('😃 tail of one long line', { exact: true }).waitFor()
+  await page.evaluate(() => window.setConnected(false))
+  const previous = page.getByRole('button', { name: 'Previous page', exact: true })
+  assert.equal(await previous.isDisabled(), true)
+  await page.evaluate(() => window.setConnected(true))
+  await previous.click()
+  assert.equal(await page.locator('pre').textContent(), longPrefix)
+  await browse.click()
+  await page.getByRole('button', { name: 'book.rtf', exact: true }).click()
+  const firstPage = page.getByText('First page', { exact: true })
+  await firstPage.waitFor()
+  assert.equal(await firstPage.evaluate((node) => node.style.fontWeight), 'bold')
+  await page.getByRole('button', { name: 'Next page', exact: true }).click()
+  await page.getByText('Next chapter', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Show RTF source', exact: true }).click()
+  await page
+    .getByText(String.raw`{\rtf1\b First page\b0\page Next chapter}`, { exact: true })
+    .waitFor()
+  await browse.click()
   await page.getByRole('button', { name: 'data.csv', exact: true }).click()
   await page.getByRole('button', { name: 'Edit file', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Table preview', exact: true }).click()

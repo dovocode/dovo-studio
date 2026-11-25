@@ -25,6 +25,7 @@ export type TaskOwner = Pick<TaskSource, 'runtimeId' | 'address' | 'name' | 'onl
   threadBehaviorSupported?: boolean
   worktreeDeletionOverrideSupported: boolean
   threadHandoffsSupported?: boolean
+  linkedCheckoutTemplatesSupported?: boolean
 }
 export type TaskEntry = {
   key: string
@@ -171,6 +172,7 @@ export function retainTaskOwner(previous: TaskOwner | undefined, source: TaskSou
     threadBehaviorSupported: source.snapshot?.threadBehaviorSupported === true,
     worktreeDeletionOverrideSupported: source.snapshot?.worktreeDeletionOverrideSupported === true,
     threadHandoffsSupported: source.snapshot?.threadHandoffsSupported === true,
+    linkedCheckoutTemplatesSupported: source.snapshot?.linkedCheckoutTemplatesSupported === true,
   }
   return previous &&
     (Object.keys(next) as (keyof TaskOwner)[]).every((key) => Object.is(previous[key], next[key]))

@@ -166,6 +166,26 @@ export function TaskTemplatesDialog({
                 {issues.get(`${row.id}:objective`) ??
                   `${row.objective.length.toLocaleString()}/20,000 characters`}
               </p>
+              {!!row.linkedCheckouts?.length && (
+                <div className="grid gap-1 text-xs text-muted-foreground">
+                  {row.linkedCheckouts.map((link) => (
+                    <span key={link.id}>
+                      {workspace.repositories.find(({ id }) => id === link.repositoryId)?.name ??
+                        link.repositoryId}
+                      {' · '}
+                      {link.access === 'edit' ? 'Edit' : 'Read-only'}
+                    </span>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-self-start"
+                    onClick={() => change(row.id, { linkedCheckouts: undefined })}
+                  >
+                    Remove linked checkouts
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
           {!rows.length && (

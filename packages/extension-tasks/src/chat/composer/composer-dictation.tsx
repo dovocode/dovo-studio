@@ -15,20 +15,23 @@ export function ComposerDictation({
   input,
   disabled,
   onActive,
+  transientId,
 }: {
   taskId: string
   controller: ReturnType<typeof createComposerDraft>
   input: RefObject<HTMLElement | null>
   disabled: boolean
   onActive: (active: boolean) => void
+  transientId?: string
 }) {
   const { request, connection, snapshot, workspace } = useWorkspace()
   const preferences = useAppPreferences()
-  const scope = composerRecoveryKey(connection, taskId)
+  const threadScope = composerRecoveryKey(connection, taskId)
+  const scope = transientId ? JSON.stringify([threadScope, transientId]) : threadScope
   const runtimeBridge = useRuntimeDictationBridge(request, taskId, scope)
   const runtimeId = snapshot?.runtimeId ?? connection?.runtimeId
   const remote = !!runtimeId && preferences.runtimeDictationIds.includes(runtimeId)
-  const bridge = remote ? runtimeBridge : desktopDictationBridge()
+  const bridge = remote ? runtimeBridge : desktopDictationBridge(preferences.dictationProvider)
   const enabled = remote || preferences.dictationEnabled
   const state = useSyncExternalStore(
     dictationSession.subscribe,
@@ -44,6 +47,12 @@ export function ComposerDictation({
     }
   }, [controller, scope])
   useEffect(() => {
+    if (!transientId) return
+    return () => {
+      if (dictationSession.read()?.scope === scope) void dictationSession.cancel()
+    }
+  }, [scope, transientId])
+  useEffect(() => {
     onActive(!!own && !!state && ['starting', 'recording', 'transcribing'].includes(state.phase))
   }, [own, state?.phase, onActive])
   if (!bridge || !enabled) return null
@@ -56,6 +65,7 @@ export function ComposerDictation({
       taskId,
       runtimeId,
       remote,
+      transient: transientId ? true : undefined,
       title: workspace.tasks.find((task) => task.id === taskId)?.title ?? 'Thread',
       bridge,
       language: preferences.dictationLanguage,
@@ -75,7 +85,7 @@ export function ComposerDictation({
     })
   }
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       <IconButton
         type="button"
         className="size-7"
@@ -84,7 +94,9 @@ export function ComposerDictation({
             ? 'Stop dictation'
             : state
               ? 'Dictation in progress'
-              : 'Dictate message'
+              : transientId
+                ? 'Dictate comment'
+                : 'Dictate message'
         }
         disabled={
           disabled ||
@@ -103,6 +115,22 @@ export function ComposerDictation({
           <Mic className="size-3.5" />
         )}
       </IconButton>
+      {transientId && own && state?.preview && <output className="text-sm">{state.preview}</output>}
+      {transientId && own && state?.error && (
+        <div className="flex items-center gap-2">
+          <p role="alert" className="text-sm text-destructive">
+            {state.error}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void dictationSession.cancel()}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
       {own && state?.transcript && (
         <Button
           type="button"

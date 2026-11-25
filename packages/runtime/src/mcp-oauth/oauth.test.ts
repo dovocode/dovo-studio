@@ -10,6 +10,7 @@ import {
   mcpOAuthFlowSchema,
   mcpOAuthFlowStateSchema,
   mcpOAuthStatusListSchema,
+  threadMcpOAuthWarningsSchema,
   mcpServerSchema,
   type McpServer,
 } from '@dovo/protocol'
@@ -122,6 +123,52 @@ const whoami = async (client: Client) => {
     ? `error: ${JSON.stringify(result.content)}`
     : JSON.stringify(result.content)
 }
+
+it('signs in from a paired thread warning and rejects an outdated server binding', async () => {
+  const t = await setup()
+  const taskId = t.task.id
+  const read = { action: 'thread-warnings', taskId }
+  const warnings = async () => decode(threadMcpOAuthWarningsSchema, await t.command(read)).warnings
+  expect((await t.post(read, { Authorization: 'Bearer wrong' })).status).toBe(401)
+  expect((await t.post(read, { 'X-Dovo-Agent-Access': '1' })).status).toBe(403)
+  const [warning] = await warnings()
+  expect(warning.name).toBe(t.server.name)
+  expect(Object.keys(warning).sort()).toEqual(['name', 'revision'])
+  const connect = { action: 'thread-connect', taskId, warning }
+  const configure = (server: McpServer) =>
+    t.s.store.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.map((agent) =>
+        agent.id === 'agent'
+          ? { ...agent, resources: { mcpServers: [server], skills: [], hooks: [] } }
+          : agent,
+      ),
+    }))
+  configure({ ...t.server, url: new URL('/other', t.server.url).href })
+  expect((await warnings())[0].revision).not.toBe(warning.revision)
+  expect((await t.post(connect)).status).toBe(409)
+  expect(t.provider.events).toEqual([])
+  configure(t.server)
+  const first = decode(mcpOAuthFlowSchema, await t.command(connect))
+  const callback = await t.provider.consent(first.authorizationUrl)
+  expect(
+    await t.command({ action: 'complete', flowId: first.flowId, callbackUrl: callback }),
+  ).toMatchObject({ state: 'connected' })
+  expect(await warnings()).toEqual([])
+  expect((await t.post(connect)).status).toBe(409)
+  const provider = t.s.mcpApps.oauth.provider(t.server)
+  expect(() => provider?.redirectToAuthorization(new URL(first.authorizationUrl))).toThrow(
+    'Sign in',
+  )
+  expect(await warnings()).toEqual([warning])
+  const second = decode(mcpOAuthFlowSchema, await t.command(connect))
+  const secondCallback = await t.provider.consent(second.authorizationUrl)
+  await t.command({ action: 'complete', flowId: second.flowId, callbackUrl: secondCallback })
+  expect(() => provider?.redirectToAuthorization(new URL(first.authorizationUrl))).toThrow(
+    'Sign in',
+  )
+  expect(await warnings()).toEqual([])
+})
 
 it('signs in through the paired client endpoint and authorizes harness MCP calls with refresh and revoke', async () => {
   const t = await setup({ accessSeconds: 60 })

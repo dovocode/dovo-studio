@@ -202,7 +202,7 @@ const trigger={id:'trigger',type:'automation',position:{x:0,y:0},data};
 const task={...trigger,id:'task',data:{...data,kind:'task',harness:defaultTaskHarness('codex')}};
 const flow={id:'reminder',name:'Deployment reminder',enabled:false,nodes:[trigger,task],edges:[{id:'edge',source:'trigger',target:'task'}]};
 const workspace={agents:[],tasks:[],repositories:[{id:'repo',name:'App',path:'/app',branch:'main'}]};
-function App(){const[node,setNode]=useState(trigger);const[supported,setSupported]=useState(false);window.supportResults=setSupported;window.selectTask=()=>setNode(task);window.runtime={connected:true,snapshot:{workspace,automationStepResultsSupported:supported||undefined,mcpEventTriggersSupported:supported||undefined},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
+function App(){const[node,setNode]=useState(trigger);const[supported,setSupported]=useState(false);window.supportResults=setSupported;window.selectTask=()=>setNode(task);window.runtime={connected:true,snapshot:{workspace,automationStepResultsSupported:supported||undefined,automationStepPoolsSupported:supported||undefined,mcpEventTriggersSupported:supported||undefined},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -335,6 +335,8 @@ try {
     await mobileSchema.waitFor()
     assert.equal(await desktopSchema.isDisabled(), true)
     assert.equal(await mobileSchema.isDisabled(), true)
+    const poolName = 'Shared step pool (optional)'
+    assert.equal(await page.getByLabel(poolName, { exact: true }).count(), 0)
     await page.evaluate(() => window.supportResults(true))
     await page.evaluate(() => window.supportResults(false))
     assert.equal(await mobile.locator('option[value="mcp-event"]').count(), 0)
@@ -354,6 +356,15 @@ try {
     assert.equal(await page.evaluate(() => window.desktopData.resultSchema), schema)
     await desktopSchema.clear()
     assert.equal(await page.evaluate(() => window.desktopData.resultSchema), undefined)
+    await desktop.getByLabel(poolName, { exact: true }).fill('builders')
+    await desktop.getByLabel('Concurrent steps', { exact: true }).fill('2')
+    assert.deepEqual(await page.evaluate(() => window.desktopData.stepPool), {
+      name: 'builders',
+      limit: 2,
+    })
+    await desktop.getByLabel(poolName, { exact: true }).clear()
+    assert.equal(await page.evaluate(() => window.desktopData.stepPool), undefined)
+    await mobile.getByLabel(poolName, { exact: true }).fill('builders')
     await mobileSchema.fill(schema)
     await mobile.getByLabel('Trigger', { exact: true }).selectOption('once')
     await mobile.getByLabel('Run at', { exact: true }).fill('2026-02-30 09:30')
@@ -374,6 +385,10 @@ try {
     assert.equal(saved.body.changes.nodes.after[0].data.runAt, '2026-10-28T09:30')
     assert.equal(saved.body.changes.nodes.after[0].data.timezone, 'Europe/Amsterdam')
     assert.equal(saved.body.changes.nodes.after[1].data.resultSchema, schema)
+    assert.deepEqual(saved.body.changes.nodes.after[1].data.stepPool, {
+      name: 'builders',
+      limit: 1,
+    })
     assert.deepEqual(errors, [])
   }
   await Promise.race([checkEditors(), pageError])

@@ -368,6 +368,7 @@ export function MessageActions({
             <QuoteSelection
               text={text}
               messageId={messageId}
+              taskId={task.id}
               onQuote={appendReply}
               onClose={() => setQuoting(false)}
             />

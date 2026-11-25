@@ -36,7 +36,7 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
     () =>
       createBotCall(
         browserBotCallAudio(
-          remote ? bridge : (desktopDictationBridge() ?? bridge),
+          remote ? bridge : (desktopDictationBridge(preferences.dictationProvider) ?? bridge),
           preferences.dictationLanguage,
           preferences.botVoicePause,
         ),
@@ -49,7 +49,15 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
         },
         randomUUID,
       ),
-    [scope, request, bridge, remote, preferences.dictationLanguage, preferences.botVoicePause],
+    [
+      scope,
+      request,
+      bridge,
+      remote,
+      preferences.dictationProvider,
+      preferences.dictationLanguage,
+      preferences.botVoicePause,
+    ],
   )
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot)
   const available =

@@ -87,3 +87,16 @@ All 1,574 protocol tests, the focused mobile tests, the browser checks above, th
 mobile types and repository checks passed. The repository check reported 31 existing warnings and
 zero errors. These checks do not verify physical iPhone answer flows or navigation times. Build and
 install the normal app entry separately to use the fixes on a physical iPhone.
+
+## iPad keyboard check
+
+Install the current Release simulator build with Device Hub on a disposable iPad. Pair it with a
+fixture runtime and open a thread. Focus **Message**, type a draft, and check that the composer and
+**Send** sit above the software keyboard. Rotate while the keyboard is open and repeat the check.
+Maestro can rotate the simulator using `setOrientation: PORTRAIT` and
+`setOrientation: LANDSCAPE_LEFT`. Dismiss the keyboard, relaunch Studio, and reopen the same thread
+to check the draft.
+
+On 2026-11-25, the current Release build passed on an iPad Air 11-inch (M4) simulator running iOS
+27.0. The composer and Send control stayed above the keyboard in portrait and landscape. The same
+draft returned when the thread was reopened after relaunch.

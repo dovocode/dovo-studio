@@ -75,29 +75,22 @@ export function useJobActions() {
         )
         select(run.id)
       }),
-    review: (run: JobRun, allow: boolean) =>
+    review: (run: JobRun, allow: boolean, reason?: string) =>
       act(() =>
         request(
           '/api/jobs/review',
           {
             id: run.id,
             allow,
+            reason,
             nodeId: run.waitingNodeId,
             attempt: run.steps?.find((step) => step.nodeId === run.waitingNodeId)?.attempt ?? 1,
           },
           responses.ok,
         ),
       ),
-    cancel: (id: string) =>
-      act(() =>
-        request(
-          '/api/jobs/cancel',
-          {
-            id,
-          },
-          responses.ok,
-        ),
-      ),
+    control: (id: string, action: 'pause' | 'resume' | 'cancel') =>
+      act(() => request(`/api/jobs/${action}`, { id }, responses.ok)),
     rotateWebhook: (id: string) =>
       act(async () => {
         const credential = await request(

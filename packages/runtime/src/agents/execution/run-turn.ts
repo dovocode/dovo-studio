@@ -1981,6 +1981,7 @@ export class TaskTurnRunner {
                             }),
                           undefined,
                           onUnanswered,
+                          turnId,
                         )
                       : Promise.resolve(null),
                 },
@@ -2012,6 +2013,7 @@ export class TaskTurnRunner {
                           }),
                         undefined,
                         onUnanswered,
+                        turnId,
                       )
                     : Promise.resolve(null),
               },

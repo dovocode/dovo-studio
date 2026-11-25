@@ -47,6 +47,24 @@ it('classifies invalid UTF-8 as binary and exposes thumbnail decoder failures', 
   expect(result.after?.notice).toContain('Thumbnail unavailable')
 })
 
+it('decodes GBK and GB18030 in a diff without emitting a partial character at the preview limit', async () => {
+  const before = Buffer.from('d6d0cec4', 'hex')
+  const after = Buffer.from('d6d0cec49439fc36', 'hex')
+  const metadata = {
+    before: { hash: 'old', size: before.length, mode: '100644' },
+    after: { hash: 'new', size: after.length, mode: '100644' },
+  }
+  const read = async (hash: string) => (hash === 'old' ? before : after)
+  const full = await createFilePreview('source.txt', metadata, read, true, true)
+  expect(full.before).toMatchObject({ kind: 'text', text: '中文' })
+  expect(full.after).toMatchObject({ kind: 'text', text: '中文😀' })
+  expect(full.patch).toContain('+中文😀')
+  const prefix = await createFilePreview('source.txt', metadata, async (hash) =>
+    hash === 'old' ? before : after.subarray(0, 7),
+  )
+  expect(prefix.after).toMatchObject({ kind: 'text', text: '中文', truncated: true })
+})
+
 it('loads complete larger text only on request and rejects an incomplete full read', async () => {
   const text = Buffer.from('source line\n'.repeat(20000) + 'change past the compact prefix\n')
   const metadata = { after: { hash: 'saved', size: text.length, mode: '100644' } }

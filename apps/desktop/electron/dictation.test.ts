@@ -92,6 +92,9 @@ it('rejects untrusted senders and subframes before exposing local state or start
   expect(() => call('status', child)).toThrow('Untrusted')
   await expect(call('install', event(), '../bad')).rejects.toThrow('Invalid')
   await expect(call('start', event(), 'valid-id', 'not-a-locale')).rejects.toThrow('Expected')
+  await expect(call('start', event(), 'valid-id', 'en-US', 'unknown-engine')).rejects.toThrow(
+    'Expected',
+  )
   expect(() => call('feed', event(), 'valid-id', 'not audio')).toThrow('no longer active')
   expect(f.install).not.toHaveBeenCalled()
   expect(f.start).not.toHaveBeenCalled()

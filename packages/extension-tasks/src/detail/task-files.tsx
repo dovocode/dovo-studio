@@ -1,8 +1,9 @@
 import { createPortal } from 'react-dom'
 import type { RightPaneFile } from './right-pane-tabs'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useFilePages } from '@dovo/studio-core/file-pages'
 import { ProjectSpreadsheet } from './project-spreadsheet'
-import { isSpreadsheet } from '@dovo/protocol'
+import { isSpreadsheet, type RtfSpan } from '@dovo/protocol'
 import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
 import { ProjectImagePreview } from './project-image-preview'
 import { ProjectFileBrowser } from './project-file-browser'
@@ -376,7 +377,7 @@ export function TaskFiles({
   expanded?: boolean
 }) {
   const uiText = useInterfaceText()
-  const { request, connected, connection } = useWorkspace()
+  const { request, connected, connection, snapshot } = useWorkspace()
   const { openExternalLink } = useStudioHost()
   const [readError, setReadError] = useApplicationState('')
   const [focusedLine, setFocusedLine] = useApplicationState<number | undefined>(initialFile?.line)
@@ -393,9 +394,16 @@ export function TaskFiles({
     complete: boolean
     startLine: number
     hasMore: boolean
+    cursor?: string
+    nextCursor?: string
   } | null>(null)
   const [fullRead, setFullRead] = useApplicationState(false)
   const [tablePreviewKey, setTablePreviewKey] = useApplicationState('')
+  const [rtfSourceKey, setRtfSourceKey] = useApplicationState('')
+  const [rtfPages, setRtfPages] = useApplicationState<readonly (readonly RtfSpan[])[] | undefined>(
+    undefined,
+  )
+  const [documentPage, setDocumentPage] = useApplicationState(0)
   useEffect(() => {
     if (!reveal) return
     setCheckoutId(reveal.checkoutId)
@@ -431,6 +439,9 @@ export function TaskFiles({
   const sheetPreview = isSpreadsheet(selected) && (!delimitedText || tablePreviewKey === draftKey)
   useSyncExternalStore(drafts.subscribe, drafts.snapshot, drafts.snapshot)
   const imageFile = markdownMediaKind(selected) === 'image'
+  const rtfFile = snapshot?.projectRtfPreviewSupported === true && /\.rtf$/i.test(selected)
+  const rtfPreview = rtfFile && rtfSourceKey !== draftKey && !drafts.get(draftKey)
+  const visibleDocumentPage = Math.min(documentPage, (rtfPages?.length ?? 1) - 1)
   const selectedRef = useRef(selected)
   selectedRef.current = selected
   const sourceRef = useRef({ request, taskId: task.id, draftScope })
@@ -448,6 +459,10 @@ export function TaskFiles({
     !preview?.complete || (checkoutId !== undefined && linked?.access !== 'edit') || !!task.example
   const [loading, setLoading] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
+  const pages = useFilePages(
+    JSON.stringify([draftKey, focusedLine, focusRevision, fullRead, revision, rtfPreview]),
+  )
+  const cursor = snapshot?.projectFilePagingSupported ? pages.cursor : undefined
   const editing = useRef(false)
   const editingPath = useRef('')
   const editingScope = useRef('')
@@ -480,9 +495,11 @@ export function TaskFiles({
   useEffect(() => {
     setContents('')
     setPreview(null)
+    setRtfPages(undefined)
+    setDocumentPage(0)
     setReadError('')
     setLoading(!!selected)
-  }, [selected, draftScope])
+  }, [selected, draftScope, cursor, fullRead, rtfPreview])
   useEffect(() => {
     onEditingChange?.(false)
   }, [selected, draftScope, onEditingChange])
@@ -507,10 +524,12 @@ export function TaskFiles({
           id: task.id,
           path: selected,
           checkoutId,
-          preview: {
-            startLine: fullRead ? 1 : (focusedLine ?? 1),
-            maxBytes: fullRead ? 1024 * 1024 : 256 * 1024,
-          },
+          preview: rtfPreview
+            ? { format: 'rtf' }
+            : {
+                ...(cursor ? { cursor } : { startLine: fullRead ? 1 : (focusedLine ?? 1) }),
+                maxBytes: fullRead ? 1024 * 1024 : 256 * 1024,
+              },
         },
         responses.projectFile,
       )
@@ -528,11 +547,14 @@ export function TaskFiles({
         setContents(
           result.complete === undefined ? result.contents.slice(0, 200000) : result.contents,
         )
+        setRtfPages(result.document)
         setPreview({
           size: result.size,
           complete,
           startLine: result.startLine ?? 1,
           hasMore: result.hasMore === true,
+          cursor: snapshot?.projectFilePagingSupported ? result.cursor : undefined,
+          nextCursor: snapshot?.projectFilePagingSupported ? result.nextCursor : undefined,
         })
         setReadError('')
       }
@@ -558,6 +580,9 @@ export function TaskFiles({
     focusedLine,
     focusRevision,
     fullRead,
+    cursor,
+    rtfPreview,
+    snapshot?.projectFilePagingSupported,
   ])
   useLiveRefresh(connected, refresh)
   const openOriginal = () => {
@@ -721,6 +746,20 @@ export function TaskFiles({
         >
           {selected ? (
             <>
+              {rtfFile && !drafts.get(draftKey) && (
+                <div className="flex border-b p-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setRtfSourceKey(rtfPreview ? draftKey : '')
+                      setFullRead(false)
+                    }}
+                  >
+                    {rtfPreview ? 'Show RTF source' : 'Show formatted preview'}
+                  </Button>
+                </div>
+              )}
               {readError && !drafts.get(draftKey) ? (
                 <div role="alert" className="space-y-3 p-4 text-sm">
                   <p>{readError}</p>
@@ -758,22 +797,90 @@ export function TaskFiles({
                   onOpenOriginal={openOriginal}
                   refreshRevision={revision}
                 />
+              ) : rtfPreview && rtfPages ? (
+                <div
+                  className="min-h-0 flex-1 overflow-auto px-4 py-3"
+                  role="region"
+                  aria-label="Formatted RTF preview"
+                >
+                  {rtfPages.length > 1 && (
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={visibleDocumentPage === 0}
+                        onClick={() => setDocumentPage(visibleDocumentPage - 1)}
+                      >
+                        Previous page
+                      </Button>
+                      <span>
+                        {visibleDocumentPage + 1} / {rtfPages.length}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={visibleDocumentPage + 1 === rtfPages.length}
+                        onClick={() => setDocumentPage(visibleDocumentPage + 1)}
+                      >
+                        Next page
+                      </Button>
+                    </div>
+                  )}
+                  <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                    {rtfPages[visibleDocumentPage]?.map((span, index) => (
+                      <span
+                        key={index}
+                        style={{
+                          fontWeight: span.bold ? 'bold' : undefined,
+                          fontStyle: span.italic ? 'italic' : undefined,
+                          textDecoration: span.underline ? 'underline' : undefined,
+                        }}
+                      >
+                        {span.text}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <>
-                  {preview && !preview.complete && (
-                    <div className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
+                  {preview && (!preview.complete || pages.hasPrevious) && (
+                    <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
                       <span>
                         Read-only preview starting at line {preview.startLine}.{' '}
                         {preview.size === undefined
                           ? 'Update the runtime for bounded file reads.'
                           : `${preview.size} bytes total.`}
+                        {!preview.cursor &&
+                          preview.hasMore &&
+                          !contents.includes('\n') &&
+                          ' Update the runtime to page through this file.'}
                       </span>
                       {preview.size !== undefined && preview.size <= 1024 * 1024 && (
                         <Button size="sm" variant="outline" onClick={() => setFullRead(true)}>
                           Load complete file to edit
                         </Button>
                       )}
-                      {preview.hasMore && contents.includes('\n') && (
+                      {pages.hasPrevious && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!connected}
+                          onClick={pages.previous}
+                        >
+                          Previous page
+                        </Button>
+                      )}
+                      {preview.cursor && preview.nextCursor && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!connected}
+                          onClick={() => pages.next(preview.cursor!, preview.nextCursor!)}
+                        >
+                          Next page
+                        </Button>
+                      )}
+                      {!preview.cursor && preview.hasMore && contents.includes('\n') && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -797,11 +904,13 @@ export function TaskFiles({
                     path={selected}
                     contents={contents}
                     focusedLine={
-                      focusedLine && preview ? focusedLine - preview.startLine + 1 : undefined
+                      focusedLine && preview && !cursor
+                        ? focusedLine - preview.startLine + 1
+                        : undefined
                     }
                     focusRevision={focusRevision}
                     readOnly={readOnly}
-                    onReference={preview?.startLine === 1 ? onReference : undefined}
+                    onReference={preview?.startLine === 1 && !cursor ? onReference : undefined}
                     onSave={async (next, expectedContents) => {
                       const source = { request, taskId: task.id, draftScope }
                       const readGeneration = reads.current

@@ -2,7 +2,13 @@ import { useTaskReview } from './use-task-review'
 import { LocalCommitPicker } from './local-commit-picker'
 import { CodeReviewReport, type ReviewTab } from './code-review-report'
 import type { CodeFinding } from '@dovo/protocol'
-import { changedFileFingerprint, createReviewFileLookup, orderReviewFiles } from '@dovo/protocol'
+import {
+  changedFileFingerprint,
+  createReviewFileLookup,
+  orderReviewFiles,
+  pullFileKind,
+} from '@dovo/protocol'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls } from '@dovo/studio-ui'
 import { useAppPreferences, whitespaceOnlyFile } from '@dovo/studio-core'
@@ -18,6 +24,7 @@ import { useLiveRefresh } from '../detail/live-refresh'
 import { DiskActions } from './disk-actions'
 import {
   FileDiff,
+  FlaskConical,
   Check,
   ChevronDown,
   ChevronRight,
@@ -64,6 +71,8 @@ function PrimaryReviewPane({
   onReference?: (text: string) => void
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
+  const uiText = useInterfaceText()
+  const [hideTests, setHideTests] = useApplicationState(false)
   const { setWorkspace, request, connected, snapshot, activeRuntimeId, connection } = useWorkspace()
   const [selected, setSelected] = useApplicationState(initialFinding?.path ?? '')
   const [focusedFinding, setFocusedFinding] = useApplicationState(initialFinding)
@@ -168,7 +177,7 @@ function PrimaryReviewPane({
           : source.kind === 'branch'
             ? (branchDiff?.files ?? [])
             : (selectedTurn?.checkpoint?.files ?? [])
-  const visibleFiles = useMemo(
+  const diffFiles = useMemo(
     () =>
       checkpointFiles({
         files: sourceFiles,
@@ -191,6 +200,12 @@ function PrimaryReviewPane({
       selectedTurn?.checkpoint?.omitted,
     ],
   )
+  const visibleFiles = useMemo(
+    () => (hideTests ? diffFiles.filter((file) => pullFileKind(file) !== 'tests') : diffFiles),
+    [diffFiles, hideTests],
+  )
+  const hasTests = diffFiles.some((file) => pullFileKind(file) === 'tests')
+  const hiddenTests = diffFiles.length - visibleFiles.length
   const fingerprints = useMemo(
     () => new Map(visibleFiles.map((file) => [file.path, changedFileFingerprint(file)])),
     [visibleFiles],
@@ -452,6 +467,17 @@ function PrimaryReviewPane({
         <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
           {files.length} {files.length === 1 ? 'file' : 'files'}
         </span>
+        {hasTests && (!hideTests || !!visibleFiles.length) && (
+          <IconButton
+            label={uiText(hideTests ? 'Show test files' : 'Hide test files')}
+            className="size-7"
+            aria-pressed={hideTests}
+            disabled={editing}
+            onClick={() => setHideTests((value) => !value)}
+          >
+            <FlaskConical size={14} />
+          </IconButton>
+        )}
         {!files.some((file) => file.preview?.kind === 'deferred') && (
           <span className="hidden text-[0.6875rem] tabular-nums sm:inline">
             <span className="text-status-success">+{additions}</span>{' '}
@@ -716,6 +742,20 @@ function PrimaryReviewPane({
                 />
               )}
             </div>
+          ) : hiddenTests ? (
+            <EmptyState
+              icon={<FlaskConical />}
+              title={uiText(
+                hiddenTests === 1 ? '1 test file hidden' : '{count} test files hidden',
+                { count: hiddenTests },
+              )}
+              description={uiText('Show test files to review these changes.')}
+              action={
+                <Button size="sm" variant="outline" onClick={() => setHideTests(false)}>
+                  {uiText('Show test files')}
+                </Button>
+              }
+            />
           ) : (
             <EmptyState
               icon={<FileDiff />}

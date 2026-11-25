@@ -1,6 +1,7 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useFilePages } from '@dovo/studio-core/file-pages'
 import { ProjectSpreadsheet } from './project-spreadsheet'
-import { isSpreadsheet } from '@dovo/protocol'
+import { isSpreadsheet, type RtfSpan } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Image, ScrollView, View, useWindowDimensions } from 'react-native'
 import { filePreviewSchema, markdownMediaKind, responses, type Task } from '@dovo/protocol'
@@ -30,6 +31,9 @@ type FileResult = {
   truncated?: boolean
   startLine?: number
   hasMore?: boolean
+  cursor?: string
+  nextCursor?: string
+  document?: readonly (readonly RtfSpan[])[]
   image?: string
   notice?: string
   error?: string
@@ -59,6 +63,8 @@ export function TaskFiles({
   const [focusedLine, setFocusedLine] = useState<number>()
   const [fullRead, setFullRead] = useState(!!draft)
   const [tablePreviewKey, setTablePreviewKey] = useState('')
+  const [rtfSourceKey, setRtfSourceKey] = useState('')
+  const [documentPage, setDocumentPage] = useState(0)
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ key: string; file: FileResult }>()
   const [saving, setSaving] = useState(false)
@@ -77,7 +83,21 @@ export function TaskFiles({
   const tableKey = JSON.stringify([owner, selected])
   const delimitedText = /\.(csv|tsv)$/i.test(selected)
   const sheetPreview = isSpreadsheet(selected) && (!delimitedText || tablePreviewKey === tableKey)
-  const fileKey = JSON.stringify([listKey, selected, focusedLine, fullRead, sheetPreview])
+  const editing = draft?.path === selected && draft.checkoutId === checkoutId ? draft : null
+  const rtfFile = snapshot?.projectRtfPreviewSupported === true && /\.rtf$/i.test(selected)
+  const rtfPreview = rtfFile && rtfSourceKey !== tableKey && !editing
+  const baseFileKey = JSON.stringify([
+    listKey,
+    selected,
+    focusedLine,
+    fullRead,
+    sheetPreview,
+    rtfPreview,
+  ])
+  const pages = useFilePages(baseFileKey)
+  const pagingSupported = snapshot?.projectFilePagingSupported === true
+  const cursor = pagingSupported ? pages.cursor : undefined
+  const fileKey = JSON.stringify([baseFileKey, cursor, pagingSupported])
   const currentKey = useRef(fileKey)
   currentKey.current = fileKey
   const mounted = useRef(true)
@@ -91,7 +111,9 @@ export function TaskFiles({
   const links = task.linkedCheckouts ?? []
   const link = links.find((link) => link.id === checkoutId)
   const readOnly = !!task.example || (checkoutId !== '' && link?.access !== 'edit')
-  const editing = draft?.path === selected && draft.checkoutId === checkoutId ? draft : null
+  const document = rtfPreview ? file?.document : undefined
+  const visibleDocumentPage = Math.min(documentPage, (document?.length ?? 1) - 1)
+  useEffect(() => setDocumentPage(0), [tableKey, rtfPreview])
   const dirty = !!editing && editing.contents !== editing.expected
   useEffect(() => {
     if (!connected || !selected) return
@@ -113,10 +135,12 @@ export function TaskFiles({
         '/api/tasks/files/read',
         {
           ...input,
-          preview: {
-            startLine: fullRead ? 1 : (focusedLine ?? 1),
-            maxBytes: fullRead ? 1024 * 1024 : 256 * 1024,
-          },
+          preview: rtfPreview
+            ? { format: 'rtf' }
+            : {
+                ...(cursor ? { cursor } : { startLine: fullRead ? 1 : (focusedLine ?? 1) }),
+                maxBytes: fullRead ? 1024 * 1024 : 128 * 1024,
+              },
         },
         responses.projectFile,
       )
@@ -139,7 +163,19 @@ export function TaskFiles({
     return () => {
       active = false
     }
-  }, [call, connected, task.id, checkoutId, selected, focusedLine, fullRead, fileKey, sheetPreview])
+  }, [
+    call,
+    connected,
+    task.id,
+    checkoutId,
+    selected,
+    focusedLine,
+    fullRead,
+    fileKey,
+    sheetPreview,
+    cursor,
+    rtfPreview,
+  ])
   const discardThen = (action: () => void) => {
     if (saving) return
     const proceed = () => {
@@ -208,7 +244,7 @@ export function TaskFiles({
     file.startLine !== 1 ||
     file.size === undefined ||
     file.size > 1024 * 1024
-  const visibleContents = file?.contents?.slice(0, 200000) ?? ''
+  const visibleContents = file?.contents ?? ''
   return (
     <View style={{ flex: 1 }}>
       <View style={{ padding: 12, gap: 8 }}>
@@ -311,6 +347,16 @@ export function TaskFiles({
             <Text selectable style={{ color: colors.text, fontWeight: '600' }}>
               {selected}
             </Text>
+            {rtfFile && !editing && (
+              <Action
+                secondary
+                label={rtfPreview ? uiText('Show RTF source') : uiText('Show formatted preview')}
+                onPress={() => {
+                  setRtfSourceKey(rtfPreview ? tableKey : '')
+                  setFullRead(false)
+                }}
+              />
+            )}
             {delimitedText && !editing && (
               <Action
                 secondary
@@ -382,6 +428,42 @@ export function TaskFiles({
                 path={selected}
                 revision={revision}
               />
+            ) : document ? (
+              <>
+                {document.length > 1 && (
+                  <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                    <Action
+                      secondary
+                      disabled={visibleDocumentPage === 0}
+                      label={uiText('Previous page')}
+                      onPress={() => setDocumentPage(visibleDocumentPage - 1)}
+                    />
+                    <Text>
+                      {visibleDocumentPage + 1} / {document.length}
+                    </Text>
+                    <Action
+                      secondary
+                      disabled={visibleDocumentPage + 1 === document.length}
+                      label={uiText('Next page')}
+                      onPress={() => setDocumentPage(visibleDocumentPage + 1)}
+                    />
+                  </View>
+                )}
+                <Text selectable>
+                  {document[visibleDocumentPage]?.map((span, index) => (
+                    <Text
+                      key={index}
+                      style={{
+                        fontWeight: span.bold ? 'bold' : undefined,
+                        fontStyle: span.italic ? 'italic' : undefined,
+                        textDecorationLine: span.underline ? 'underline' : undefined,
+                      }}
+                    >
+                      {span.text}
+                    </Text>
+                  ))}
+                </Text>
+              </>
             ) : (
               <>
                 {file?.contents !== undefined && (
@@ -415,7 +497,29 @@ export function TaskFiles({
                         onPress={() => setFullRead(true)}
                       />
                     )}
-                    {(file.hasMore || file.contents.length > visibleContents.length) &&
+                    {pagingSupported && pages.hasPrevious && (
+                      <Action
+                        secondary
+                        disabled={!connected}
+                        label={uiText('Previous page')}
+                        onPress={pages.previous}
+                      />
+                    )}
+                    {pagingSupported && file.cursor && file.nextCursor && (
+                      <Action
+                        secondary
+                        disabled={!connected}
+                        label={uiText('Next page')}
+                        onPress={() => pages.next(file.cursor!, file.nextCursor!)}
+                      />
+                    )}
+                    {!pagingSupported && file.hasMore && !visibleContents.includes('\n') && (
+                      <Text style={styles.muted}>
+                        {uiText('Update the runtime to page through this file.')}
+                      </Text>
+                    )}
+                    {(!pagingSupported || !file.cursor) &&
+                      file.hasMore &&
                       visibleContents.includes('\n') && (
                         <Action
                           secondary
@@ -428,7 +532,7 @@ export function TaskFiles({
                           }}
                         />
                       )}
-                    {!!focusedLine && (
+                    {!!focusedLine && !cursor && (
                       <View
                         style={{ gap: 6 }}
                         accessibilityLabel={uiText('Selected line {value0}', {
@@ -457,13 +561,6 @@ export function TaskFiles({
                       </View>
                     )}
                     <CodeBlock content={visibleContents} language={fileLanguage(selected)} />
-                    {file.contents.length > 200000 && (
-                      <Text style={styles.muted}>
-                        <InterfaceText>
-                          {'Preview limited to the first 200,000 characters.'}
-                        </InterfaceText>
-                      </Text>
-                    )}
                   </>
                 )}
                 {!!file?.image && (

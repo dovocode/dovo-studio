@@ -13,7 +13,19 @@ const bundle = await bundleBrowser(
 window.fail=true;window.requests=[];window.opened=[];
 window.projectFile=(path,contents)=>{const size=new TextEncoder().encode(contents).length,complete=size<=256*1024;return {path,contents:complete?contents:contents.slice(0,128*1024),size,complete,truncated:!complete,startLine:1,hasMore:!complete}};
 const request=async(path,input)=>{window.requests.push({path,input});if((path.endsWith('/directory')||path.endsWith('/search-paths'))&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/directory'))return {entries:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].map(path=>({path,kind:'file'})),truncated:false};if(path.endsWith('/search-paths'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].filter(path=>path.includes(input.query)),...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return window.projectFile(input.path,input.path==='large.txt'?'é'.repeat(600000):'Small file')};throw new Error('Unexpected request: '+path)};
-window.runtime={connected:true,connection:{address:'http://runtime.test:7777',token:'paired-token'},request};
+window.runtime={connected:true,snapshot:{projectFilePagingSupported:true,projectRtfPreviewSupported:true},connection:{address:'http://runtime.test:7777',token:'paired-token'},request:async(path,input)=>{
+  if(path.endsWith('/directory')){const result=await request(path,input);if(!input.directory)result.entries.push({path:'document.rtf',kind:'file'});return result}
+  if(path.endsWith('/read')&&input.path==='large.txt'){
+    const result=await request(path,input);
+    return input.preview.cursor==='tail' ? {...result,contents:'End of long line',cursor:'tail',hasMore:false} : {...result,cursor:'head',nextCursor:'tail'};
+  }
+  if(path.endsWith('/read')&&input.path==='document.rtf'){
+    window.requests.push({path,input});
+    if(input.preview.format==='rtf')return {path:input.path,contents:'',document:[[{text:'<first page>',bold:true}],[{text:'Second page',italic:true}]]};
+    return window.projectFile(input.path,'{RTF source}');
+  }
+  return request(path,input)
+}};
 createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',files:[]}}/>);`,
     },
     bundle: true,
@@ -129,6 +141,33 @@ try {
   await page.evaluate(() => {
     window.failListing = false
   })
+  await page.getByRole('button', { name: 'Next page', exact: true }).click()
+  await page.getByTestId('file-preview').getByText('End of long line', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Previous page', exact: true }).click()
+  await page.getByRole('button', { name: 'Next page', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests
+        .filter((item) => item.input.path === 'large.txt' && item.input.preview?.cursor)
+        .map((item) => item.input.preview.cursor)
+        .slice(-2)
+        .join(','),
+    ),
+    'tail,head',
+  )
+  await page.getByRole('button', { name: 'document.rtf', exact: true }).click()
+  const rtf = page.getByLabel('Formatted RTF preview')
+  await rtf.getByText('<first page>', { exact: true }).waitFor()
+  assert.equal(
+    await rtf.getByText('<first page>').evaluate((node) => node.style.fontWeight),
+    'bold',
+  )
+  await rtf.getByRole('button', { name: 'Next page', exact: true }).click()
+  await rtf.getByText('Second page', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Show RTF source', exact: true }).click()
+  await page.getByTestId('file-preview').getByText('{RTF source}', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Show formatted preview', exact: true }).click()
+  await rtf.getByText('<first page>', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'binary.txt', exact: true }).click()
   await page.getByRole('alert').getByText('Cannot preview this file', { exact: true }).waitFor()
   assert.equal(await page.getByTestId('file-preview').count(), 0)

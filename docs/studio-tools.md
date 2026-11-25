@@ -7,7 +7,7 @@ its own toggle; all five default to off.
 | Part           | Tool               | Operations                                                                                                                            |
 | -------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Threads        | studio_threads     | List/search, create drafts with project/agent/model choices, send prompts, read paginated history, wait, stop/resume, archive/restore |
-| Automations    | studio_automations | Create/edit/validate/dry run workflows, configure triggers, enable/disable, run, inspect runs, wait, cancel/retry                     |
+| Automations    | studio_automations | Create/edit/validate/dry run workflows, configure triggers, enable/disable, run, inspect runs, wait, pause/resume, cancel/retry       |
 | Browsers       | studio_browsers    | List/open/close tabs, navigate/interact, capture screenshots/accessibility snapshots, inspect console and failed-request logs         |
 | UI interaction | studio_ui          | Inspect and control live desktop/web Studio sessions on this machine only                                                             |
 | Diagnostics    | studio_diagnostics | Read runtime health, backup progress, and paginated activity, optionally scoped to a thread/run                                       |
@@ -68,6 +68,10 @@ checkpoint history, or `detail: "full"` for the older complete response shape. W
 its response includes compact history. Older paired runtimes still return the full thread read and
 combined browser state. Use `studio_discover` on that computer to check for
 `capabilities.compactToolResults`.
+
+Delegated completion reads the saved assistant message for the completed turn. A newer notice or a
+reply outside the visible history page does not replace that result. The parent can read the saved
+completion after the child computer goes offline.
 
 Use diagnostics `activity` to see recent event headers and grouped tool calls. Set `toolsOnly: true`
 and pass the thread or run ID as `scope` to inspect just its tool calls. Keep both fields when you

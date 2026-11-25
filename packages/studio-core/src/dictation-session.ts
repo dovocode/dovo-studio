@@ -14,6 +14,7 @@ export type DictationState = {
   runtimeId?: string
   title: string
   remote?: boolean
+  transient?: true
   phase: 'starting' | 'recording' | 'transcribing' | 'review' | 'error'
   preview: string
   transcript: string
@@ -116,6 +117,7 @@ export const dictationSession = {
     runtimeId?: string
     title: string
     remote?: boolean
+    transient?: true
     bridge: DesktopDictationBridge
     language: DictationLanguage
     capture: Capture
@@ -130,6 +132,7 @@ export const dictationSession = {
         runtimeId: options.runtimeId,
         title: options.title,
         remote: options.remote,
+        ...(options.transient && { transient: true as const }),
         phase: 'starting',
         preview: '',
         transcript: '',

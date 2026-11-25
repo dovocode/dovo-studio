@@ -6,6 +6,7 @@ import { join, resolve, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { archiveTool } from './archive-tool.mjs'
+import { prepareAppleSpeech } from './apple-speech.mjs'
 
 const revision = '692350def1edea35a616b652255a8be70a168d37'
 const archiveHash = '4854e9d73e49f36b4cf79f9ddecc78cd07ea2bb574b879c29e2e565bf4a72e3c'
@@ -262,5 +263,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(0)
   }
   const bundle = await prepareDictationEngine(root)
+  prepareAppleSpeech(root, bundle)
   console.log(`Local dictation engine ready: ${bundle}`)
 }

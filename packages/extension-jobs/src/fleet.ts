@@ -8,7 +8,7 @@ import {
   type Workspace,
 } from '@dovo/studio-core'
 import { pendingTaskInput, runLabel, runSteps } from './run-progress'
-import { automationBotJobSummary } from '@dovo/protocol'
+import { automationBotJobSummary, automationRunNeedsReview } from '@dovo/protocol'
 
 export type FleetAutomation = {
   key: string
@@ -62,7 +62,12 @@ export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): Flee
         .filter((run) => run.automationId === flow.id)
         .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
       const latest =
-        runs.find((run) => run.status === 'running' || run.status === 'waiting') ?? runs[0]
+        runs.find(
+          (run) =>
+            !run.queuedForAdmission && (run.status === 'running' || run.status === 'waiting'),
+        ) ??
+        runs.find((run) => run.queuedForAdmission) ??
+        runs[0]
       const needsInput =
         !!latest &&
         runSteps(latest, flow).some(
@@ -99,7 +104,7 @@ export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): Flee
     })
   })
   const priority = (row: FleetAutomation) =>
-    row.needsInput || row.latest?.status === 'waiting'
+    row.needsInput || automationRunNeedsReview(row.latest)
       ? 0
       : row.latest?.status === 'failed'
         ? 1

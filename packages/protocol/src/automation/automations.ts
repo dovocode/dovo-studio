@@ -50,6 +50,18 @@ export function automationOnceTime(runAt: string | undefined, timezone: string):
   return date.getTime()
 }
 
+export function automationReviewLink(value: string | undefined) {
+  if (!value?.trim()) return undefined
+  try {
+    const url = new URL(value)
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password)
+      return url.href
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
 export function automationIssues(
   flow: Automation,
   /** Pass `tasks` to check Bot step targets; clients without thread data skip that check. */
@@ -117,6 +129,14 @@ export function automationIssues(
     errors.push('Connect every node to the trigger.')
   for (const node of flow.nodes) {
     const data = node.data
+    if (data.stepPool && data.kind !== 'task')
+      errors.push(`Only task steps can use a shared step pool. Check ${data.label}.`)
+    if (data.stepPool && (!Number.isSafeInteger(data.stepPool.limit) || data.stepPool.limit < 1))
+      errors.push(`Enter a positive concurrent step limit for ${data.label}.`)
+    if (data.reviewPrompt && (data.kind !== 'review' || data.pipelineWait))
+      errors.push(`Review instructions need a human review step. Check ${data.label}.`)
+    if (data.reviewPrompt?.link?.trim() && !automationReviewLink(data.reviewPrompt.link))
+      errors.push(`Enter an HTTP or HTTPS review link without credentials for ${data.label}.`)
     if (data.resultSchema !== undefined) {
       try {
         const schema: unknown = JSON.parse(data.resultSchema)

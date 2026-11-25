@@ -1,4 +1,5 @@
 import { prepareDictationEngine } from './dictation-engine.mjs'
+import { prepareAppleSpeech } from './apple-speech.mjs'
 import { verifyMacIconToolchain } from './mac-icon-toolchain.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
@@ -154,6 +155,7 @@ try {
   const dictationBundle = await timing.measure('Native dictation engine', () =>
     prepareDictationEngine(root),
   )
+  const appleSpeech = prepareAppleSpeech(root, dictationBundle)
   let endElectronPack, endArtifacts
   const endBuilder = timing.start('electron-builder total')
   await build({
@@ -245,7 +247,10 @@ try {
         hardenedRuntime: true,
         entitlements: join(root, 'apps/desktop/build/entitlements.mac.plist'),
         entitlementsInherit: join(root, 'apps/desktop/build/entitlements.mac.plist'),
-        binaries: ['Contents/Resources/dictation/dovo-dictation'],
+        binaries: [
+          'Contents/Resources/dictation/dovo-dictation',
+          ...(appleSpeech ? ['Contents/Resources/dictation/dovo-apple-speech'] : []),
+        ],
         extendInfo: {
           NSMicrophoneUsageDescription:
             'Use the microphone for local dictation or calls in browser pages you approve.',

@@ -329,7 +329,14 @@ export async function studioTool(
       return { agentId, catalog }
     }
     return {
-      capabilities: { targetedSubagents: 1, compactToolResults: 1 },
+      capabilities: {
+        targetedSubagents: 1,
+        compactToolResults: 1,
+        automationConcurrency: 1,
+        automationStepPools: 1,
+        automationPause: 1,
+        automationReviewPrompt: 1,
+      },
       enabled: Object.fromEntries(
         Object.entries(enabled).map(([key, value]) => [
           key,
@@ -748,19 +755,30 @@ export async function studioTool(
       return {
         run: await waitFor(
           read,
-          (run) => run.status === 'running',
+          (run) =>
+            run.pause?.phase !== 'paused' &&
+            (run.status === 'running' || !!run.queuedForAdmission || !!run.waitingForStepPool),
           command.timeoutMs ?? 20000,
           check,
         ),
       }
     }
-    if (command.action === 'cancel' || command.action === 'retry') {
+    if (
+      command.action === 'cancel' ||
+      command.action === 'retry' ||
+      command.action === 'pause' ||
+      command.action === 'resume'
+    ) {
       const run = s.jobs.detail(command.id)
       if (run.taskIds.includes(taskId))
         throw new HttpError(409, 'Cannot control the automation running this agent')
       validateFlow(s, run.flow, policy)
       if (command.action === 'cancel') {
         await s.jobs.cancel(command.id)
+        return { ok: true }
+      }
+      if (command.action === 'pause' || command.action === 'resume') {
+        s.jobs[command.action](command.id)
         return { ok: true }
       }
       return { id: s.jobs.retry(command.id) }

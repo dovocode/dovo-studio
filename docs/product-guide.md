@@ -164,11 +164,9 @@ guide before creating a separate workspace.
    another web client, then approve the named device on the host. Revoke it from the device list
    when needed.
 
-Desktop also supports [local dictation](desktop-dictation.md). In **Settings → General → Speech**,
-download and enable the optional 751 MB Nemotron model and choose a dictation language. Click the
-composer's microphone and allow microphone access to see a live preview while speaking. Record, stop
-and review the inserted text before sending. Recognition runs on your desktop without a cloud
-account, including when the conversation uses a remote runtime.
+In **Settings → General → Speech**, enable dictation with the optional Nemotron model or with Apple
+Speech on supported Macs. Click the composer’s microphone and allow microphone access to see a live
+preview. Stop and review the inserted text before sending. [Desktop dictation](desktop-dictation.md)
 
 ### Private network access
 
@@ -320,7 +318,8 @@ The desktop and web command palette (⌘/Ctrl+K) lists a section only while the 
 **Open Browser** focuses a detached browser window first, as the sidebar does. Settings pages appear
 as **Open … settings**, for example **Open Browser settings**. **New thread**, **Go to thread…** and
 **Search conversations…** work from every view while Threads is in the sidebar. Outside Threads they
-open Threads first.
+open Threads first. With a thread selected, use the palette to pin, snooze, settle, or archive it.
+The same commands show the reverse action when it is available.
 
 - **This app** (stored on this device only):
   - **General** — project organization, default task sort, navigation, 12- or 24-hour time,
@@ -1067,6 +1066,15 @@ device's workspace. Desktop stores credentials with Electron's encrypted storage
 iOS Keychain / Android Keystore through SecureStore. Browser connections remain in the current
 browser's local storage.
 
+Open **Connection map** in **Devices & runtime** on desktop and web or **Computers** on mobile. It
+shows the selected routes to paired computers and links reported by their saved thread watches. On
+desktop and web, **Connection list** returns to the saved computer list.
+
+When a paired computer has a saved watch for a thread on another computer, open the thread from its
+parent to read a preview. The parent computer must still have access to the owner. Pair the owning
+computer directly to reply, answer requests, open attachments, or read a full message that was
+shortened in the preview.
+
 On mobile, normal Send and Add to queue save the message on the phone before delivery. Offline
 messages and new threads survive an app restart and send automatically when the app is active and
 their computer becomes reachable. New thread uses the selected computer's cached workspace even
@@ -1122,6 +1130,13 @@ In a thread’s **Files** workspace, use **Preview folder** on a folder row to b
 folder. Open a file to preview it beside the tree on desktop, web, and wide mobile layouts. On a
 narrow screen, use **Browse files** to return to the same folder. Use the up action to go to the
 parent folder.
+
+Use **Next page** and **Previous page** to read through text files up to 100 MB, including files
+with long lines. Refresh to start over if another process changes the file. Editing is available
+after loading a complete text file up to 1 MB. For RTF documents, the formatted preview shows
+paragraphs, pages, bold, italics and underlining, up to 8 MB of source and about a million
+characters of decoded text. Use **Show RTF source** to inspect the original markup. Older runtimes
+open the available source preview.
 
 The mobile Markdown dependency has a pnpm patch for live iOS accessibility geometry: wrapped
 paragraphs and links recompute their screen coordinates after scrolling, keyboard changes and native

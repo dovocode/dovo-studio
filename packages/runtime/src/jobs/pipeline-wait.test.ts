@@ -130,6 +130,48 @@ it('resumes the same CI attempt after restart and admits the next worker once', 
   }
 })
 
+it('ignores a CI result in flight when paused and restores the remaining wait after restart', async () => {
+  const { f, project } = await setup()
+  try {
+    let resolveRead!: (value: string) => void
+    const read = new Promise<string>((resolve) => {
+      resolveRead = resolve
+    })
+    const attempt = vi.spyOn(ForgeWork.prototype, 'githubAttempt').mockReturnValue(read)
+    const before = f.runtime.services.jobs
+    const id = before.start('ci-flow')
+    await waitForRuntime(() => expect(before.summary(id).pipelineWait).toBeDefined())
+    const original = before.summary(id).pipelineWait!
+    const poll = before.tickPipelineWaits()
+    await waitForRuntime(() => expect(attempt).toHaveBeenCalledWith('repo', url))
+    const pausedAt = Date.parse(original.until) - 45_000
+    before.pause(id, pausedAt)
+    before.tick(Date.parse(original.until) + 600_000)
+    resolveRead('success')
+    await poll
+    expect(before.summary(id)).toMatchObject({ pause: { phase: 'paused' }, pipelineWait: original })
+    expect(f.runtime.run).toHaveBeenCalledTimes(1)
+    await f.restart()
+    const after = f.runtime.services.jobs
+    expect(after.summary(id)).toMatchObject({ pause: { phase: 'paused' }, pipelineWait: original })
+    await after.tickPipelineWaits()
+    expect(attempt).toHaveBeenCalledTimes(1)
+    const resumedAt = Date.parse(original.until) + 600_000
+    after.resume(id, resumedAt)
+    expect(after.summary(id).pipelineWait).toEqual({
+      url,
+      until: new Date(resumedAt + 45_000).toISOString(),
+    })
+    await after.tickPipelineWaits()
+    await waitForRuntime(() => expect(after.summary(id).status).toBe('completed'))
+    expect(attempt).toHaveBeenCalledTimes(2)
+    expect(f.runtime.run).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.restoreAllMocks()
+    await project.cleanup()
+  }
+})
+
 it.each(['cancel', 'timeout', 'failure'] as const)(
   'does not launch downstream work on CI %s',
   async (outcome) => {

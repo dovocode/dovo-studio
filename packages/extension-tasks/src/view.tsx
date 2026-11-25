@@ -820,7 +820,12 @@ export default function TasksView({
       repositoryId: pendingCreate.repositoryId,
     })
     // A template prefills the draft and settings; nothing is sent until the user sends it.
-    const task = template ? { ...created, ...templateTaskFields(template) } : created
+    const task = template
+      ? {
+          ...created,
+          ...templateTaskFields(template, store.snapshot?.linkedCheckoutTemplatesSupported),
+        }
+      : created
     setWorkspace((w) => ({
       ...w,
       tasks: [task, ...w.tasks],
@@ -843,6 +848,7 @@ export default function TasksView({
     setWorkspace,
     workspace.repositories,
     store.snapshot?.defaults,
+    store.snapshot?.linkedCheckoutTemplatesSupported,
   ])
   const selectTask = async (entry: TaskEntry, messageId?: string) => {
     if (
@@ -1362,6 +1368,7 @@ export default function TasksView({
       </HeaderContent>
     ) : (
       <TaskHeader
+        palette={task.id === selectedTask?.id}
         parentThread={task.id === entityId ? threadParent : undefined}
         windowRightEdge={!splitTask}
         onPullLink={(url) => openPullPreview(task, url)}

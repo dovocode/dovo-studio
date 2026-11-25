@@ -46,6 +46,8 @@ export const dictationLanguages = [
 ] as const
 export const dictationLanguageSchema = Schema.Literals(dictationLanguages.map(([code]) => code))
 export type DictationLanguage = typeof dictationLanguageSchema.Type
+export const dictationProviderSchema = Schema.Literals(['nemotron', 'apple'])
+export type DictationProvider = typeof dictationProviderSchema.Type
 export const botVoicePauseOptions = [1100, 1500, 2000, 3000, 5000] as const
 export const botVoicePauseSchema = Schema.Literals(botVoicePauseOptions)
 export type BotVoicePause = typeof botVoicePauseSchema.Type
@@ -59,12 +61,13 @@ export const dictationStatusSchema = Schema.Struct({
   model: Schema.Boolean,
   downloading: Schema.Boolean,
   downloaded: Schema.Number,
+  appleSpeech: Schema.optional(Schema.Literal(true)),
 })
 export type DictationStatus = typeof dictationStatusSchema.Type
 export type DesktopDictationBridge = {
   status: () => Promise<DictationStatus>
   install: (id: string) => Promise<void>
-  start: (id: string, language: DictationLanguage) => Promise<void>
+  start: (id: string, language: DictationLanguage, provider?: DictationProvider) => Promise<void>
   feed: (id: string, pcm: ArrayBuffer) => Promise<void>
   finish: (id: string) => Promise<string>
   subscribe: (id: string, listener: (update: DictationUpdate) => void) => () => void
@@ -85,7 +88,17 @@ const bridgeSchema = Schema.Struct({
     ),
   }),
 })
-export function desktopDictationBridge() {
+export function desktopDictationBridge(provider: DictationProvider = 'nemotron') {
   const result = decodeResult(bridgeSchema, globalThis)
-  return result.success ? result.data.dovo.dictation : undefined
+  if (!result.success) return undefined
+  const bridge = result.data.dovo.dictation
+  if (provider === 'nemotron') return bridge
+  return {
+    ...bridge,
+    status: async () => {
+      const status = await bridge.status()
+      return { ...status, engine: status.appleSpeech === true, model: status.appleSpeech === true }
+    },
+    start: (id: string, language: DictationLanguage) => bridge.start(id, language, 'apple'),
+  }
 }

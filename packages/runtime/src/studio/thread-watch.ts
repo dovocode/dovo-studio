@@ -7,6 +7,7 @@ import {
   agentSchema,
   decode,
   mutableStruct,
+  noStudioTools,
   permissionPolicyReadOnly,
   permissionPolicyWithinCeiling,
   resolveTaskAgent,
@@ -16,6 +17,7 @@ import {
   type TaskSummary,
   type ThreadWatchSnapshot,
   type ThreadWatchSummary,
+  type LinkedThreadRead,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import type { StudioPolicy } from './tools.js'
@@ -142,6 +144,35 @@ export class ThreadWatch {
     return this.states()
       .filter((state) => state.parentId === parentId)
       .map((state) => this.publicSummary(state))
+  }
+  linkedRead(input: LinkedThreadRead) {
+    const parent = this.s.store.taskSummary(input.parentTaskId)
+    const state = this.states().find(
+      (watch) =>
+        watch.parentId === parent.id &&
+        watch.threadId === input.threadId &&
+        watch.snapshot?.runtimeId === input.runtimeIdentity &&
+        watch.runtimeId !== 'local' &&
+        watch.status !== 'stopped' &&
+        !watch.stopRequested,
+    )
+    if (
+      !state ||
+      parent.replica ||
+      parent.archived ||
+      parent.archivedAt ||
+      this.publicSummary(state, parent).paused
+    )
+      throw new HttpError(403, 'This linked thread is unavailable through its parent computer.')
+    return {
+      generation: state.generation,
+      runtimeId: state.runtimeId,
+      policy: {
+        permissions: state.permissions,
+        readOnly: true,
+        studioTools: { ...noStudioTools(), threads: true },
+      },
+    }
   }
   forgetTasks(taskIds: readonly string[]) {
     const ids = new Set(taskIds)

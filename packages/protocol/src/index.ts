@@ -97,6 +97,7 @@ export * from './scm/pulls/pull-presentation.js'
 export * from './scm/pulls/pull-readiness.js'
 export * from './conversation/presentation/markdown-links.js'
 export * from './runtime/connection/runtime-fleet.js'
+export * from './runtime/connection/connection-map.js'
 export * from './runtime/connection/replication-identity.js'
 export * from './runtime/cache/read-cache.js'
 export * from './automation/automations.js'
@@ -445,7 +446,10 @@ export * from './automation/dry-run-scenarios.js'
 export * from './tasks/bot-skills.js'
 export { botCallReplies } from './tasks/bot-call.js'
 
-export { responseReply } from './conversation/presentation/response-reply.js'
+export {
+  responseReply,
+  responseSelectionReply,
+} from './conversation/presentation/response-reply.js'
 
 export * from './scm/repositories/spreadsheets.js'
 

@@ -32,11 +32,12 @@ Desktop MessagePorts bridge the authenticated WebSocket to the worker. Web/mobil
 bounded server credit. Controls remain JSON. The runtime normally replays the last 1 Mi UTF-16 code
 units. For a late binary connection to an alternate screen or after the output buffer fills, the
 runtime sends the parsed screen and up to 256 rows of scrollback. It uses raw replay if the headless
-parser exceeds its queue limit or has an unfinished VT token. The parser pauses the PTY briefly when
-its queue builds up and resumes it when it catches up. Text-stream clients use the raw replay. The
-parser stops tracking a session if the backlog exceeds 2 Mi UTF-16 code units or 2048 writes before
-the pause can take effect. The browser keeps a separate 16 MiB Ghostty history budget
-(`scrollbackBytes`, measured in bytes).
+parser exceeds its queue limit or has an unfinished VT token. Binary viewers skip the continuation
+of a control sequence whose start was clipped, including future chunks, and replay the next escape.
+The parser pauses the PTY briefly when its queue builds up and resumes it when it catches up.
+Text-stream clients use the raw replay. The parser stops tracking a session if the backlog exceeds 2
+Mi UTF-16 code units or 2048 writes before the pause can take effect. The browser keeps a separate
+16 MiB Ghostty history budget (`scrollbackBytes`, measured in bytes).
 
 `POST /api/terminals/screen` accepts `{ "id": "…", "lines": 80 }`. Omit `lines` to read the visible
 screen. Set it to 1–300 to read the last rows, including retained scrollback on the normal screen.

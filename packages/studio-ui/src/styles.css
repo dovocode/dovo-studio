@@ -4084,6 +4084,21 @@ a.studio-project-row:hover {
 .studio-resizable-sidebar {
   z-index: 1;
 }
+.studio-resizable-sidebar > [data-sidebar-resize-edge='left'] {
+  left: -4px;
+}
+.studio-resizable-sidebar > [data-sidebar-resize-edge='right'] {
+  right: -4px;
+}
+
+@media (pointer: coarse) {
+  .studio-resizable-sidebar > [data-sidebar-resize-edge='left'] {
+    left: 0;
+  }
+  .studio-resizable-sidebar > [data-sidebar-resize-edge='right'] {
+    right: 0;
+  }
+}
 
 /* File groups use an inset fill and align with the review pane. */
 .studio-change-summary .studio-change-file-tree {

@@ -15,6 +15,8 @@ import {
 import type { RuntimeOverview, RuntimeRegistry } from './runtime-fleet'
 import { snapshotSchema } from './runtime'
 import { taskSchema } from '../../workspace'
+import { runtimeConnectionMap } from './connection-map'
+import type { ThreadWatchSummary } from '../../tasks/thread-watches'
 
 it('keeps unchanged computer connections across decoded registry edits and resets changed credentials', () => {
   const previous = decode(runtimeRegistrySchema, {
@@ -117,6 +119,67 @@ const overview: RuntimeOverview = {
   },
   pullError: null,
 }
+it('shows verified routes and groups linked threads by computer identity', () => {
+  const watch: ThreadWatchSummary = {
+    threadId: 'remote-thread',
+    runtimeId: 'foreign-profile',
+    computerName: 'Linked computer',
+    relation: 'linked',
+    status: 'watching',
+    offline: false,
+    lastSuccessAt: '2026-09-19T10:00:00Z',
+    snapshot: {
+      runtimeId: 'remote',
+      title: 'Remote',
+      phase: 'completed',
+      revision: 'rev-1',
+      attention: [],
+      watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+    },
+  }
+  const local = {
+    ...overview,
+    snapshot: {
+      ...snapshot,
+      runtimeId: 'source',
+      workspace: {
+        ...snapshot.workspace,
+        tasks: [
+          {
+            ...snapshot.workspace.tasks[0],
+            threadWatches: [watch, { ...watch, threadId: 'closed', status: 'stopped' as const }],
+          },
+          { ...snapshot.workspace.tasks[0], id: 'another-parent', threadWatches: [watch] },
+        ],
+      },
+    },
+  }
+  expect(runtimeConnectionMap([local])[0]).toMatchObject({
+    name: 'Mac',
+    status: 'online',
+    http: 'Saved address · http://one.local:51464',
+    links: [{ id: 'remote', name: 'Linked computer', count: 1, paired: false, reachable: true }],
+  })
+  const remote = {
+    ...overview,
+    profile: runtimeProfile(
+      {
+        address: 'http://two.local:51464',
+        token: 'other-device-token-at-least-20',
+        runtimeId: 'remote',
+      },
+      'Paired computer',
+    ),
+    snapshot: null,
+    connected: false,
+    unauthorized: true,
+  }
+  const [source, paired] = runtimeConnectionMap([{ ...local, connected: false }, remote])
+  expect(source.links).toEqual([
+    { id: 'remote', name: 'Paired computer', count: 1, paired: true, reachable: false },
+  ])
+  expect(paired.status).toBe('pairing expired')
+})
 const pull = {
   number: 1,
   title: 'Review me',

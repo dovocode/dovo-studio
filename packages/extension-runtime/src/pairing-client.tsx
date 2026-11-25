@@ -10,6 +10,7 @@ import {
   runtimeRouteVersion,
   subscribeRuntimeRoutes,
   runtimeReachability,
+  runtimeConnectionMap,
   workspaceRecoveriesSchema,
   type WorkspaceRecovery,
   type RuntimeConnection,
@@ -25,7 +26,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { Plus, Circle, ChevronDown } from 'lucide-react'
+import { Plus, Circle, ChevronDown, ArrowRight } from 'lucide-react'
 import { responses, runtimeRequest, useWorkspace, startPolling } from '@dovo/studio-core'
 import {
   Button,
@@ -82,6 +83,7 @@ export function PairingClient({
     discardMutations,
   } = useWorkspace()
   const [recoveryCursor, setRecoveryCursor] = useApplicationState<string | undefined>(undefined)
+  const [showMap, setShowMap] = useApplicationState(false)
   const [recoveryOwner, setRecoveryOwner] = useApplicationState<RuntimeProfile | null>(null)
   const [recoveryWarnings, setRecoveryWarnings] = useApplicationState<string[]>([])
   const [recoveries, setRecoveries] = useApplicationState<WorkspaceRecovery[] | null>(null)
@@ -264,212 +266,271 @@ export function PairingClient({
           </div>
         </div>
       )}
-      <div className="divide-y divide-border/50">
-        {runtimes.map((entry) => {
-          return (
-            <div
-              key={entry.profile.id}
-              className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
-            >
-              <RuntimeIcon
-                icon={entry.snapshot?.runtimeIcon}
-                aria-hidden="true"
-                size={17}
-                className="mt-0.5 shrink-0 text-muted-foreground"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="min-w-0 break-words font-medium">{entry.profile.name}</span>
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 text-[0.6875rem]',
-                      entry.connected ? 'text-status-success' : 'text-muted-foreground',
+      {!!runtimes.length && (
+        <Button
+          size="sm"
+          variant="outline"
+          aria-expanded={showMap}
+          onClick={() => setShowMap(!showMap)}
+        >
+          {showMap ? 'Connection list' : 'Connection map'}
+        </Button>
+      )}
+      {showMap && runtimes.length > 0 ? (
+        <section aria-label="Connection map" className="space-y-3">
+          <p className="text-xs font-medium">This Studio</p>
+          <ul className="divide-y divide-border border-l pl-4">
+            {runtimeConnectionMap(runtimes).map((computer, index) => (
+              <li key={computer.profileId} className="space-y-2 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 text-xs">
+                    <p className="font-medium">
+                      {computer.name} · <span className="capitalize">{computer.status}</span>
+                    </p>
+                    <p className="break-words text-muted-foreground">
+                      HTTP requests · {computer.http}
+                    </p>
+                    {computer.live && (
+                      <p className="break-words text-muted-foreground">
+                        Live updates · {computer.live}
+                      </p>
                     )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onManage(runtimes[index]!.profile)}
                   >
-                    <Circle aria-hidden="true" size={6} fill="currentColor" />
-                    {entry.connected
-                      ? runtimeSyncStatus(entry.profile.connection) === 'live'
-                        ? 'Live'
-                        : runtimeSyncStatus(entry.profile.connection)
-                          ? 'Online · HTTP updates'
-                          : 'Online'
-                      : entry.unauthorized
-                        ? 'Pairing expired'
-                        : runtimeReachability(entry) === 'connecting'
-                          ? 'Connecting…'
-                          : 'Offline'}
-                  </span>
-                </p>
-                {!entry.connected && (
-                  <ol
-                    aria-label="Connection stages"
-                    className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-                  >
-                    {connectionProgress(entry).map((step) => (
-                      <li
-                        key={step.label}
-                        aria-current={
-                          step.state === 'current' || step.state === 'failed' ? 'step' : undefined
-                        }
-                        className={cn(
-                          'flex items-center gap-1 whitespace-nowrap',
-                          step.state === 'failed'
-                            ? 'text-status-error'
-                            : step.state === 'current'
-                              ? 'text-foreground'
-                              : 'text-muted-foreground',
-                        )}
-                      >
-                        <span aria-hidden="true">
-                          {step.state === 'done'
-                            ? '✓'
-                            : step.state === 'failed'
-                              ? '×'
-                              : step.state === 'current'
-                                ? '◉'
-                                : '○'}
+                    Manage {computer.name}
+                  </Button>
+                </div>
+                {computer.links.length > 0 && (
+                  <ul aria-label="Linked thread computers" className="space-y-2 border-l pl-3">
+                    {computer.links.map((link) => (
+                      <li key={link.id} className="flex items-center gap-2 text-xs">
+                        <ArrowRight size={14} aria-hidden="true" />
+                        <span>
+                          {link.name} · {link.count}{' '}
+                          {link.count === 1 ? 'linked thread' : 'linked threads'} ·{' '}
+                          {link.reachable ? 'Reachable' : 'Last known link'}
+                          {!link.paired && ' · Pair to interact'}
                         </span>
-                        {step.label}
-                        <span className="sr-only"> · {step.state}</span>
                       </li>
                     ))}
-                  </ol>
+                  </ul>
                 )}
-                {entry.connected ? (
-                  <ConnectionRoutes connection={entry.profile.connection} />
-                ) : (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {entry.profile.connection.address}
-                  </p>
-                )}
-                {!entry.connected && entry.lastSeen && (
-                  <p className="text-xs text-muted-foreground">
-                    Last connected {new Date(entry.lastSeen).toLocaleString()}
-                  </p>
-                )}
-                {!entry.connected && entry.error && (
-                  <p className="break-words text-xs text-destructive">{entry.error}</p>
-                )}
-              </div>
-              <div className="col-start-2 flex items-center gap-1 sm:col-start-3 sm:row-start-1">
-                <SavedActions profile={entry.profile} connected={entry.connected} />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label={`Manage ${entry.profile.name}`}
-                  disabled={busy}
-                  onClick={() => onManage(entry.profile)}
-                >
-                  Manage
-                </Button>
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`More actions for ${entry.profile.name}`}
-                      title={`More actions for ${entry.profile.name}`}
-                      disabled={busy}
-                    >
-                      More <ChevronDown className="size-3" aria-hidden="true" />
-                    </Button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content
-                      align="end"
-                      sideOffset={6}
-                      className="studio-menu-surface z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
-                    >
-                      {!entry.snapshot?.owner && (
-                        <DropdownMenu.Item
-                          className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
-                          disabled={busy}
-                          aria-label={`Update address for ${entry.profile.name}`}
-                          onSelect={() => {
-                            setReplaceId(entry.profile.id)
-                            setAddress('')
-                            setCode('')
-                            setError('')
-                            setOpen(true)
-                          }}
-                        >
-                          Update address
-                        </DropdownMenu.Item>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <div className="divide-y divide-border/50">
+          {runtimes.map((entry) => {
+            return (
+              <div
+                key={entry.profile.id}
+                className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+              >
+                <RuntimeIcon
+                  icon={entry.snapshot?.runtimeIcon}
+                  aria-hidden="true"
+                  size={17}
+                  className="mt-0.5 shrink-0 text-muted-foreground"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="min-w-0 break-words font-medium">{entry.profile.name}</span>
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 text-[0.6875rem]',
+                        entry.connected ? 'text-status-success' : 'text-muted-foreground',
                       )}
-                      {entry.connected && (
+                    >
+                      <Circle aria-hidden="true" size={6} fill="currentColor" />
+                      {entry.connected
+                        ? runtimeSyncStatus(entry.profile.connection) === 'live'
+                          ? 'Live'
+                          : runtimeSyncStatus(entry.profile.connection)
+                            ? 'Online · HTTP updates'
+                            : 'Online'
+                        : entry.unauthorized
+                          ? 'Pairing expired'
+                          : runtimeReachability(entry) === 'connecting'
+                            ? 'Connecting…'
+                            : 'Offline'}
+                    </span>
+                  </p>
+                  {!entry.connected && (
+                    <ol
+                      aria-label="Connection stages"
+                      className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+                    >
+                      {connectionProgress(entry).map((step) => (
+                        <li
+                          key={step.label}
+                          aria-current={
+                            step.state === 'current' || step.state === 'failed' ? 'step' : undefined
+                          }
+                          className={cn(
+                            'flex items-center gap-1 whitespace-nowrap',
+                            step.state === 'failed'
+                              ? 'text-status-error'
+                              : step.state === 'current'
+                                ? 'text-foreground'
+                                : 'text-muted-foreground',
+                          )}
+                        >
+                          <span aria-hidden="true">
+                            {step.state === 'done'
+                              ? '✓'
+                              : step.state === 'failed'
+                                ? '×'
+                                : step.state === 'current'
+                                  ? '◉'
+                                  : '○'}
+                          </span>
+                          {step.label}
+                          <span className="sr-only"> · {step.state}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {entry.connected ? (
+                    <ConnectionRoutes connection={entry.profile.connection} />
+                  ) : (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {entry.profile.connection.address}
+                    </p>
+                  )}
+                  {!entry.connected && entry.lastSeen && (
+                    <p className="text-xs text-muted-foreground">
+                      Last connected {new Date(entry.lastSeen).toLocaleString()}
+                    </p>
+                  )}
+                  {!entry.connected && entry.error && (
+                    <p className="break-words text-xs text-destructive">{entry.error}</p>
+                  )}
+                </div>
+                <div className="col-start-2 flex items-center gap-1 sm:col-start-3 sm:row-start-1">
+                  <SavedActions profile={entry.profile} connected={entry.connected} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={`Manage ${entry.profile.name}`}
+                    disabled={busy}
+                    onClick={() => onManage(entry.profile)}
+                  >
+                    Manage
+                  </Button>
+                  <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`More actions for ${entry.profile.name}`}
+                        title={`More actions for ${entry.profile.name}`}
+                        disabled={busy}
+                      >
+                        More <ChevronDown className="size-3" aria-hidden="true" />
+                      </Button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.Content
+                        align="end"
+                        sideOffset={6}
+                        className="studio-menu-surface z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
+                      >
+                        {!entry.snapshot?.owner && (
+                          <DropdownMenu.Item
+                            className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                            disabled={busy}
+                            aria-label={`Update address for ${entry.profile.name}`}
+                            onSelect={() => {
+                              setReplaceId(entry.profile.id)
+                              setAddress('')
+                              setCode('')
+                              setError('')
+                              setOpen(true)
+                            }}
+                          >
+                            Update address
+                          </DropdownMenu.Item>
+                        )}
+                        {entry.connected && (
+                          <DropdownMenu.Item
+                            className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                            disabled={busy || !entry.connected}
+                            onSelect={() =>
+                              void act(async () => {
+                                const value = await readRuntime(
+                                  entry.profile,
+                                  '/api/workspace/recovered-edits',
+                                  undefined,
+                                  workspaceRecoveriesSchema,
+                                  'GET',
+                                )
+                                setRecoveries(value.edits)
+                                setRecoveryCursor(value.nextCursor)
+                                setRecoveryOwner(entry.profile)
+                                setRecoveryWarnings(value.warnings ?? [])
+                              })
+                            }
+                          >
+                            Recovered edits
+                          </DropdownMenu.Item>
+                        )}
                         <DropdownMenu.Item
                           className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
-                          disabled={busy || !entry.connected}
+                          aria-label={`Reconnect ${entry.profile.name}`}
+                          disabled={busy}
                           onSelect={() =>
-                            void act(async () => {
-                              const value = await readRuntime(
-                                entry.profile,
-                                '/api/workspace/recovered-edits',
-                                undefined,
-                                workspaceRecoveriesSchema,
-                                'GET',
-                              )
-                              setRecoveries(value.edits)
-                              setRecoveryCursor(value.nextCursor)
-                              setRecoveryOwner(entry.profile)
-                              setRecoveryWarnings(value.warnings ?? [])
+                            void act(() => {
+                              retryRuntimeSync(entry.profile.connection)
+                              return refreshRuntime(entry.profile)
                             })
                           }
                         >
-                          Recovered edits
+                          Reconnect
                         </DropdownMenu.Item>
-                      )}
-                      <DropdownMenu.Item
-                        className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
-                        aria-label={`Reconnect ${entry.profile.name}`}
-                        disabled={busy}
-                        onSelect={() =>
-                          void act(() => {
-                            retryRuntimeSync(entry.profile.connection)
-                            return refreshRuntime(entry.profile)
-                          })
-                        }
-                      >
-                        Reconnect
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                      {mutationStatus(entry.profile).pending > 0 && (
+                        <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                        {mutationStatus(entry.profile).pending > 0 && (
+                          <DropdownMenu.Item
+                            className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
+                            disabled={busy}
+                            onSelect={() => {
+                              setError('')
+                              setDiscardTarget(entry.profile)
+                            }}
+                          >
+                            Discard saved actions ({mutationStatus(entry.profile).pending})
+                          </DropdownMenu.Item>
+                        )}
                         <DropdownMenu.Item
                           className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
+                          aria-label={`Forget ${entry.profile.name}`}
+                          title="Remove this saved connection from this device"
                           disabled={busy}
-                          onSelect={() => {
-                            setError('')
-                            setDiscardTarget(entry.profile)
-                          }}
+                          onSelect={() =>
+                            void act(async () => {
+                              const revoked = await forgetRuntime(entry.profile.id)
+                              if (!revoked && !entry.snapshot?.owner)
+                                setError(
+                                  'Computer forgotten on this device. Remote access removal could not be confirmed. Check Trusted devices on that computer.',
+                                )
+                            })
+                          }
                         >
-                          Discard saved actions ({mutationStatus(entry.profile).pending})
+                          Forget
                         </DropdownMenu.Item>
-                      )}
-                      <DropdownMenu.Item
-                        className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
-                        aria-label={`Forget ${entry.profile.name}`}
-                        title="Remove this saved connection from this device"
-                        disabled={busy}
-                        onSelect={() =>
-                          void act(async () => {
-                            const revoked = await forgetRuntime(entry.profile.id)
-                            if (!revoked && !entry.snapshot?.owner)
-                              setError(
-                                'Computer forgotten on this device. Remote access removal could not be confirmed. Check Trusted devices on that computer.',
-                              )
-                          })
-                        }
-                      >
-                        Forget
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Root>
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
       {!runtimes.length && (
         <p className="text-xs leading-5 text-muted-foreground">
           Connect a computer with its address and a pairing code. Local network, Tailscale, and

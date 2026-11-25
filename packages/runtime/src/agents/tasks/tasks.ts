@@ -3051,7 +3051,31 @@ export class Tasks {
         this.deliverHumanInput(id, runId, text, receipt)
       },
       requestId,
+      undefined,
+      run.id,
     )
+  }
+  withdrawAutomationQuestions(automationRunId: string, taskIds: readonly string[]) {
+    const pending = new Set(this.questions.list().map((question) => question.taskId))
+    for (const id of taskIds) {
+      if (!pending.has(id) || !this.store.get().tasks.some((task) => task.id === id)) continue
+      const task = this.store.task(id)
+      const turns = new Set(
+        task.messages.flatMap((message) =>
+          message.source?.kind === 'automation' &&
+          message.source.runId === automationRunId &&
+          message.turnId
+            ? [message.turnId]
+            : [],
+        ),
+      )
+      const runs = new Set(
+        task.turns?.filter((turn) => turns.has(turn.id)).map((turn) => turn.runId ?? turn.id),
+      )
+      for (const turn of task.turns ?? [])
+        if (turn.runId && runs.has(turn.runId)) turns.add(turn.id)
+      this.questions.cancelTask(id, turns)
+    }
   }
   humanInputSignal(id: string, runId: string) {
     const run = this.running.get(id)

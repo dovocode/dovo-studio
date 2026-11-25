@@ -302,7 +302,7 @@ export function createServices(
   const modelSelection = new ModelSelection(db, store, agents, titles, () =>
     acpInstallations.list(),
   )
-  const mcpApps = new McpApps(db, store, activity, approvals)
+  const mcpApps = new McpApps(db, store, activity, approvals, runtimeId)
   const tasks = new Tasks(
       store,
       git,

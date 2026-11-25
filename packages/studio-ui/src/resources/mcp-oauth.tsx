@@ -8,6 +8,7 @@ import {
   type McpOAuthFlow,
   type McpOAuthStatus,
   type McpServer,
+  type ThreadMcpOAuthWarning,
 } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button, FormField, Input } from '@dovo/studio-ui'
@@ -17,15 +18,18 @@ import { resourceError } from './error'
  * OAuth sign-in for one remote MCP server on the connected computer. The token stays on that
  * computer; this panel only shows the connection state.
  */
-export function McpOAuthPanel({
-  draft,
-  onChange,
-  disabled,
-}: {
-  draft: McpServer
-  onChange: (server: McpServer) => void
-  disabled: boolean
-}) {
+export function McpOAuthPanel(
+  props: {
+    disabled: boolean
+  } & (
+    | { draft: McpServer; onChange: (server: McpServer) => void }
+    | { thread: { taskId: string; warning: ThreadMcpOAuthWarning }; onConnected: () => void }
+  ),
+) {
+  const editor = 'draft' in props ? props : undefined
+  const draft = editor?.draft
+  const thread = 'thread' in props ? props : undefined
+  const { disabled } = props
   const { request, snapshot, connected, runtimes, activeRuntimeId } = useWorkspace()
   const supported = snapshot?.mcpOAuthSupported === true
   const computer = runtimeComputerName({
@@ -38,11 +42,16 @@ export function McpOAuthPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const target = { name: draft.name.trim(), url: draft.url.trim(), scope: draft.oauth?.scope }
-  const ready = supported && connected && !!target.name && /^https?:\/\//.test(target.url)
+  const target = draft && {
+    name: draft.name.trim(),
+    url: draft.url.trim(),
+    scope: draft.oauth?.scope,
+  }
+  const ready =
+    supported && connected && (thread || (target?.name && /^https?:\/\//.test(target.url)))
 
   const refresh = async () => {
-    if (!ready || !draft.oauth) return setStatus(undefined)
+    if (!ready || !draft?.oauth || !target) return setStatus(undefined)
     const result = await request(
       '/api/agents/mcp/oauth',
       { action: 'status', servers: [target] },
@@ -54,7 +63,7 @@ export function McpOAuthPanel({
     void refresh().catch((cause: unknown) => setError(resourceError(cause)))
     // The connection belongs to the saved name and exact URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, draft.oauth !== undefined, target.name, target.url])
+  }, [!!ready, draft?.oauth !== undefined, target?.name, target?.url])
 
   // The loopback page on the computer finishes the sign-in; poll until it reports a result.
   useEffect(() => {
@@ -69,8 +78,10 @@ export function McpOAuthPanel({
           if (state.state === 'pending') return
           setFlow(undefined)
           setCallback('')
-          if (state.state === 'connected') setNotice('Signed in.')
-          else setError(state.error ?? `Sign-in ${state.state}.`)
+          if (state.state === 'connected') {
+            setNotice('Signed in.')
+            thread?.onConnected()
+          } else setError(state.error ?? `Sign-in ${state.state}.`)
           void refresh()
         })
         .catch(() => {})
@@ -95,7 +106,9 @@ export function McpOAuthPanel({
     run(async () => {
       const started = await request(
         '/api/agents/mcp/oauth',
-        { action: 'connect', server: target },
+        thread
+          ? { action: 'thread-connect', ...thread.thread }
+          : { action: 'connect', server: target },
         mcpOAuthFlowSchema,
       )
       setFlow(started)
@@ -112,8 +125,10 @@ export function McpOAuthPanel({
       if (state.state === 'pending') return
       setFlow(undefined)
       setCallback('')
-      if (state.state === 'connected') setNotice('Signed in.')
-      else setError(state.error ?? `Sign-in ${state.state}.`)
+      if (state.state === 'connected') {
+        setNotice('Signed in.')
+        thread?.onConnected()
+      } else setError(state.error ?? `Sign-in ${state.state}.`)
       await refresh()
     })
   const cancel = () =>
@@ -144,59 +159,69 @@ export function McpOAuthPanel({
 
   return (
     <div className="grid gap-2 rounded-md border p-3 text-xs" data-testid="mcp-oauth">
-      <label className="flex items-start gap-2">
-        <input
-          type="checkbox"
-          checked={!!draft.oauth}
-          disabled={disabled || (!supported && !draft.oauth)}
-          onChange={(event) =>
-            onChange({
-              ...draft,
-              oauth: event.target.checked ? { ...(draft.oauth ?? {}) } : undefined,
-            })
-          }
-        />
-        Sign in with OAuth
-      </label>
+      {thread && (
+        <p>
+          {thread.thread.warning.name} needs MCP sign-in on {computer || 'this computer'}.
+        </p>
+      )}
+      {editor && (
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={!!editor.draft.oauth}
+            disabled={disabled || (!supported && !editor.draft.oauth)}
+            onChange={(event) =>
+              editor.onChange({
+                ...editor.draft,
+                oauth: event.target.checked ? { ...(editor.draft.oauth ?? {}) } : undefined,
+              })
+            }
+          />
+          Sign in with OAuth
+        </label>
+      )}
       {!supported && (
         <p className="text-muted-foreground">
           Update the runtime on this computer to sign in to MCP servers with OAuth.
         </p>
       )}
-      {draft.oauth && (
+      {(draft?.oauth || thread) && (
         <>
-          <FormField label="Scopes (optional)">
-            <Input
-              placeholder="Use the server's advertised scopes"
-              value={draft.oauth.scope ?? ''}
-              disabled={disabled}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  oauth: event.target.value.trim() ? { scope: event.target.value } : {},
-                })
-              }
-            />
-          </FormField>
+          {editor && (
+            <FormField label="Scopes (optional)">
+              <Input
+                placeholder="Use the server's advertised scopes"
+                value={editor.draft.oauth?.scope ?? ''}
+                disabled={disabled}
+                onChange={(event) =>
+                  editor.onChange({
+                    ...editor.draft,
+                    oauth: event.target.value.trim() ? { scope: event.target.value } : {},
+                  })
+                }
+              />
+            </FormField>
+          )}
           <p className="text-muted-foreground">
             Each computer signs in separately. Tokens stay on {computer || 'the computer'} and are
             never copied to shared settings or other devices.
           </p>
-          {ready ? (
-            <p role="status">
-              {status?.state === 'connected'
-                ? `Signed in on ${computer}${status.refreshable ? '. Dovo refreshes the token automatically.' : status.expiresAt ? ` until ${new Date(status.expiresAt).toLocaleString()}.` : '.'}`
-                : status?.state === 'expired'
-                  ? `The sign-in on ${computer} expired. Select Reconnect.`
-                  : `Not signed in on ${computer}.`}
-            </p>
-          ) : (
-            <p className="text-muted-foreground">
-              {connected
-                ? 'Enter a name and server URL to sign in.'
-                : 'Connect to the computer to sign in.'}
-            </p>
-          )}
+          {!thread &&
+            (ready ? (
+              <p role="status">
+                {status?.state === 'connected'
+                  ? `Signed in on ${computer}${status.refreshable ? '. Dovo refreshes the token automatically.' : status.expiresAt ? ` until ${new Date(status.expiresAt).toLocaleString()}.` : '.'}`
+                  : status?.state === 'expired'
+                    ? `The sign-in on ${computer} expired. Select Reconnect.`
+                    : `Not signed in on ${computer}.`}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                {connected
+                  ? 'Enter a name and server URL to sign in.'
+                  : 'Connect to the computer to sign in.'}
+              </p>
+            ))}
           {flow ? (
             <div className="grid gap-2">
               <p>
@@ -243,7 +268,11 @@ export function McpOAuthPanel({
                   disabled={busy || disabled}
                   onClick={() => void connect()}
                 >
-                  {status?.state === 'disconnected' || !status ? 'Connect' : 'Reconnect'}
+                  {thread
+                    ? 'Sign in'
+                    : status?.state === 'disconnected' || !status
+                      ? 'Connect'
+                      : 'Reconnect'}
                 </Button>
                 {status && status.state !== 'disconnected' && (
                   <Button

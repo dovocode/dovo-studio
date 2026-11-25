@@ -9,7 +9,7 @@ import {
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { randomUUID } from 'expo-crypto'
-import { ActivityIndicator, Keyboard, View } from 'react-native'
+import { ActivityIndicator, Keyboard, ScrollView, View } from 'react-native'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { PairComputer } from '../../runtime/connection/pair-computer'
 import { StartupThread } from '../creation/startup-thread'
@@ -24,6 +24,7 @@ import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { TaskDetail } from './task-detail'
 import { ReplicatedThread } from './replicated-thread'
+import { LinkedThreadPreview } from './linked-thread-preview'
 
 function backToTasks() {
   Keyboard.dismiss()
@@ -168,6 +169,15 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
       }
     />
   ) : null
+  const parentOwner = parent && resolveThreadRuntime(parent, profiles, overviews)
+  const previewTarget =
+    !owner && parent && parentOwner && params.runtimeIdentity
+      ? {
+          parentTaskId: parent.taskId,
+          runtimeIdentity: params.runtimeIdentity,
+          threadId: params.taskId,
+        }
+      : undefined
   // Forks have no parent; their source opens as a separate thread on the same computer.
   const forkSource = task?.forkedFrom
   const forkButton =
@@ -226,13 +236,22 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
         leading={<Action label={uiText('Back')} secondary onPress={backToTasks} />}
       />
       {parentButton}
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         {!ready ? (
           <ActivityIndicator color={colors.accent} />
         ) : !owner ? (
           <>
+            {previewTarget && parentOwner && (
+              <RuntimeScope runtimeId={parentOwner.id}>
+                <LinkedThreadPreview key={JSON.stringify(previewTarget)} target={previewTarget} />
+              </RuntimeScope>
+            )}
             <Text style={styles.title}>
-              <InterfaceText>{'Pair computer to open this thread'}</InterfaceText>
+              {uiText(
+                previewTarget
+                  ? 'Pair computer to interact with this thread'
+                  : 'Pair computer to open this thread',
+              )}
             </Text>
             <Text style={styles.muted}>
               <InterfaceText>
@@ -289,7 +308,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
             {error}
           </Text>
         )}
-      </View>
+      </ScrollView>
     </View>
   )
 }

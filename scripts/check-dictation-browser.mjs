@@ -10,21 +10,22 @@ const built = await build({
       import {useState,useRef,useSyncExternalStore} from 'react';
       import {TooltipProvider} from '@dovo/studio-ui';
       import {ComposerDictation} from './src/chat/composer/composer-dictation';
+      import {QuoteSelection} from './src/chat/thread/quote-selection';
       import {SpeechSettings} from '../studio-shell/src/app-settings/speech';
       import {DictationNotice} from '../studio-shell/src/dictation-notice';
       import {createComposerDraft} from './src/chat/composer/composer-draft';
       window.statusCalls=0;window.cancelled=[];window.installCalls=0;window.audioBytes=0;window.installed=localStorage.getItem('dictation-test-installed')==='true';window.failInstall=false;window.failTranscribe=false;window.downloading=false;
       const listeners=new Map();
       window.dovo={dictation:{
-        status:async()=>{window.statusCalls++;return {engine:true,model:window.installed,downloading:window.downloading,downloaded:window.downloading?375547120:0}},
+        status:async()=>{window.statusCalls++;return {engine:true,appleSpeech:true,model:window.installed,downloading:window.downloading,downloaded:window.downloading?375547120:0}},
         install:async()=>{window.installCalls++;if(window.failInstall)throw Error('Download failed');window.downloading=true;try {await new Promise((resolve,reject)=>{window.completeInstall=resolve;window.rejectInstall=reject});window.installed=true;localStorage.setItem('dictation-test-installed','true')}finally{window.downloading=false}},
-        start:async(id,language)=>{window.language=language;window.audioBytes=0;window.sessionId=id},
+        start:async(id,language,provider)=>{window.language=language;window.speechEngine=provider;window.audioBytes=0;window.sessionId=id},
         feed:async(id,pcm)=>{window.audioBytes+=pcm.byteLength;listeners.get(id)?.({type:'text',text:'Fix de desktop'})},
         finish:()=>new Promise((resolve,reject)=>{window.complete=()=>window.failTranscribe?reject(Error('Transcription failed')):resolve('Fix de desktop app.');window.resolveLate=resolve}),
         subscribe:(id,listener)=>{listeners.set(id,listener);return()=>listeners.delete(id)},
         cancel:async(id)=>{window.cancelled.push(id);if(window.downloading)window.rejectInstall(Error('Download cancelled'))}
       }};
-      function Editor({id}){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId={"task-"+id} controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button></>}
+      function Editor({id}){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const[quoting,setQuoting]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} readOnly={active} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId={"task-"+id} controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button><button onClick={()=>setQuoting(true)}>Quote selection</button>{quoting&&<QuoteSelection taskId={"task-"+id} messageId="reply-1" text="Use an explicit quote." onClose={()=>setQuoting(false)} onQuote={reply=>controller.update(controller.text+'\\n\\n'+reply)}/>}</>}
       function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><SpeechSettings/><DictationNotice/><Editor key={key} id={key}/></TooltipProvider>};
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -146,7 +147,7 @@ try {
     window.complete = null
   })
   await record()
-  await input.fill('Typed while transcribing')
+  await page.evaluate(() => window.edit('Typed while transcribing'))
   await page.evaluate(() => window.complete())
   await page.getByRole('textbox', { name: 'Dictation transcript', exact: true }).waitFor()
   assert.equal(await input.inputValue(), 'Typed while transcribing')
@@ -189,9 +190,69 @@ try {
   await page.keyboard.press('Escape')
   await mic.waitFor()
   assert.equal(await page.evaluate(() => window.cancelled.length >= 3), true)
+
+  const openQuote = async () => {
+    await page.getByRole('button', { name: 'Quote selection', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Quote selection' })
+    const source = dialog.getByRole('textbox', { name: 'Response text' })
+    await source.focus()
+    await source.press('Control+a')
+    await dialog.getByRole('button', { name: 'Add quote to draft' }).waitFor()
+    return dialog
+  }
+  await page.evaluate(() => {
+    window.complete = null
+  })
+  await input.focus()
+  await input.press('End')
+  await record()
+  let quote = await openQuote()
+  await quote.getByRole('textbox', { name: 'Comment on selected text' }).fill('Discard this')
+  await quote.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await input.inputValue(), 'Existing text.')
+  await page.evaluate(() => window.resolveLate('Keep this dictation'))
+  await page.waitForFunction(() => window.text() === 'Existing text. Keep this dictation')
+
+  const engine = page.getByRole('combobox', { name: 'Speech engine' })
+  await engine.click()
+  await page.getByRole('option', { name: 'Apple Speech', exact: true }).click()
+  assert.equal(await download.count(), 0)
+  quote = await openQuote()
+  await page.evaluate(() => {
+    window.complete = null
+  })
+  await quote.getByRole('button', { name: 'Dictate comment', exact: true }).click()
+  await page.waitForFunction(() => window.audioBytes > 320 && window.speechEngine === 'apple')
+  assert.equal(await quote.getByRole('button', { name: 'Add quote to draft' }).isDisabled(), true)
+  await quote.getByRole('button', { name: 'Stop dictation', exact: true }).click()
+  await page.waitForFunction(() => window.complete)
+  await page.evaluate(() => window.resolveLate('Check this part'))
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('textarea')].some((input) => input.value === 'Check this part'),
+  )
+  await quote.getByRole('button', { name: 'Add quote to draft' }).click()
+  assert.match(
+    await input.inputValue(),
+    /"reply-1".*\n> Use an explicit quote\.\n\nCheck this part/,
+  )
+  const confirmed = await input.inputValue()
+  quote = await openQuote()
+  await page.evaluate(() => {
+    window.complete = null
+  })
+  await quote.getByRole('button', { name: 'Dictate comment', exact: true }).click()
+  await quote.getByRole('button', { name: 'Stop dictation', exact: true }).click()
+  await page.waitForFunction(() => window.complete)
+  await quote.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => window.cancelled.includes(window.sessionId))
+  await page.evaluate(() => window.resolveLate('Discard late transcript'))
+  assert.equal(await input.inputValue(), confirmed)
+  await engine.click()
+  await page.getByRole('option', { name: 'Nemotron 3.5 ASR Streaming' }).click()
+  await page.getByRole('button', { name: 'Download model again' }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    'Nemotron dictation: Settings download/progress/cancel/retry, enable toggle, language selection, live preview with real microphone/worklet PCM, insertion, draft protection, failures and retained dictation across thread navigation passed.',
+    'Desktop dictation settings, recording, draft recovery, engine selection, and quote cancellation and insertion passed.',
   )
 } finally {
   await browser.close()

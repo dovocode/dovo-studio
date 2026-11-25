@@ -9,6 +9,7 @@ import {
   workspaceRecoveriesSchema,
   type WorkspaceRecovery,
   runtimeComputerName,
+  runtimeConnectionMap,
 } from '@dovo/protocol'
 import { DeviceHostSettings } from './device-host-settings'
 import { ComputerUpdates } from './computer-updates'
@@ -109,6 +110,7 @@ export default function DevicesScreen() {
     })
   }, [params.address, params.code, params.expiresAt, params.peer, params.pairingError])
   const [shortcuts, setShortcuts] = useApplicationState(false)
+  const [showMap, setShowMap] = useApplicationState(false)
   const edited = overviews.find(
     (entry) =>
       entry.profile.id === editing?.id &&
@@ -204,6 +206,9 @@ export default function DevicesScreen() {
             }}
           />
         )}
+        {!!overviews.length && (
+          <Action label={uiText('Connection map')} secondary onPress={() => setShowMap(true)} />
+        )}
         <ServiceUrlSettings />
         <AccountPanel
           onPair={(address) => {
@@ -226,6 +231,47 @@ export default function DevicesScreen() {
           />
         </SettingsGroup>
       </ScrollView>
+      {showMap && (
+        <Sheet title={uiText('Connection map')} onClose={() => setShowMap(false)}>
+          <SettingsGroup title={uiText('This Studio')}>
+            {runtimeConnectionMap(overviews).map((computer, index) => (
+              <View key={computer.profileId}>
+                <SettingsRow
+                  title={computer.name}
+                  subtitle={`${uiText(
+                    computer.status === 'pairing expired'
+                      ? 'Pairing expired'
+                      : computer.status === 'online'
+                        ? 'Online'
+                        : computer.status === 'connecting'
+                          ? 'Connecting…'
+                          : 'Offline',
+                  )} · ${computer.http}`}
+                  icon={runtimeIconName(overviews[index]?.snapshot?.runtimeIcon)}
+                  onPress={() => {
+                    setShowMap(false)
+                    setEditing(overviews[index]!.profile)
+                  }}
+                  last={index === overviews.length - 1 && !computer.links.length}
+                />
+                {computer.links.map((link) => (
+                  <View key={link.id} style={{ paddingLeft: 20, paddingVertical: 8 }}>
+                    <Text style={styles.text}>{link.name}</Text>
+                    <Text style={styles.muted}>
+                      {uiText(link.count === 1 ? 'Linked thread' : '{count} linked threads', {
+                        count: link.count,
+                      })}
+                      {' · '}
+                      {uiText(link.reachable ? 'Reachable' : 'Last known link')}
+                      {!link.paired && ` · ${uiText('Pair to interact')}`}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </SettingsGroup>
+        </Sheet>
+      )}
       {adding && (
         <Sheet
           title={uiText('Connect a computer')}

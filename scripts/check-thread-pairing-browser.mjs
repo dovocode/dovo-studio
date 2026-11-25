@@ -12,6 +12,7 @@ export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';
 export const Button=({children,onClick})=><button onClick={onClick}>{children}</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const Text=({children})=><span>{children}</span>;export const View=({children})=><div>{children}</div>;
+export const ScrollView=View;
 export const SettingsPage=({title,description,children})=><section><h1>{title}</h1><p>{description}</p>{children}</section>;
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const ScreenHeader=({title,leading})=><header>{leading}<h1>{title}</h1></header>;
@@ -21,7 +22,7 @@ export const useTheme=()=>({styles:{},colors:{}});
 `
 async function bundle(mobile) {
   const mocks = {
-    '@dovo/studio-core': `export const useWorkspace=()=>window.store;export const useRuntimeSources=()=>window.store.runtimes;export const useStudioHost=()=>window.host;export const WorkspaceScope=({children})=>children;`,
+    '@dovo/studio-core': `import {createContext,useContext} from 'react';export {clientScopeKey} from '@dovo/client-runtime';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)??window.store;export const useRuntimeSources=()=>window.store.runtimes;export const useStudioHost=()=>window.host;export const WorkspaceScope=({profile,children})=>{const source=window.store.runtimes.find(item=>item.profile.id===profile.id);return <Scope.Provider value={{...window.store,request:(path,input)=>window.readLinked(profile.id,path,input),connected:source.connected,snapshot:source.snapshot,connection:profile.connection}}>{children}</Scope.Provider>};`,
     '@dovo/studio-core/state': `import {useState} from 'react';export const useApplicationState=useState;`,
     '@dovo/studio-ui': controls,
     'react-native': controls,
@@ -43,7 +44,7 @@ async function bundle(mobile) {
       export const RuntimeScope=({runtimeId,children})=>{
         const root=useRuntime();
         const entry=root.overviews.find(source=>source.profile.id===runtimeId);
-        return entry?<Scope.Provider value={{...root,activeId:runtimeId,profile:entry.profile,connection:entry.profile.connection,snapshot:entry.snapshot,connected:entry.connected}}><section data-runtime-owner={runtimeId}>{children}</section></Scope.Provider>:null;
+        return entry?<Scope.Provider value={{...root,activeId:runtimeId,profile:entry.profile,connection:entry.profile.connection,snapshot:entry.snapshot,connected:entry.connected,read:(path,input)=>window.readLinked(runtimeId,path,input)}}><section data-runtime-owner={runtimeId}>{children}</section></Scope.Provider>:null;
       };`,
     '../../shell/navigation':
       'export const useNavigation=()=>({focused:window.focused??true,navigate:()=>{}});',
@@ -61,13 +62,14 @@ async function bundle(mobile) {
     ${mobile ? `import {TaskRouteScreen as Screen} from '${root}/apps/mobile/src/tasks/detail/task-route-screen.tsx';` : `import Screen from '${root}/packages/extension-runtime/src/view.tsx';`}
     window.destination={runtimeId:'foreign-profile',runtimeIdentity:'child-identity',threadId:'selected-child',title:'Selected child',parent:{runtimeId:'parent-profile',runtimeIdentity:'parent-identity',threadId:'coordinator',title:'Parent thread'}};
     window.params={runtimeId:'foreign-profile',runtimeIdentity:'child-identity',taskId:'selected-child',parentRuntimeId:'parent-profile',parentRuntimeIdentity:'parent-identity',parentTaskId:'coordinator',parentTitle:'Parent thread'};
-    window.routes=[];window.switches=[];window.refreshes=[];window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
+    window.routes=[];window.switches=[];window.refreshes=[];window.reads=[];window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
+    window.readLinked=async (runtimeId,path,input)=>{window.reads.push({runtimeId,path,input});return {title:'Linked child',history:{before:input.before?undefined:'first',historyRevision:1,messages:[{id:input.before?'earlier':'first',role:'assistant',text:input.before?'Earlier linked reply':'Reply through parent'}]}}};
     window.store={runtimeRegistry:{profiles:[]},runtimes:[],profiles:[],overviews:[],ready:true,activeId:'local',snapshot:null,connected:true,refreshRuntime:async profile=>{window.refreshes.push(profile.id)},selectRuntime:()=>{},selectRuntimeEffect:id=>Effect.sync(()=>{window.switches.push(id);window.store={...window.store,activeId:id,snapshot:window.store.overviews.find(s=>s.profile.id===id)?.snapshot};window.render()})};
     const root=createRoot(document.getElementById('app'));
     window.render=()=>root.render(${mobile ? '<Screen/>' : '<Screen threadConnection={window.destination}/>'});
     window.pair=(id,identity,name)=>{
       const profile={id,name,connection:{address:'http://computer.lan:51464',token:'pairing-remains-required',runtimeId:identity}};
-      const snapshot={runtimeId:identity,workspace:{tasks:[{id:'selected-child',title:'Opened selected child',repositoryId:'repo',status:'review'}]},questions:[],approvals:[]};
+      const snapshot={runtimeId:identity,linkedThreadReadSupported:identity==='parent-identity',workspace:{tasks:[{id:'selected-child',title:'Opened selected child',repositoryId:'repo',status:'review'}]},questions:[],approvals:[]};
       const source={profile,snapshot,connected:true,name};
       window.store={...window.store,profiles:[...window.store.profiles,profile],runtimeRegistry:{profiles:[...window.store.profiles,profile]},runtimes:[...window.store.runtimes,source],overviews:[...window.store.overviews,source]};window.render();
     };window.render();`
@@ -82,6 +84,7 @@ async function bundle(mobile) {
       react: root + '/packages/studio-ui/node_modules/react',
       'react-dom': root + '/packages/studio-ui/node_modules/react-dom',
       '@dovo/protocol': root + '/packages/protocol/src/index.ts',
+      '@dovo/client-runtime': root + '/packages/client-runtime/src/index.ts',
     },
     nodePaths: [root + '/packages/studio-ui/node_modules'],
     plugins: [
@@ -113,6 +116,31 @@ try {
     page.setDefaultTimeout(8000)
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: await bundle(mobile) })
+    await page.evaluate(() => window.pair('parent-profile', 'parent-identity', 'Parent computer'))
+    await page.getByText('Reply through parent', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Load earlier messages' }).click()
+    await page.getByText('Earlier linked reply', { exact: true }).waitFor()
+    assert.deepEqual(await page.evaluate(() => window.reads), [
+      {
+        runtimeId: 'parent-profile',
+        path: '/api/threads/linked/read',
+        input: {
+          parentTaskId: 'coordinator',
+          runtimeIdentity: 'child-identity',
+          threadId: 'selected-child',
+        },
+      },
+      {
+        runtimeId: 'parent-profile',
+        path: '/api/threads/linked/read',
+        input: {
+          parentTaskId: 'coordinator',
+          runtimeIdentity: 'child-identity',
+          threadId: 'selected-child',
+          before: 'first',
+        },
+      },
+    ])
     await page.getByRole('button', { name: 'Pair thread computer', exact: true }).click()
     await page.getByText(/Pairing credentials required/).waitFor()
     await page.evaluate(() => window.pair('foreign-profile', 'wrong-identity', 'Wrong computer'))

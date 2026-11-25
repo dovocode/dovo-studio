@@ -1,5 +1,5 @@
 import type { Automation } from '../workspace.js'
-import type { JobRun } from '../runtime/connection/runtime.js'
+import { automationRunNeedsReview, type JobRun } from '../runtime/connection/runtime.js'
 import type { TaskMetadata } from './task-summary.js'
 import { taskSubagents, indexTaskFamilyWorking } from './delegation.js'
 import { automationScheduleChoices } from '../automation/triggers.js'
@@ -12,7 +12,17 @@ export const botRunStatusLabels = {
   cancelled: 'Cancelled',
 } satisfies Record<JobRun['status'], string>
 export const botRunStatusLabel = (run: JobRun) =>
-  run.pipelineWait ? 'Waiting for CI' : botRunStatusLabels[run.status]
+  run.pause?.phase === 'paused'
+    ? 'Paused'
+    : run.pause?.phase === 'afterStep'
+      ? 'Pausing after current step'
+      : run.queuedForAdmission
+        ? 'Queued'
+        : run.waitingForStepPool
+          ? 'Waiting for step pool'
+          : run.pipelineWait
+            ? 'Waiting for CI'
+            : botRunStatusLabels[run.status]
 
 export function botRoutines(
   taskId: string,
@@ -69,8 +79,9 @@ export function botWorkSummary(
   )
   return {
     routines: routines.length,
-    running: relevant.filter((run) => run.status === 'running' || run.pipelineWait).length,
-    review: relevant.filter((run) => run.status === 'waiting' && !run.pipelineWait).length,
+    running: relevant.filter((run) => run.status === 'running' || (run.pipelineWait && !run.pause))
+      .length,
+    review: relevant.filter(automationRunNeedsReview).length,
     failed: routines.filter((routine) => routine.runs[0]?.status === 'failed').length,
     workers:
       taskSubagents(task, tasks, true).length +
@@ -142,7 +153,7 @@ export function botWorkInbox(
             : r.outcome === 'unchanged'
               ? 'No change'
               : botRunStatusLabel(r),
-        attention: r.status === 'failed' || (r.status === 'waiting' && !r.pipelineWait),
+        attention: r.status === 'failed' || automationRunNeedsReview(r),
         at: r.updatedAt ?? r.createdAt,
         runId: r.id,
         automationId: r.automationId,

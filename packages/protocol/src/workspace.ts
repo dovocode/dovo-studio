@@ -165,6 +165,20 @@ export const savedPromptSchema = mutableStruct({
   text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
 })
 export type SavedPrompt = Schema.Schema.Type<typeof savedPromptSchema>
+export const linkedCheckoutSchema = mutableStruct({
+  id: maxValue(
+    minValue(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]+$/))), 1),
+    100,
+  ),
+  repositoryId: maxValue(minValue(Schema.String, 1), 200),
+  execution: executionSchema,
+  existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
+  baseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
+  branch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
+  access: Schema.Literals(['read-only', 'edit']),
+})
+export type LinkedCheckout = Schema.Schema.Type<typeof linkedCheckoutSchema>
+export const linkedCheckoutsSchema = maxValue(mutableArray(linkedCheckoutSchema), 12)
 /** A saved starting point for new tasks in a project: goal, agent and checkout choices. */
 export const taskTemplateSchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 100),
@@ -175,6 +189,7 @@ export const taskTemplateSchema = mutableStruct({
   execution: Schema.optional(executionSchema),
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
+  linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
 })
 export type TaskTemplate = Schema.Schema.Type<typeof taskTemplateSchema>
 /** Live lifecycle policy; unlike checkout defaults, this applies to existing tasks too. */
@@ -555,20 +570,6 @@ export const queuedMessageSchema = mutableStruct({
     paused: Schema.optional(Schema.Boolean),
   },
 })
-export const linkedCheckoutSchema = mutableStruct({
-  id: maxValue(
-    minValue(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]+$/))), 1),
-    100,
-  ),
-  repositoryId: maxValue(minValue(Schema.String, 1), 200),
-  execution: executionSchema,
-  existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
-  baseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
-  branch: Schema.optional(maxValue(minValue(Schema.String, 1), 300)),
-  access: Schema.Literals(['read-only', 'edit']),
-})
-export type LinkedCheckout = Schema.Schema.Type<typeof linkedCheckoutSchema>
-export const linkedCheckoutsSchema = maxValue(mutableArray(linkedCheckoutSchema), 12)
 export const linkedCheckpointSchema = mutableStruct({
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
   checkoutId: Schema.String,
@@ -1159,7 +1160,17 @@ export const taskSchema = mutableStruct({
   turns: Schema.optional(mutableArray(turnSchema)),
   consumedMessageIds: Schema.optional(mutableArray(Schema.String)),
 })
+export const automationReviewPromptSchema = mutableStruct({
+  instructions: Schema.optional(maxValue(Schema.String, 4000)),
+  link: Schema.optional(maxValue(Schema.String, 2000)),
+  requireReason: Schema.optional(Schema.Boolean),
+})
+export const automationStepPoolSchema = mutableStruct({
+  name: maxValue(minValue(Schema.Trim, 1), 120),
+  limit: Schema.Int.check(Schema.isGreaterThan(0)),
+})
 export const nodeDataSchema = mutableStruct({
+  stepPool: Schema.optional(automationStepPoolSchema),
   /** Selected upstream task results. Omission preserves independent step prompts. */
   inputFrom: Schema.optional(maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 200)), 32)),
   inputFiles: Schema.optional(Schema.Boolean),
@@ -1168,6 +1179,7 @@ export const nodeDataSchema = mutableStruct({
   kind: Schema.Literals(['trigger', 'task', 'review']),
   /** A review gate can advance automatically when its pinned CI attempt succeeds. */
   pipelineWait: Schema.optional(pipelineWaitSchema),
+  reviewPrompt: Schema.optional(automationReviewPromptSchema),
   label: Schema.String,
   trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github', 'mcp-event']),
   /** Local date/time (YYYY-MM-DDTHH:mm), interpreted in timezone. */

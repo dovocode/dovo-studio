@@ -1,4 +1,4 @@
-import { mutableArray, mutableStruct, taskFamilyWorking } from '@dovo/protocol'
+import { mutableStruct, taskFamilyWorking } from '@dovo/protocol'
 import {
   automationSchema,
   jobRunSchema,
@@ -14,12 +14,16 @@ import { botStepTurn } from './bot-step.js'
 import { readStepResult } from './step-result.js'
 import { redact } from '../storage/activity.js'
 export const storedRunSchema = mutableStruct({
-  resumeAfterPipelineWait: Schema.optional(Schema.Literal(true)),
-  reviewDecisions: Schema.optional(
-    mutableArray(
-      mutableStruct({ nodeId: Schema.String, attempt: Schema.Number, allow: Schema.Boolean }),
-    ),
+  readyToAdvance: Schema.optional(Schema.Literal(true)),
+  pausedDurationMs: Schema.optional(Schema.Number),
+  stepAdmission: Schema.optional(
+    mutableStruct({
+      nodeId: Schema.String,
+      order: Schema.Int,
+      phase: Schema.Literals(['queued', 'reserved', 'executing']),
+    }),
   ),
+  resumeAfterPipelineWait: Schema.optional(Schema.Literal(true)),
   retryTurnId: Schema.optional(Schema.String),
   outputs: Schema.optional(
     Schema.Record(
@@ -177,6 +181,7 @@ export function runSteps(run: StoredRun): JobRunStep[] {
       label: node.data.label,
       kind: node.data.kind,
       waitsForCi: node.data.pipelineWait ? true : undefined,
+      reviewPrompt: node.data.reviewPrompt,
       taskId,
       status: completed
         ? 'completed'

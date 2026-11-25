@@ -47,6 +47,7 @@ const built = await bundleBrowser(
 import{createRoot}from'react-dom/client';import{useState}from'react';import{Effect}from'effect';
 import{decode,automationDryRunSchema,jobRunSchema}from'@dovo/protocol';
 import{RunDetails}from'./packages/extension-jobs/src/run-details';import{RunProgress}from'./apps/mobile/src/jobs/run-progress';
+import{useJobActions}from'./packages/extension-jobs/src/use-job-actions';
 import{DryRunPanel as Desktop}from'./packages/extension-jobs/src/dry-run';import{DryRun as Mobile}from'./apps/mobile/src/jobs/dry-run';
 import{SuggestRoutine as DeskSuggest}from'./packages/extension-tasks/src/chat/actions/suggest-routine';
 import{SuggestRoutine as MobileSuggest}from'./apps/mobile/src/tasks/conversation/components/suggest-routine';
@@ -56,6 +57,7 @@ window.calls=[];
 const run=decode(jobRunSchema,{id:'event-run',automationId:'flow',createdAt:'2026-11-23T10:00:00Z',status:'waiting',waitingNodeId:'approve',completedNodes:['trigger','work'],taskIds:[],mcpEvent:{name:'incident.created',server:'operations',eventId:'occurrence-1',timestamp:'2026-11-23T09:59:00Z'}});
 const failed={...run,id:'failed-run',status:'completed',attempt:2,failures:[{attempt:1,failedAt:'2026-11-23T10:00:00Z'}]};
 const waiting={...run,id:'ci-run',mcpEvent:undefined,pipelineWait:{url:'https://github.com/owner/repo/actions/runs/42/attempts/2',until:'2026-11-23T10:30:00Z'}};
+const queued={...run,id:'pool-run',waitingNodeId:undefined,waitingForStepPool:'builders',mcpEvent:undefined};
 const message={id:'owner-message',role:'user',source:{kind:'user'},text:'Summarize open PRs every Friday at 09:00'};
 const snapshot={automationExplainSupported:true,routineSuggestionsSupported:true,workspace:{tasks:[{id:'bot',bot:{state:'active'}}],automations:[flow]},questions:[],approvals:[]};
 
@@ -70,16 +72,25 @@ const request=async(path,input)=>{window.calls.push({path,input});if(path.endsWi
 const connection={address:'http://fixture',token:'device'};
 function App(){
  const[mode,setMode]=useState('desktop');window.mode=setMode;
- const current={...snapshot,automationDryRunScenariosSupported:mode.startsWith('scenario-')};
- window.store={connected:true,activeRuntimeId:'a',connection,request,workspace:snapshot.workspace,snapshot:current};
- window.runtime={connected:true,profile:{id:'a',connection},snapshot:current,call:request,read:request,callEffect:(path,input)=>Effect.tryPromise(()=>request(path,input))};
+ const[paused,setPaused]=useState(false);
+ const[online,setOnline]=useState(true);window.online=setOnline;
+ const current={...snapshot,automationPauseSupported:mode.endsWith('controls')||undefined,automationDryRunScenariosSupported:mode.startsWith('scenario-')};
+ const controlRequest=async (path,input)=>{
+   if(!['/api/jobs/pause','/api/jobs/resume'].includes(path))return request(path,input);
+   window.calls.push({path,input});
+   setPaused(path.endsWith('/pause'));
+   return {ok:true};
+ };
+ window.store={connected:online,activeRuntimeId:'a',connection,request:controlRequest,workspace:snapshot.workspace,snapshot:current,flush:async()=>{}};
+ window.runtime={connected:online,profile:{id:'a',connection},snapshot:current,call:controlRequest,read:request,callEffect:(path,input)=>Effect.tryPromise(()=>controlRequest(path,input))};
+ const actions=useJobActions();
  if(mode.startsWith('suggest-')){
    const Suggest=mode.endsWith('desktop')?DeskSuggest:MobileSuggest;
    return <Suggest taskId="bot" message={message}/>;
  }
  if(!mode.includes('scenario')&&mode.includes('-run')){
-   const selected=mode.endsWith('failed')?failed:mode.endsWith('ci')?waiting:run;
-   if(mode.startsWith('desktop'))return <RunDetails key={mode} flow={flow} runs={[selected]} run={selected} provenance={{}} actions={{}} selectRun={()=>{}} onStep={()=>{}}/>;
+   const selected=mode.endsWith('controls')?{...queued,pause:paused?{phase:'paused',at:run.createdAt}:undefined}:mode.endsWith('failed')?failed:mode.endsWith('ci')?waiting:run;
+   if(mode.startsWith('desktop'))return <RunDetails key={mode} flow={flow} runs={[selected]} run={selected} provenance={{}} actions={actions} selectRun={()=>{}} onStep={()=>{}}/>;
    return <RunProgress key={mode} run={selected}/>;
  }
  return <main key={mode}>{mode.endsWith('desktop')?<Desktop flow={flow}/>:<Mobile flow={flow} disabled={false}/>}</main>;
@@ -103,7 +114,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   [
     {
       path: '@dovo/studio-core',
-      contents: `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate(target){window.navigated=target}});export const formatDateTime=String;export const clientScopeKey=()=>1;export {useDryRunScenarios} from '${root}packages/studio-core/src/use-dry-run-scenarios.ts';`,
+      contents: `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate(target){window.navigated=target}});export const formatDateTime=String;export const clientScopeKey=()=>1;export {responses} from '@dovo/protocol';export {useDryRunScenarios} from '${root}packages/studio-core/src/use-dry-run-scenarios.ts';`,
     },
     {
       path: '@dovo/studio-core/state',
@@ -124,6 +135,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       path: '../ui/controls/icon',
       importer: mobile + 'jobs/',
       contents: 'export const Icon=()=>null;',
+    },
+    {
+      path: '../ui/content/open-link',
+      importer: mobile + 'jobs/',
+      contents: 'export const openAppLink=async url=>{window.openedLink=url};',
     },
     ...[mobile + 'jobs/', root + 'packages/extension-jobs/src/'].flatMap((importer) =>
       [
@@ -180,7 +196,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../ui/controls/use-action',
       importer: mobile + 'jobs/',
-      contents: `import{useState}from'react';export const useAction=()=>{const[state,setState]=useState({busy:false,error:''});return{...state,act:async work=>{setState({busy:true,error:''});try{await work();setState({busy:false,error:''})}catch(error){setState({busy:false,error:error.message})}}}};`,
+      contents: `import{useState}from'react';import{Effect}from'effect';export const useAction=()=>{const[state,setState]=useState({busy:false,error:''});return{...state,act:async work=>{setState({busy:true,error:''});try{const result=work();await(Effect.isEffect(result)?Effect.runPromise(result):result);setState({busy:false,error:''})}catch(error){setState({busy:false,error:error.message})}}}};`,
     },
   ],
 )
@@ -271,6 +287,32 @@ try {
     await page.getByText('MCP event · incident.created · operations', { exact: true }).waitFor()
     const approve = mode === 'desktop-run' ? 'Approve & continue' : 'Approve review'
     await page.getByRole('button', { name: approve, exact: true }).waitFor()
+    const pause = page.getByRole('button', { name: 'Pause run', exact: true })
+    assert.equal(await pause.count(), 0)
+    await page.evaluate((mode) => {
+      window.calls = []
+      window.mode(mode + '-controls')
+    }, mode)
+    const poolWait = page.getByText('Waiting for step pool · builders', { exact: true })
+    await poolWait.waitFor()
+    assert.equal(await page.getByRole('button', { name: approve, exact: true }).count(), 0)
+    await pause.click()
+    const resume = page.getByRole('button', { name: 'Resume run', exact: true })
+    await resume.waitFor()
+    await page.getByText('Paused', { exact: true }).waitFor()
+    await page.evaluate(() => window.online(false))
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Resume run' && button.disabled,
+      ),
+    )
+    await page.evaluate(() => window.online(true))
+    await resume.click()
+    await poolWait.waitFor()
+    assert.deepEqual(await page.evaluate(() => window.calls), [
+      { path: '/api/jobs/pause', input: { id: 'pool-run' } },
+      { path: '/api/jobs/resume', input: { id: 'pool-run' } },
+    ])
     await page.evaluate((mode) => window.mode(mode + '-ci'), mode)
     await page
       .getByText(mode === 'desktop-run' ? 'Waiting for CI' : /^Waiting for CI until/)

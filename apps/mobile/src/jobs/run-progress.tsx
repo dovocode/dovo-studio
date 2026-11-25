@@ -5,10 +5,19 @@ import { Pressable, View } from 'react-native'
 import { useEffect, useRef } from 'react'
 import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import { Text } from '../ui/content/text'
-import { explainAutomationDraftSchema, randomUUID, responses, type JobRun } from '@dovo/protocol'
+import {
+  automationReviewLink,
+  automationRunNeedsReview,
+  explainAutomationDraftSchema,
+  randomUUID,
+  responses,
+  type JobRun,
+} from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
 import { SettingsAction as Action } from '../screens/settings-controls'
+import { SettingsField as Field } from '../screens/settings-controls'
+import { openAppLink } from '../ui/content/open-link'
 import { Icon } from '../ui/controls/icon'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
@@ -55,6 +64,16 @@ export function RunProgress({
       ),
     ),
   )
+  const reviewStep = steps?.find(({ nodeId }) => nodeId === run.waitingNodeId)
+  const reviewKey = JSON.stringify([pairing, run.id, reviewStep?.nodeId, reviewStep?.attempt])
+  const [reviewInput, setReviewInput] = useApplicationState<
+    { key: string; text: string } | undefined
+  >(undefined)
+  const reason = reviewInput?.key === reviewKey ? reviewInput.text : ''
+  const prompt = reviewStep?.reviewPrompt
+  const link = automationReviewLink(prompt?.link)
+  const reviewDisabled =
+    !focused || !connected || busy || (!!prompt?.requireReason && !reason.trim())
   const [now, setNow] = useApplicationState(Date.now())
   useForegroundInterval(() => setNow(Date.now()), active && focused ? 15000 : null)
   const seconds = Math.max(
@@ -189,7 +208,7 @@ export function RunProgress({
             onPress={() => navigate('tasks', current.taskId, profile?.id)}
           />
         )}
-      {run.retryAt && (
+      {run.retryAt && run.pause?.phase !== 'paused' && (
         <Text style={styles.muted}>
           {uiText(
             'Waiting for provider. Startup retry {count}/3 at {time}. Cancel stops this retry.',
@@ -197,7 +216,7 @@ export function RunProgress({
           )}
         </Text>
       )}
-      {run.pipelineWait && (
+      {run.pipelineWait && run.pause?.phase !== 'paused' && (
         <Text style={styles.muted} selectable>
           {uiText('Waiting for CI until {value0}', {
             value0: formatDateTime(run.pipelineWait.until),
@@ -206,21 +225,37 @@ export function RunProgress({
           {run.pipelineWait.url}
         </Text>
       )}
-      {run.status === 'waiting' && !run.retryAt && !run.pipelineWait && (
+      {automationRunNeedsReview(run) && (
         <View
           style={{
             gap: 6,
           }}
         >
           <Text style={styles.muted}>
-            <InterfaceText>
-              {'Automation review gate · Approve to continue the remaining steps.'}
-            </InterfaceText>
+            {prompt?.instructions?.trim() ||
+              uiText('Automation review gate · Approve to continue the remaining steps.')}
           </Text>
+          {link && (
+            <Action
+              secondary
+              label={uiText('Open review link')}
+              onPress={() => act(() => openAppLink(link, true))}
+            />
+          )}
+          {prompt && (
+            <Field
+              label={uiText(prompt.requireReason ? 'Reason (required)' : 'Reason (optional)')}
+              maxLength={4000}
+              multiline
+              value={reason}
+              editable={focused && connected && !busy}
+              onChangeText={(text) => setReviewInput({ key: reviewKey, text })}
+            />
+          )}
           <View style={styles.row}>
             <Action
               label={uiText('Approve review')}
-              disabled={!focused || !connected || busy}
+              disabled={reviewDisabled}
               onPress={() =>
                 act(() =>
                   callEffect(
@@ -228,6 +263,7 @@ export function RunProgress({
                     {
                       id: run.id,
                       allow: true,
+                      reason: reason.trim() || undefined,
                       nodeId: run.waitingNodeId,
                       attempt:
                         run.steps?.find((step) => step.nodeId === run.waitingNodeId)?.attempt ?? 1,
@@ -240,7 +276,7 @@ export function RunProgress({
             <Action
               secondary
               label={uiText('Reject review')}
-              disabled={!focused || !connected || busy}
+              disabled={reviewDisabled}
               onPress={() =>
                 act(() =>
                   callEffect(
@@ -248,6 +284,7 @@ export function RunProgress({
                     {
                       id: run.id,
                       allow: false,
+                      reason: reason.trim() || undefined,
                       nodeId: run.waitingNodeId,
                       attempt:
                         run.steps?.find((step) => step.nodeId === run.waitingNodeId)?.attempt ?? 1,
@@ -259,6 +296,19 @@ export function RunProgress({
             />
           </View>
         </View>
+      )}
+      {run.reviewDecisions?.map(
+        (decision) =>
+          decision.answeredAt && (
+            <View key={`${decision.nodeId}:${decision.attempt}`}>
+              <Text style={styles.muted}>
+                {steps?.find(({ nodeId }) => nodeId === decision.nodeId)?.label} ·{' '}
+                {uiText(decision.allow ? 'Approved' : 'Rejected')} ·{' '}
+                {decision.answeredBy ?? uiText('Reviewer')} · {formatDateTime(decision.answeredAt)}
+              </Text>
+              {decision.reason && <Text style={styles.muted}>{decision.reason}</Text>}
+            </View>
+          ),
       )}
       {(run.status === 'failed' || run.status === 'cancelled') && (
         <View
@@ -474,6 +524,28 @@ export function RunProgress({
                   )
                 )
               })}
+          {active && snapshot?.automationPauseSupported && (
+            <Action
+              secondary
+              label={uiText(
+                run.pause?.phase === 'afterStep'
+                  ? 'Keep running'
+                  : run.pause
+                    ? 'Resume run'
+                    : 'Pause run',
+              )}
+              disabled={!focused || !connected || busy}
+              onPress={() =>
+                act(() =>
+                  callEffect(
+                    run.pause ? '/api/jobs/resume' : '/api/jobs/pause',
+                    { id: run.id },
+                    responses.ok,
+                  ),
+                )
+              }
+            />
+          )}
           {active && (
             <Action
               secondary

@@ -9,6 +9,7 @@ import {
   buildThreadTree,
   threadFailureKey,
   taskFailureVersion,
+  linkedThreadPageSchema,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
@@ -159,6 +160,56 @@ const request = {
   execution: 'main',
 }
 
+it('reads only a saved linked thread through the paired parent and stops serving it after unlink', async () => {
+  const source = await setup(),
+    target = await setup()
+  await pair(source, target)
+  const child = decode(
+    childSchema,
+    await (
+      await source.post('spawn', {
+        ...request,
+        runtimeId: target.s.runtimeId,
+      })
+    ).json(),
+  )
+  await waitForRuntime(async () => {
+    await source.s.threadWatch.tick()
+    expect(source.s.threadWatch.list(source.parent.id)[0]?.snapshot?.runtimeId).toBe(
+      target.s.runtimeId,
+    )
+    expect(threadSnapshot(target.s, child.threadId).phase).toBe('completed')
+  })
+  const body = {
+    parentTaskId: source.parent.id,
+    runtimeIdentity: target.s.runtimeId,
+    threadId: child.threadId,
+  }
+  const post = (input: object, headers: Record<string, string> = {}) =>
+    fetch(source.origin + '/api/threads/linked/read', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(input),
+    })
+  expect((await post(body, { Authorization: 'Bearer invalid' })).status).toBe(401)
+  expect((await post(body, { 'X-Dovo-Agent-Access': '1' })).status).toBe(403)
+  expect((await post({ ...body, threadId: target.parent.id })).status).toBe(403)
+  expect((await post({ ...body, runtimeIdentity: source.s.runtimeId })).status).toBe(403)
+  const reply = await post(body)
+  const value: unknown = await reply.json()
+  expect(reply.status, JSON.stringify(value)).toBe(200)
+  expect(decode(linkedThreadPageSchema, value)).toMatchObject({
+    title: 'Focused child',
+    history: {
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: 'assistant', text: 'Child completed its focused task' }),
+      ]),
+    },
+  })
+  source.s.threadWatch.stop(source.parent.id, target.s.runtimeId, child.threadId)
+  expect((await post(body)).status).toBe(403)
+})
+
 it('runs a project child from General in its own checkout and consumes its answer without duplicate delivery', async () => {
   const source = await setup()
   let cwd = ''
@@ -259,17 +310,42 @@ it('delivers a remote final answer once and retains completed results when offli
   const source = await setup(),
     target = await setup()
   const pairing = await pair(source, target)
+  const finish = barrier()
+  cleanups.push(async () => finish.resolve())
   target.setChild(async (run) => {
+    await finish.promise
     run.onEvent?.('model/rerouted', { toModel: 'executed-remote-model' })
     run.onText('Child completed its focused task')
   })
   const created = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
   const child = decode(childSchema, await created.json())
+  await pairing.register(false)
+  finish.resolve()
   await waitForRuntime(() => {
     expect(target.s.store.taskSummary(child.threadId).status).toBe('review')
     // Review is persisted before the run releases its reservation; results wait for both.
     expect(threadSnapshot(target.s, child.threadId).phase).toBe('completed')
   })
+  const savedTurn = target.s.store.taskSummary(child.threadId).history.latestTurn
+  expect(savedTurn?.status).toBe('completed')
+  target.s.store.updateTaskHistory(child.threadId, (task) => ({
+    ...task,
+    messages: [
+      ...task.messages,
+      ...Array.from({ length: 250 }, (_, index) => ({
+        id: `later-input-${index}`,
+        role: 'user' as const,
+        text: `Later input ${index}`,
+      })),
+      { id: 'unrelated-notice', role: 'assistant', text: 'Unrelated notice outside the turn' },
+    ],
+  }))
+  expect(
+    target.s.store
+      .historyPage(child.threadId)
+      ?.messages.some(({ id }) => id === savedTurn?.assistantId),
+  ).toBe(false)
+  await pairing.register(true)
   await source.s.threadWatch.tick()
   const queued = source.s.store.taskSummary(source.parent.id).subagentInbox ?? []
   expect(queued).toHaveLength(1)

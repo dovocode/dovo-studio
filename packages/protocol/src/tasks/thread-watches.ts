@@ -115,6 +115,34 @@ export const threadWatchSummarySchema = mutableStruct({
 })
 export type ThreadWatchSummary = typeof threadWatchSummarySchema.Type
 
+export const linkedThreadReadSchema = mutableStruct({
+  parentTaskId: id,
+  runtimeIdentity: id,
+  threadId: id,
+  before: Schema.optional(id),
+})
+export type LinkedThreadRead = typeof linkedThreadReadSchema.Type
+export const linkedThreadPageSchema = mutableStruct({
+  title: maxValue(Schema.String, 1000),
+  history: mutableStruct({
+    messages: maxValue(
+      mutableArray(
+        mutableStruct({
+          id,
+          role: Schema.Literals(['user', 'assistant', 'system']),
+          createdAt: Schema.optional(Schema.String),
+          text: maxValue(Schema.String, 8000),
+          nextOffset: Schema.optional(count),
+        }),
+      ),
+      100,
+    ),
+    before: Schema.optional(id),
+    historyRevision: Schema.optional(count),
+  }),
+})
+export type LinkedThreadPage = typeof linkedThreadPageSchema.Type
+
 /** Prefer the direct observer, then fresh and healthy paths. Profile IDs stay host-local. */
 export function compareThreadWatchSources(
   a: ThreadWatchSummary,

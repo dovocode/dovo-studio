@@ -47,6 +47,8 @@ export function AutomationCard({
   const [history, setHistory] = useApplicationState(false)
   const requestId = activeId ? automationStarts.get(activeId, flow.id) : undefined
   const { history: runs, active, latest } = automationRuns(flow.id, snapshot?.runs ?? [])
+  const queues =
+    snapshot?.automationConcurrencySupported && flow.policy?.concurrencyLimit !== undefined
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')
   const issues = automationIssues(
     flow,
@@ -118,7 +120,7 @@ export function AutomationCard({
           },
         ]}
       >
-        {(!active || !!requestId) && (
+        {(!active || !!requestId || queues) && (
           <Action
             secondary={recoverable}
             label={

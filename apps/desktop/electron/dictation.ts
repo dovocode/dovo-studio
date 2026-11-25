@@ -1,7 +1,18 @@
 import { app, ipcMain, session, systemPreferences } from 'electron'
+import { execFile } from 'node:child_process'
+import { release } from 'node:os'
 import { join } from 'node:path'
-import { DictationEngine, type DictationSession } from './dictation-engine.js'
-import { decode, dictationLanguageSchema, type DictationUpdate } from '@dovo/protocol'
+import {
+  DictationEngine,
+  startDictationProcess,
+  type DictationSession,
+} from './dictation-engine.js'
+import {
+  decode,
+  dictationLanguageSchema,
+  dictationProviderSchema,
+  type DictationUpdate,
+} from '@dovo/protocol'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 
 export function registerDictation(
@@ -13,6 +24,15 @@ export function registerDictation(
     join(bundleDirectory, process.platform === 'win32' ? 'dovo-dictation.exe' : 'dovo-dictation'),
     join(dataDirectory, 'dictation'),
   )
+  const appleBinary = join(bundleDirectory, 'dovo-apple-speech')
+  let appleSpeech: Promise<boolean> | undefined
+  const appleAvailable = () =>
+    (appleSpeech ??=
+      process.platform === 'darwin' && Number(release().split('.')[0]) >= 25
+        ? new Promise((resolve) =>
+            execFile(appleBinary, ['available'], { timeout: 5000 }, (error) => resolve(!error)),
+          )
+        : Promise.resolve(false))
   let active:
     | {
         sender: number
@@ -58,12 +78,14 @@ export function registerDictation(
   }
   ipcMain.handle('dictation:status', (event) => {
     requireTrustedRenderer(event, rendererPath)
-    return engine.status()
+    return Promise.all([engine.status(), appleAvailable()]).then(([status, apple]) =>
+      apple ? { ...status, appleSpeech: true } : status,
+    )
   })
   ipcMain.handle('dictation:install', (event, id: unknown) =>
     run(event, id, (signal) => engine.install(signal)),
   )
-  ipcMain.handle('dictation:start', (event, id: unknown, language: unknown) => {
+  ipcMain.handle('dictation:start', (event, id: unknown, language: unknown, provider: unknown) => {
     let resolveReady: () => void, rejectReady: (error: unknown) => void
     const ready = new Promise<void>((resolve, reject) => {
       resolveReady = resolve
@@ -74,7 +96,19 @@ export function registerDictation(
     }
     void run(event, id, async (signal) => {
       const locale = decode(dictationLanguageSchema, language)
-      const session = await engine.start(locale, signal, (text) => update({ type: 'text', text }))
+      const selected = decode(
+        dictationProviderSchema,
+        provider === undefined ? 'nemotron' : provider,
+      )
+      if (selected === 'apple' && !(await appleAvailable()))
+        throw new Error(
+          'Apple Speech is unavailable. Choose Nemotron in Settings → General → Speech.',
+        )
+      const onText = (text: string) => update({ type: 'text', text })
+      const session =
+        selected === 'apple'
+          ? await startDictationProcess(appleBinary, [locale], signal, onText)
+          : await engine.start(locale, signal, onText)
       if (!active || signal.aborted) throw new Error('Dictation was cancelled.')
       active.session = session
       resolveReady()

@@ -1,5 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
+  automationRunNeedsReview,
   randomUUID,
   resolveRuntimeTarget,
   runtimeComputerName,
@@ -123,7 +124,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
     (row) =>
       (!attentionOnly ||
         row.needsInput ||
-        row.latest?.status === 'waiting' ||
+        automationRunNeedsReview(row.latest) ||
         row.latest?.status === 'failed') &&
       [row.flow.name, row.runtimeName, ...row.projects, row.status, row.botJob ?? ''].some(
         (value) => value.toLowerCase().includes(query),

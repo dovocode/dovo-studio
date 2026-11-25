@@ -1,8 +1,11 @@
 # Desktop dictation
 
-Desktop dictation uses Nemotron 3.5 ASR Streaming 0.6B (Q8) with the MIT-licensed `transcribe.cpp`
-engine. It runs locally on the CPU, including on Windows and Linux without a GPU. No STT account,
-API key, subscription or cloud transcription service is needed.
+Desktop dictation runs on your computer. Nemotron 3.5 ASR Streaming 0.6B (Q8) is the default on
+macOS, Windows and Linux. On supported Macs running macOS 26 or later, **Speech engine** also offers
+**Apple Speech**. Apple Speech uses on-device recognition and can download language assets when you
+first dictate. **Automatic** uses the Mac’s preferred language with Apple Speech. Choose a supported
+language if your preferred language is unavailable. You can switch engines at any time in **Settings
+→ General → Speech**.
 
 Open **Settings → General → Speech**, then click **Download & enable dictation**. This explicitly
 downloads the 751 MB model and enables the composer's microphone. The page shows download progress,
@@ -36,11 +39,12 @@ capped at four threads.
 
 Run `pnpm prepare:dictation` before using dictation in a development desktop build. It requires
 CMake, a C/C++ compiler and `tar` on the build host. Windows uses the Visual Studio C++ toolchain.
-The source archive is pinned and SHA-256 checked. Only the Parakeet model family (which includes
-Nemotron) is compiled, with a conservative x86 CPU baseline. Dovo's small `dovo-dictation` pipe
-helper uses the public streaming C API. Neither Python nor CUDA is needed. Build products and the
-test model live under ignored `work/dictation`. The build cache checks both upstream revision and
-helper source hash.
+On macOS, Xcode with the macOS 26 SDK or later also builds the Apple Speech helper. The source
+archive is pinned and SHA-256 checked. Only the Parakeet model family (which includes Nemotron) is
+compiled, with a conservative x86 CPU baseline. Dovo's small `dovo-dictation` pipe helper uses the
+public streaming C API. Neither Python nor CUDA is needed. Build products and the test model live
+under ignored `work/dictation`. The build cache checks both upstream revision and helper source
+hash.
 
 `package:desktop` builds and includes the native helper for the packaging host. macOS packaging
 includes the microphone usage string, audio-input entitlement and explicit helper signing. The
@@ -76,6 +80,13 @@ notices accompany the native executable under `Resources/dictation` (macOS) or `
 The native model test verifies English speech on its host, not Dutch coding accuracy or every
 supported desktop platform. Browser checks do not establish macOS permission prompts, signed helper
 execution or Windows installer behavior.
+
+## Dictate a comment on an assistant quote
+
+Open **Quote selection** under an assistant reply and select the passage. Dictate or type in
+**Comment on selected text**, then choose **Add quote to draft**. The draft contains the selected
+passage, its message reference and your comment. Close the selection to discard its comment.
+Dictation in the main composer can continue while the selection is open.
 
 ## Switch threads during mobile dictation
 

@@ -224,12 +224,15 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
             remote.some((w) => w.status === 'watching' && !w.paused && (w.offline || !w.snapshot))
           ? 'waiting'
           : 'completed'
-  const answer =
-    phase === 'completed' && task.status !== 'failed' && task.status !== 'cancelled'
-      ? [...(s.store.historyPage(id)?.messages ?? [])]
-          .reverse()
-          .find((message) => message.role === 'assistant')?.text
-      : undefined
+  let answer: string | undefined
+  if (phase === 'completed' && task.status !== 'failed' && task.status !== 'cancelled') {
+    const turn = task.history.latestTurn
+    if (!turn) answer = s.store.latestAssistantText(id)
+    else if (turn.status === 'completed') {
+      const message = s.store.taskMessage(id, turn.assistantId)
+      if (message?.role === 'assistant') answer = message.text
+    }
+  }
   const repository = s.store
     .get()
     .repositories.find((repository) => repository.id === task.repositoryId)

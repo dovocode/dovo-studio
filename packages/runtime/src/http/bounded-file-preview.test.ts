@@ -1,9 +1,60 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { open, writeFile, symlink } from 'node:fs/promises'
+import { open, writeFile, symlink, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 vi.mock('node:fs/promises', { spy: true })
+it('pages through a long line without splitting UTF-8 and rejects cursors after replacement', async () => {
+  const f = await fixture()
+  const token = 'bounded-preview-cursor-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  try {
+    runtime.services.store.update(() => f.workspace)
+    const task = runtime.services.tasks.create({
+      title: 'Paged preview',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+      execution: 'main',
+    })
+    const contents = 'a'.repeat(128 * 1024 - 1) + '😃'.repeat(40000) + '\nlast page'
+    const filename = join(f.directory, 'long.txt')
+    await writeFile(filename, contents)
+    const read = (cursor?: string, startLine?: number) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/files/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: task.id,
+          path: 'long.txt',
+          preview: { cursor, startLine, maxBytes: 128 * 1024 },
+        }),
+      })
+    const page = async (cursor?: string) => {
+      const response = await read(cursor)
+      expect(response.status).toBe(200)
+      return await response.json()
+    }
+    const first = await page()
+    expect(first.contents).toBe('a'.repeat(128 * 1024 - 1))
+    expect(first.nextCursor).toEqual(expect.any(String))
+    const second = await page(first.nextCursor)
+    const last = await page(second.nextCursor)
+    expect(second.contents.startsWith('😃')).toBe(true)
+    expect(first.contents + second.contents + last.contents).toBe(contents)
+    expect(last).toMatchObject({ hasMore: false, startLine: 1 })
+    expect(last.nextCursor).toBeUndefined()
+    expect(await page(first.cursor)).toEqual(first)
+    expect(await (await read(undefined, 2)).json()).toMatchObject({ contents: 'last page' })
+    await writeFile(filename + '.replacement', contents.replace('last page', 'new bytes'))
+    await rename(filename + '.replacement', filename)
+    expect((await read(first.nextCursor)).status).toBe(409)
+    expect((await read('invalid')).status).toBe(400)
+  } finally {
+    await runtime.close()
+    await f.cleanup()
+  }
+})
 it('serves bounded prefixes and line windows without allowing a preview to overwrite the full file', async () => {
   const f = await fixture(),
     token = 'bounded-preview-token-with-at-least-32-characters'
@@ -133,6 +184,26 @@ it('serves bounded text and structured previews of contained final-component ali
     const structured = await call('preview', 'alias.txt')
     expect(structured.status).toBe(200)
     expect(await structured.json()).toMatchObject({ after: { text: 'first\nsecond\n' } })
+    const rtf = String.raw`{\rtf1\ansi\uc1 {\fonttbl{\f0 Arial;}}\b Hello\b0 {\i world}\par{\field{\*\fldinst HYPERLINK "https://hidden.invalid"}{\fldrslt <label>}} \u-10179?\u-8701?\page Second}`
+    await writeFile(join(f.directory, 'document.rtf'), rtf)
+    const formatted = await call('read', 'document.rtf', { preview: { format: 'rtf' } })
+    expect(formatted.status).toBe(200)
+    const document = (await formatted.json()).document
+    expect(document).toHaveLength(2)
+    expect(document[0].map((span: { text: string }) => span.text).join('')).toBe(
+      'Helloworld\n<label> 😃',
+    )
+    expect(document[0]).toEqual(
+      expect.arrayContaining([
+        { text: 'Hello', bold: true },
+        { text: 'world', italic: true },
+      ]),
+    )
+    expect(document[1]).toEqual([{ text: 'Second' }])
+    const source = await call('read', 'document.rtf', { preview: {} })
+    expect(await source.json()).toMatchObject({ contents: rtf, complete: true })
+    await writeFile(join(f.directory, 'broken.rtf'), String.raw`{\rtf1 missing brace`)
+    expect((await call('read', 'broken.rtf', { preview: { format: 'rtf' } })).status).toBe(422)
     for (const path of ['git.txt', 'dangling.txt', 'outside/private.txt']) {
       expect((await call('read', path, { preview: {} })).ok).toBe(false)
       expect((await call('preview', path)).ok).toBe(false)

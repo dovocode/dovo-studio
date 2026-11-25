@@ -1,6 +1,11 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useState } from 'react'
-import { explainAutomationDraftSchema, randomUUID } from '@dovo/protocol'
+import {
+  automationReviewLink,
+  automationRunNeedsReview,
+  explainAutomationDraftSchema,
+  randomUUID,
+} from '@dovo/protocol'
 import { RestoreDefinition } from './restore-definition'
 import { RunAudit } from './run-audit'
 import { RunRoutineSource, type RoutineProvenanceState } from './routine-provenance'
@@ -22,7 +27,7 @@ import {
   type JobRun,
   formatDateTime,
 } from '@dovo/studio-core'
-import { Button, ChoicePicker, cn } from '@dovo/studio-ui'
+import { Button, ChoicePicker, Textarea, cn } from '@dovo/studio-ui'
 import {
   elapsed,
   liveRun,
@@ -102,6 +107,7 @@ export function RunDetails({
   const [now, setNow] = useApplicationState(Date.now)
   const [explaining, setExplaining] = useState(false)
   const [explainError, setExplainError] = useState('')
+  const [reviewInput, setReviewInput] = useState<{ key: string; text: string }>()
   const attemptRequests = useRef(new Map<string, string>())
   const pairing = clientScopeKey(connection)
   const explainScope = useRef(0)
@@ -141,6 +147,11 @@ export function RunDetails({
   const waiting = steps.find(
     (step) => step.nodeId === run.waitingNodeId || step.status === 'waiting',
   )
+  const reviewKey = JSON.stringify([pairing, run.id, waiting?.nodeId, waiting?.attempt])
+  const reason = reviewInput?.key === reviewKey ? reviewInput.text : ''
+  const prompt = waiting?.reviewPrompt
+  const link = automationReviewLink(prompt?.link)
+  const reviewDisabled = disabled || (!!prompt?.requireReason && !reason.trim())
   const tasks = run.taskIds.flatMap((id) => {
     const task = workspace.tasks.find((item) => item.id === id)
     return task ? [task] : []
@@ -279,13 +290,13 @@ export function RunDetails({
             </Button>
           </div>
         )}
-        {run.retryAt && (
+        {run.retryAt && run.pause?.phase !== 'paused' && (
           <p className="text-xs">
             Provider startup retry {run.startupRetryCount}/3 at {formatDateTime(run.retryAt)}. No
             input was accepted. Cancel stops this retry.
           </p>
         )}
-        {run.pipelineWait && (
+        {run.pipelineWait && run.pause?.phase !== 'paused' && (
           <p className="text-xs">
             Waiting until {formatDateTime(run.pipelineWait.until)} for the{' '}
             <a className="underline" href={run.pipelineWait.url} target="_blank" rel="noreferrer">
@@ -294,32 +305,63 @@ export function RunDetails({
             .
           </p>
         )}
-        {run.status === 'waiting' && !run.retryAt && !run.pipelineWait && (
+        {automationRunNeedsReview(run) && (
           <div className="rounded-lg border border-status-warning/25 bg-status-warning/5 p-3">
             <p className="text-xs font-medium">{waiting?.label ?? 'Review needed'}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Open the completed threads below and review their changes before continuing.
+              {prompt?.instructions?.trim() ||
+                'Open the completed threads below and review their changes before continuing.'}
             </p>
+            {link && (
+              <a className="text-xs underline" href={link} target="_blank" rel="noreferrer">
+                Open review link
+              </a>
+            )}
+            {prompt && (
+              <Textarea
+                aria-label={prompt.requireReason ? 'Reason (required)' : 'Reason (optional)'}
+                placeholder={prompt.requireReason ? 'Reason (required)' : 'Reason (optional)'}
+                maxLength={4000}
+                value={reason}
+                disabled={disabled}
+                onChange={(event) => setReviewInput({ key: reviewKey, text: event.target.value })}
+              />
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 size="sm"
-                disabled={disabled}
+                disabled={reviewDisabled}
                 data-studio-human-only
-                onClick={() => void actions.review(run, true)}
+                onClick={() => void actions.review(run, true, reason.trim() || undefined)}
               >
                 Approve & continue
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={disabled}
+                disabled={reviewDisabled}
                 data-studio-human-only
-                onClick={() => void actions.review(run, false)}
+                onClick={() => void actions.review(run, false, reason.trim() || undefined)}
               >
                 Reject
               </Button>
             </div>
           </div>
+        )}
+        {run.reviewDecisions?.some(({ answeredAt }) => !!answeredAt) && (
+          <ul className="space-y-1 text-xs text-muted-foreground">
+            {run.reviewDecisions.map(
+              (decision) =>
+                decision.answeredAt && (
+                  <li key={`${decision.nodeId}:${decision.attempt}`}>
+                    {steps.find(({ nodeId }) => nodeId === decision.nodeId)?.label} ·{' '}
+                    {decision.allow ? 'Approved' : 'Rejected'} · {decision.answeredBy ?? 'Reviewer'}{' '}
+                    · {formatDateTime(decision.answeredAt)}
+                    {decision.reason && <p className="whitespace-pre-wrap">{decision.reason}</p>}
+                  </li>
+                ),
+            )}
+          </ul>
         )}
         <div className="flex flex-wrap gap-2">
           {canRetry && (
@@ -329,7 +371,21 @@ export function RunDetails({
               onClick={() => void actions.retry(run.id, selectRun)}
             >
               <RotateCw />
-              {run.status === 'cancelled' ? 'Resume run' : 'Retry failed step'}
+              {run.status === 'cancelled' ? 'Retry cancelled run' : 'Retry failed step'}
+            </Button>
+          )}
+          {active && snapshot?.automationPauseSupported && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => void actions.control(run.id, run.pause ? 'resume' : 'pause')}
+            >
+              {run.pause?.phase === 'afterStep'
+                ? 'Keep running'
+                : run.pause
+                  ? 'Resume run'
+                  : 'Pause run'}
             </Button>
           )}
           {active && (
@@ -337,7 +393,7 @@ export function RunDetails({
               size="sm"
               variant="outline"
               disabled={disabled}
-              onClick={() => void actions.cancel(run.id)}
+              onClick={() => void actions.control(run.id, 'cancel')}
             >
               Cancel run
             </Button>

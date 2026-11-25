@@ -56,7 +56,8 @@ import { pullCommentReceiptId, pullCommentStatus } from './endpoints/pull-commen
 import { pullCommentSubmissionSchema } from '@dovo/protocol'
 import { linearConnectionCommandSchema } from '@dovo/protocol'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
-import { taskWaitingRequestSchema } from '@dovo/protocol'
+import { linkedThreadReadSchema, taskWaitingRequestSchema } from '@dovo/protocol'
+import { readLinkedThread } from '../studio/linked-thread.js'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
 import { taskWaiting } from './endpoints/task-waiting.js'
 import { reviewRoute } from './endpoints/review-routes.js'
@@ -460,6 +461,12 @@ export function route(
             ? s.backups.create()
             : runtimeDiagnostics(s, Date.now(), true),
         )
+      }
+      if (method === 'POST' && path === '/api/threads/linked/read') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Linked thread previews require a paired client.')
+        const input = decode(linkedThreadReadSchema, yield* serviceResult(body(request, 4096)))
+        return yield* serviceResult(readLinkedThread(s, input, () => s.devices.authenticate(token)))
       }
       if (method === 'POST' && path === '/api/tasks/waiting')
         return yield* serviceResult(

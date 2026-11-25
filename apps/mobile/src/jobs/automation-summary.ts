@@ -1,9 +1,12 @@
-import type { JobRun, RuntimeSnapshot } from '@dovo/protocol'
+import { automationRunNeedsReview, type JobRun, type RuntimeSnapshot } from '@dovo/protocol'
 export function automationRuns(automationId: string, runs: readonly JobRun[]) {
   const history = runs
     .filter((run) => run.automationId === automationId)
     .sort((a, b) => Date.parse(b.updatedAt ?? b.createdAt) - Date.parse(a.updatedAt ?? a.createdAt))
-  const active = history.find((run) => run.status === 'running' || run.status === 'waiting')
+  const active =
+    history.find(
+      (run) => !run.queuedForAdmission && (run.status === 'running' || run.status === 'waiting'),
+    ) ?? history.find((run) => run.queuedForAdmission)
   return {
     history,
     active,
@@ -18,23 +21,31 @@ export function automationRunSummary(run: JobRun, inputTasks: ReadonlySet<string
   const needsInput = !!current?.taskId && inputTasks.has(current.taskId)
   const status = needsInput
     ? 'Needs input'
-    : run.pipelineWait
-      ? 'Waiting for CI'
-      : run.retryAt
-        ? 'Waiting for provider'
-        : current?.status === 'running' && current.queuedAt && !current.workStartedAt
-          ? 'Waiting for worker'
-          : run.status === 'waiting'
-            ? 'Needs review'
-            : run.status === 'running'
-              ? 'Running'
-              : run.status === 'completed'
-                ? 'Completed'
-                : run.status === 'cancelled'
-                  ? 'Cancelled'
-                  : run.interrupted
-                    ? 'Interrupted'
-                    : 'Failed'
+    : run.pause?.phase === 'paused'
+      ? 'Paused'
+      : run.pause?.phase === 'afterStep'
+        ? 'Pausing after current step'
+        : run.queuedForAdmission
+          ? 'Queued'
+          : run.waitingForStepPool
+            ? `Waiting for step pool · ${run.waitingForStepPool}`
+            : run.pipelineWait
+              ? 'Waiting for CI'
+              : run.retryAt
+                ? 'Waiting for provider'
+                : current?.status === 'running' && current.queuedAt && !current.workStartedAt
+                  ? 'Waiting for worker'
+                  : run.status === 'waiting'
+                    ? 'Needs review'
+                    : run.status === 'running'
+                      ? 'Running'
+                      : run.status === 'completed'
+                        ? 'Completed'
+                        : run.status === 'cancelled'
+                          ? 'Cancelled'
+                          : run.interrupted
+                            ? 'Interrupted'
+                            : 'Failed'
   return {
     steps,
     current,
@@ -59,8 +70,6 @@ export function automationRowState(automationId: string, snapshot: RuntimeSnapsh
     latest,
     summary,
     needsAttention:
-      !!summary?.needsInput ||
-      (latest?.status === 'waiting' && !latest.pipelineWait) ||
-      latest?.status === 'failed',
+      !!summary?.needsInput || automationRunNeedsReview(latest) || latest?.status === 'failed',
   }
 }

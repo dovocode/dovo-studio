@@ -38,6 +38,11 @@ name, choose a trigger and configure its ordered steps:
   and changes, then approve or reject the run.
 - Reorder or remove steps in the editor. At least one task and one trigger are required.
 
+A **Review** step can include instructions and an HTTP or HTTPS link. Choose **Require a reason for
+the decision** when the reviewer needs to explain an approval or rejection. The run shows the saved
+decision, reason, reviewer, and time. Agents can set `data.reviewPrompt` with `instructions`,
+`link`, and `requireReason` when the runtime supports review prompts.
+
 For a one-time reminder or task, choose **One time**, enter the date, time and time zone, and enable
 the trigger after saving. Put the reminder or work to perform in a Task step. It runs once at that
 time, or when the runtime next starts if the computer was offline. It waits if another run is
@@ -276,18 +281,53 @@ When a review response is lost, repeat the same decision for the same step and a
 confirms the saved decision without advancing the current review. An opposite decision for the same
 step and attempt returns a conflict. The saved outcome survives a runtime restart.
 
-Only one run of an automation may be active or waiting for review at a time. Different automations
-can run at the same time. Tasks that use the same checkout share its files and uncommitted changes.
-Use separate worktrees to isolate changes.
+By default, one run of an automation may be active or waiting for review at a time. Different
+automations can run at the same time. Tasks that use the same checkout share its files and
+uncommitted changes. Use separate worktrees to isolate changes.
 
-Recurring schedules do not overlap or queue missed occurrences. If a previous run is still active or
-waiting for review, the due occurrence is skipped. The schedule then moves to its next future time.
-**Activity & message history** on desktop or the computer’s **Activity** panel on mobile shows
-**Skipped: previous run still active**, the automation name and due time. Expand the entry for the
-automation ID, occurrence key and previous run ID. These entries follow the seven-day diagnostic
-retention window, even when activity history has no limit. Maintenance keeps due occurrences
-pending. An accepted one-time reminder can retry a provider startup failure after its schedule has
-been consumed. Cancel the run to stop its retry.
+Set **Concurrent runs** under **Monitoring and limits** to admit up to that many runs and queue
+additional requests in arrival order. Use `1` to queue without overlap. Queued requests survive
+restart, can be cancelled, and wait for review when they reach a review step. A cancelled worker
+continues to occupy a slot until its work stops. Lowering the limit lets current runs drain. Clear
+the setting to return to the default policy for new requests. Already queued requests finish one at
+a time. Finish or cancel queued runs before rolling back to an older runtime.
+
+Give automations the same **Shared run pool** name when their runs share a resource on one computer.
+Runs queue together in arrival order. A shared pool uses each run's saved limit, including the limit
+of the run waiting at the front. For example, a run with a limit of `1` runs alone in its pool.
+
+Agents configure `policy.concurrencyLimit` and optional `policy.concurrencyPool` through
+`studio_automations` on runtimes that advertise `capabilities.automationConcurrency`.
+`queuedForAdmission` identifies a waiting run that has yet to execute any steps.
+
+Set **Shared step pool** and **Concurrent steps** on a task step to share capacity on the same
+computer. Steps queue in the order they reach the pool. The limit of the first waiting step and the
+limits of active steps all apply. A run keeps its run slot while waiting for a step slot. Run pools
+and step pools are independent, even when they have the same name.
+
+Queued steps survive restart. A cancelled step holds its slot until the worker stops. Clear the pool
+name to remove the limit from future runs. Agents can set `data.stepPool` with a `name` and `limit`
+through `studio_automations` and read `waitingForStepPool` on the run.
+
+Use **Pause run** to hold an active run at the next completed step. **Keep running** clears the
+request while that step is still working. A run already waiting for review, CI, a pool slot, or a
+provider retry pauses immediately. **Resume run** restores that wait or starts the next unfinished
+step. Paused steps leave capacity available for other steps. A run that was already admitted keeps
+its run slot. The CI timeout, provider retry delay, and run time budget stop counting time during a
+manual pause. Progress and the pause survive restart.
+
+**Cancel run** withdraws outstanding questions from the run's worker turns, including forms a worker
+left open when it finished. Cancelling a pending review closes the gate without recording a review
+decision.
+
+Under the default policy, recurring schedules skip an occurrence while a previous run is active or
+waiting for review. The schedule then moves to its next future time. **Activity & message history**
+on desktop or the computer’s **Activity** panel on mobile shows **Skipped: previous run still
+active**, the automation name and due time. Expand the entry for the automation ID, occurrence key
+and previous run ID. These entries follow the seven-day diagnostic retention window, even when
+activity history has no limit. Maintenance keeps due occurrences pending. An accepted one-time
+reminder can retry a provider startup failure after its schedule has been consumed. Cancel the run
+to stop its retry.
 
 ## Retry and stop
 

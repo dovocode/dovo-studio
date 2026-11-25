@@ -106,6 +106,7 @@ function ThreadHeaderIcon({ label, children }: { label: string; children: ReactN
 
 export function TaskHeader({
   task,
+  palette = false,
   parentThread,
   windowRightEdge = true,
   onPullLink,
@@ -135,6 +136,7 @@ export function TaskHeader({
   /** Opens the source thread at the message a fork was made from. */
   onOpenForkSource?: (taskId: string, messageId: string) => void
   task: Task
+  palette?: boolean
   parentThread?: StudioThreadReference
   windowRightEdge?: boolean
   onPullLink?: (url: string) => boolean
@@ -325,10 +327,11 @@ export function TaskHeader({
       (task.sideChats?.length ?? 0) + childThreads.length,
     ],
   ] as const
-  const titleMenu = (
+  const titleMenu = (registerPalette = false) => (
     <TaskContextMenu
       key={task.id}
       dropdown
+      palette={registerPalette}
       task={task}
       owner={owner}
       selected
@@ -473,7 +476,7 @@ export function TaskHeader({
               {parentCrumb}
               {forkSourceButton}
               <h1 className="studio-titlebar-task min-w-0" aria-current="page" title={task.title}>
-                {titleMenu}
+                {titleMenu()}
               </h1>
             </nav>
             {addControl}
@@ -515,7 +518,7 @@ export function TaskHeader({
           <nav className="studio-titlebar-heading text-xs" aria-label="Thread breadcrumb">
             {parentCrumb}
             <span className="studio-titlebar-task min-w-0" aria-current="page">
-              {titleMenu}
+              {titleMenu(palette)}
             </span>
           </nav>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.625rem] text-muted-foreground">

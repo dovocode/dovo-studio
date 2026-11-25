@@ -111,7 +111,10 @@ export function NewTask({
       example: false,
     }
     // A template prefills the draft and settings; nothing is sent until the user sends it.
-    const task: Task = template && !initial ? { ...base, ...templateTaskFields(template) } : base
+    const task: Task =
+      template && !initial
+        ? { ...base, ...templateTaskFields(template, snapshot?.linkedCheckoutTemplatesSupported) }
+        : base
     setError('')
     // Capture this destination's uploader before task creation can yield to another runtime.
     const upload = attachmentUpload.current
@@ -164,6 +167,7 @@ export function NewTask({
     repositoryId,
     templateId,
     snapshot?.workspace,
+    snapshot?.linkedCheckoutTemplatesSupported,
   ])
   return (
     <View style={styles.content}>

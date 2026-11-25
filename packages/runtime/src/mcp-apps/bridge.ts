@@ -38,8 +38,10 @@ import {
   resolveTaskAgent,
   permissionPolicyReadOnly,
   effectivePermissionPolicy,
+  containerSandboxEnabled,
   samePermissionPolicy,
   type McpServer,
+  type ThreadMcpOAuthWarning,
   type McpAutomationEvent,
   type Agent,
   type McpApp,
@@ -56,6 +58,7 @@ import { HttpError } from '../errors.js'
 import { mcpEventsCommand, McpEventSubscriptions } from '../mcp-events/subscriptions.js'
 import { McpEventsClient } from '../mcp-events/client.js'
 import { McpOAuth } from '../mcp-oauth/oauth.js'
+import { threadContainerSandbox } from '../sandbox/thread-terminal.js'
 import {
   object,
   appUri,
@@ -141,6 +144,7 @@ export class McpApps {
     private store: WorkspaceStore,
     private activity: Activity,
     private approvals: Approvals,
+    private runtimeId: string,
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS mcp_apps (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS mcp_apps_task ON mcp_apps(task_id); CREATE TABLE IF NOT EXISTS mcp_app_actions (id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, result TEXT)',
@@ -151,6 +155,44 @@ export class McpApps {
   }
   a2uiCommand(taskId: string, runId: string, input: unknown) {
     return this.a2ui.command(taskId, runId, input)
+  }
+  private threadOAuthTargets(taskId: string) {
+    const task = this.store.taskSummary(taskId)
+    const agent = resolveTaskAgent(task, this.store.get().agents)
+    if (!agent || task.replica || task.archived || task.archivedAt) return []
+    const servers = this.store
+      .taskResources(task, agent)
+      .mcpServers.filter((server) => server.enabled && server.transport === 'http' && server.oauth)
+    if (!servers.length || containerSandboxEnabled(threadContainerSandbox(this.store, taskId)))
+      return []
+    return servers.flatMap((server) => {
+      const url = URL.parse(server.url)
+      if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+        return []
+      const target = { name: server.name, url: url.href, scope: server.oauth?.scope }
+      // A warning binds to the exact saved target and resolved harness on this computer.
+      const revision = createHash('sha256')
+        .update(JSON.stringify([this.runtimeId, taskId, agent.id, agent.provider, target]))
+        .digest('hex')
+      return [{ target, revision }]
+    })
+  }
+  threadOAuthWarnings(taskId: string): ThreadMcpOAuthWarning[] {
+    return this.threadOAuthTargets(taskId).flatMap(({ target, revision }) =>
+      this.oauth.status([target])[0]?.state === 'connected'
+        ? []
+        : [{ name: target.name, revision }],
+    )
+  }
+  connectThreadOAuth(taskId: string, warning: ThreadMcpOAuthWarning) {
+    const entry = this.threadOAuthTargets(taskId).find(
+      ({ target, revision }) => target.name === warning.name && revision === warning.revision,
+    )
+    if (!entry)
+      throw new HttpError(409, 'The thread’s MCP configuration changed. Refresh and try again.')
+    if (this.oauth.status([entry.target])[0]?.state === 'connected')
+      throw new HttpError(409, 'This MCP server is already signed in on this computer.')
+    return this.oauth.connect(entry.target)
   }
   proxies(
     taskId: string,

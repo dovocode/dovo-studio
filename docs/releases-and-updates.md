@@ -120,6 +120,10 @@ release checks retain their public metadata fallback.
    verify the published tag and asset digests before preparing downloads.
 5. On an older install, exercise download, Later, restart/install and retained runtime data.
 
+The Web Studio production entry serves the client build beside the server build. Keep `serve.mjs`
+and both `dist` folders when packaging the web app. The production browser check loads the emitted
+JavaScript and CSS and verifies immutable cache headers on fingerprinted files.
+
 Check runs the full build, lint, typechecks and test suite on Linux, with separate macOS and Windows
 native/process tests. New pushes cancel superseded Check runs. Release jobs install and build once
 per native platform, deploy one private production runtime, then package desktop and server in

@@ -43,6 +43,12 @@ base branch and branch name. New branch names receive a unique suffix. Links can
 the thread is idle; changing links starts a fresh provider session. Removing a link preserves its
 worktree and saved checkpoints.
 
+When saving a thread as a template, select **Include linked checkouts** to keep its project links
+and their read-only or edit access. A new draft from the template shows those links in thread
+settings. A worktree link creates its own worktree when the new thread starts. Remove the links from
+a template under **Thread templates**. Update the runtime to save and apply linked checkouts in
+templates.
+
 Agents also have a regular `dovo_task linked_projects` tool, independent of Studio Tools settings:
 
 - `projects` lists registered projects on the thread's computer.
@@ -65,15 +71,19 @@ available in Changes and when opening a terminal. Agents receive their paths, pr
 access modes, and can create separate commits and PRs in each project. A child agent can target a
 link by its checkout ID; reference-only links cap child permissions at read-only.
 
+Use **Hide test files** in Changes to focus on other files. If the remaining changes are all tests,
+use **Show test files** in the empty pane to restore them.
+
 Each editable Git checkout has its own checkpoint previews. In a turn diff, select a file to restore
-its contents from before the turn. Checkpoints cover the full Git worktree even when an imported
-session starts in a subfolder. Studio can restore a symlink without following its target. If the
-selected file exists on disk but is missing from the Git backup, move it to a safe location before
-restoring. If a directory replaced that file, Studio keeps the directory and stops the restore.
-Concurrent edits can appear in the same diff. Studio blocks file restoration for checkpoints that
-overlap another running thread. To continue work from an earlier turn in a separate checkout, fork
-that turn. Checkpoint history remains available after removal of a linked project. Worktree cleanup
-protects links used by unarchived threads and dirty worktrees.
+its contents from before the turn. Saved diffs can display UTF-8, GBK, and GB18030 text. Checkpoints
+cover the full Git worktree even when an imported session starts in a subfolder. Studio can restore
+a symlink without following its target. If the selected file exists on disk but is missing from the
+Git backup, move it to a safe location before restoring. If a directory replaced that file, Studio
+keeps the directory and stops the restore. Concurrent edits can appear in the same diff. Studio
+blocks file restoration for checkpoints that overlap another running thread. To continue work from
+an earlier turn in a separate checkout, fork that turn. Checkpoint history remains available after
+removal of a linked project. Worktree cleanup protects links used by unarchived threads and dirty
+worktrees.
 
 #### Recover files saved by an earlier Undo
 

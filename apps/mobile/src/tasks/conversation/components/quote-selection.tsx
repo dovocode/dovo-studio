@@ -1,7 +1,10 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { responseSelectionReply } from '@dovo/protocol'
 import { Platform, TextInput } from 'react-native'
+import { useRuntime } from '../../../runtime/connection/provider'
 import { Action } from '../../../ui/controls/action'
+import { Field } from '../../../ui/controls/field'
 import { Sheet, type SheetHandle } from '../../../ui/layout/sheet'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
@@ -10,6 +13,7 @@ import {
   nativeReferenceMessagesAvailable,
 } from '../../composer/native-composer-input'
 import type { NativeReferenceMessageProps } from '../../composer/native-composer-input.types'
+import { useComposerDictation } from '../../composer/use-composer-dictation'
 
 const references: NativeReferenceMessageProps['references'] = []
 const links: NativeReferenceMessageProps['links'] = []
@@ -18,19 +22,34 @@ const onLink = () => {}
 export function QuoteSelection({
   text,
   messageId,
+  taskId,
   onQuote,
   onClose,
 }: {
   text: string
   messageId: string
+  taskId: string
   onQuote: (quote: string) => void
   onClose: () => void
 }) {
   const uiText = useInterfaceText()
   const { styles, colors } = useTheme()
+  const { connected } = useRuntime()
+  const quoteId = useId()
   const sheet = useRef<SheetHandle>(null)
   const [selection, setSelection] = useState({ start: 0, end: 0 })
+  const [comment, setComment] = useState('')
+  const [commentSelection, setCommentSelection] = useState<{ start: number; end: number }>()
   const selected = text.slice(selection.start, selection.end)
+  const dictation = useComposerDictation({
+    taskId,
+    title: uiText('Comment on selected text'),
+    editing: false,
+    draftKey: `quote-${quoteId}`,
+    draft: { text: comment, update: setComment },
+    connected,
+    transient: true,
+  })
   return (
     <Sheet
       ref={sheet}
@@ -39,18 +58,12 @@ export function QuoteSelection({
       footer={
         <Action
           label={uiText('Add quote to draft')}
-          disabled={!selected}
-          onPress={() => {
-            const quote = selected
-              .split('\n')
-              .map((line) => `> ${line}`)
-              .join('\n')
+          disabled={!selected.trim() || dictation.active}
+          onPress={() =>
             sheet.current?.dismiss(() =>
-              onQuote(
-                `[Reply to assistant message ${JSON.stringify(messageId)}. Use conversation_read with this messageId for more context.]\n${quote}\n\n`,
-              ),
+              onQuote(responseSelectionReply(messageId, selected, comment)),
             )
-          }}
+          }
         />
       }
     >
@@ -83,6 +96,30 @@ export function QuoteSelection({
           onSelectionChange={({ nativeEvent }) => setSelection(nativeEvent.selection)}
           style={styles.chatText}
         />
+      )}
+      <Field
+        label={uiText('Comment on selected text')}
+        value={comment}
+        multiline
+        editable={!dictation.active}
+        onChangeText={(value) => dictation.update(value, 'keyboard')}
+        onSelectionChange={({ nativeEvent }) => setCommentSelection(nativeEvent.selection)}
+      />
+      {dictation.available && (
+        <Action
+          secondary
+          label={dictation.isRecording ? uiText('Stop dictation') : uiText('Dictate comment')}
+          disabled={!selected.trim() || dictation.isStarting || dictation.isStopping}
+          onPress={() => {
+            if (dictation.isRecording) dictation.stop()
+            else void dictation.start(commentSelection)
+          }}
+        />
+      )}
+      {!!dictation.error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {dictation.error}
+        </Text>
       )}
     </Sheet>
   )

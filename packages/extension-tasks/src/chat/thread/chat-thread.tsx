@@ -49,6 +49,7 @@ import {
   type ReactNode,
 } from 'react'
 import { TaskActivity, useTaskActivity } from './task-activity'
+import { ThreadMcpSignIn } from './mcp-sign-in'
 import { Star, ChevronUp, ChevronDown, X, ArrowRightLeft } from 'lucide-react'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
@@ -797,6 +798,9 @@ export function ChatThread({
                 }
                 error={activity.error}
               />
+              {active && fullTask && !fullTask.replica && (
+                <ThreadMcpSignIn taskId={task.id} status={task.status} />
+              )}
               {footer}
             </ConversationContent>
           </ConversationHistory>

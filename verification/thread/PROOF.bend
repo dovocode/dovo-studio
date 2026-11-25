@@ -1,5 +1,9 @@
 import ./LAWS.bend as Laws
 import ./Queue.bend as Q
+import ./McpSignIn.bend as M
+import ./LinkedRead.bend as A
+import ./FilePages.bend as F
+import ./QuoteDraft.bend as C
 
 def Laws.saved_reply_starts_next(reply, next, retry):
   {==}
@@ -69,4 +73,46 @@ def Laws.first_published_tree_wins(original, later):
   {==}
 
 def Laws.retry_records_the_tree_from_the_turn(original, later):
+  {==}
+
+def M.stale_warning_cannot_start_consent(needs_sign_in):
+  {==}
+
+def M.current_warning_starts_consent():
+  {==}
+
+def M.connected_server_holds_consent():
+  {==}
+
+def M.old_session_cannot_expire_new_sign_in():
+  {==}
+
+def A.a_different_thread_cannot_publish(active_link, same_generation, body):
+  {==}
+
+def A.unlink_discards_in_flight_read(body):
+  {==}
+
+def A.relink_cannot_publish_an_old_read(body):
+  {==}
+
+def A.verified_link_publishes_read(body):
+  {==}
+
+def F.stale_cursor_requires_reload(stable_read, has_more, text, start, consumed):
+  {==}
+
+def F.changed_read_requires_reload(has_more, text, start, consumed):
+  {==}
+
+def F.next_page_starts_after_consumed_bytes(text, start, consumed):
+  {==}
+
+def F.end_of_file_has_no_cursor(text, start, consumed):
+  {==}
+
+def C.cancelled_quote_leaves_draft_intact(reference, comment, transcript, quotes):
+  {==}
+
+def C.confirmed_quote_includes_latest_comment_once(reference, comment, transcript, quotes):
   {==}

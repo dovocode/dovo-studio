@@ -636,7 +636,9 @@ function WorkspaceContent({ browserTabId }: { browserTabId?: string }) {
           ...resolveTaskDefaults(computer.snapshot?.defaults, repository),
           repositoryId: repository.id,
         }),
-        ...(template ? templateTaskFields(template) : {}),
+        ...(template
+          ? templateTaskFields(template, computer.snapshot?.linkedCheckoutTemplatesSupported)
+          : {}),
       }
       const result = await store.readRuntime(
         computer.profile,

@@ -1,5 +1,8 @@
-T3 Code middle truncation
-Source: https://github.com/pingdotgg/t3code/blob/8ee7183e6c8a1c22a6698f4909ef7e2a423bec3a/apps/web/src/components/ui/middle-truncate.tsx
+T3 Code middle truncation, terminal replay sequence parser, and RTF preview
+Sources:
+https://github.com/pingdotgg/t3code/blob/8ee7183e6c8a1c22a6698f4909ef7e2a423bec3a/apps/web/src/components/ui/middle-truncate.tsx
+https://github.com/pingdotgg/t3code/blob/f1efcfb4948542237f6e2ceb5389de9e23f9baea/packages/contracts/src/terminal.ts
+https://github.com/pingdotgg/t3code/blob/55085df2a6c384f34b37901d5dcbc5925ada1600/apps/web/src/components/files/extendedDocumentPreview.ts
 
 MIT License
 

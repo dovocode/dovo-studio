@@ -25,6 +25,7 @@ export function useComposerDictation({
   draft,
   cleanup,
   connected,
+  transient = false,
 }: {
   taskId: string
   title: string
@@ -34,10 +35,13 @@ export function useComposerDictation({
     text: string
     update: (text: string, source?: 'keyboard') => void
   }
-  cleanup: (text: string) => Effect.Effect<string, Error>
+  cleanup?: (text: string) => Effect.Effect<string, Error>
   connected: boolean
+  transient?: boolean
 }) {
   const service = useMobileDictation()
+  const serviceRef = useRef(service)
+  serviceRef.current = service
   const { profile, snapshot, readRuntime } = useRuntime()
   const preferences = useMobilePreferences()
   const runtimeId = snapshot?.runtimeId ?? profile?.connection.runtimeId
@@ -72,6 +76,8 @@ export function useComposerDictation({
     setState(null)
   }
   const clean = (transaction: DictationDraftEdit, transcript: string, raw: string) => {
+    const cleanup = latest.current.cleanup
+    if (!cleanup) return
     return runClientEffect(
       mobileWorkflow(function* () {
         if (!latest.current.connected) {
@@ -89,7 +95,7 @@ export function useComposerDictation({
           transcript,
         })
         return yield* mobileWorkflow(function* () {
-          const cleaned = yield* latest.current.cleanup(transcript)
+          const cleaned = yield* cleanup(transcript)
           if (!mounted.current || edit.current !== transaction) return
           const next = transaction.clean(currentText.current, cleaned)
           if (next === null) return
@@ -140,6 +146,12 @@ export function useComposerDictation({
       mounted.current = false
     }
   }, [])
+  useEffect(() => {
+    if (!transient) return
+    return () => {
+      void serviceRef.current.cancel(draftKey)
+    }
+  }, [draftKey, transient])
   return {
     ...speech,
     available: speech.available && (!service.busy || owns),
@@ -193,6 +205,8 @@ export function useComposerDictation({
             if (visible()) {
               write(raw)
               void clean(transaction, transcript, raw)
+            } else if (transient) {
+              return
             } else if (editing) {
               // The originating queue edit verifies its saved session before applying changes.
               originalDraft.update(raw)

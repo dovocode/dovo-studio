@@ -6,7 +6,7 @@ import type { GitService } from '../scm/git/git.js'
 import { TitleGeneration } from '../agents/tasks/title-generation'
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
 import { defaultGithubTrigger, defaultTaskHarness } from '@dovo/protocol'
-import { decode, taskFamilyRunToken } from '@dovo/protocol'
+import { decode, questionPromptSchema, taskFamilyRunToken } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types'
 import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
@@ -855,6 +855,343 @@ it('accepts manual requests atomically and returns the same run after response l
   expect(await replay.json()).toEqual(accepted[0])
   expect(runtime.services.jobs.list()[0].status).toBe('waiting')
   expect(runtime.services.store.get().tasks).toHaveLength(0)
+})
+it('admits queued manual runs in order after restart and keeps delivery receipts', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const token = 'automation-queue-owner-token-at-least-32-characters'
+  const options = { databasePath: await databaseFile('queue.sqlite'), ownerToken: token, port: 0 }
+  let runtime = await startRuntime(options)
+  cleanups.push(() => runtime.close())
+  const flow = createFlow()
+  flow.policy = { concurrencyLimit: 2, concurrencyPool: 'builders' }
+  flow.edges = [
+    { id: 'one', source: 'trigger', target: 'review' },
+    { id: 'two', source: 'review', target: 'task' },
+  ]
+  const exclusive = {
+    ...structuredClone(flow),
+    id: 'exclusive',
+    policy: { concurrencyLimit: 1, concurrencyPool: 'builders' },
+  }
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [flow, exclusive] }))
+  const post = (action: string, input: object) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/jobs/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const start = async (requestId: string, id = flow.id) => {
+    const response = await post('run', { id, requestId })
+    expect(response.status).toBe(200)
+    return decode(responses.job, await response.json()).id
+  }
+  const first = await start('first')
+  const second = await start('second')
+  const third = await start('third', exclusive.id)
+  const fourth = await start('fourth')
+  const detail = (id: string) => runtime.services.jobs.detail(id)
+  const assertFirstTwo = () => {
+    expect(detail(first).waitingNodeId).toBe('review')
+    expect(detail(second).waitingNodeId).toBe('review')
+    expect(detail(third).queuedForAdmission).toBe(true)
+    expect(detail(fourth).queuedForAdmission).toBe(true)
+  }
+  runtime.services.jobs.tick()
+  await waitForJob(assertFirstTwo)
+  expect((await post('review', { id: third, allow: true })).status).toBe(409)
+  await runtime.close()
+  runtime = await startRuntime(options)
+  runtime.services.jobs.tick()
+  assertFirstTwo()
+  expect(await start('third', exclusive.id)).toBe(third)
+  expect((await post('cancel', { id: first })).status).toBe(200)
+  runtime.services.jobs.tick()
+  expect(detail(third).queuedForAdmission).toBe(true)
+  expect(detail(fourth).queuedForAdmission).toBe(true)
+  expect((await post('cancel', { id: second })).status).toBe(200)
+  runtime.services.jobs.tick()
+  await waitForJob(() => expect(detail(third).waitingNodeId).toBe('review'))
+  expect(detail(third).queuedForAdmission).toBeUndefined()
+  expect(detail(fourth).queuedForAdmission).toBe(true)
+  expect((await post('cancel', { id: fourth })).status).toBe(200)
+  expect((await post('cancel', { id: third })).status).toBe(200)
+  runtime.services.jobs.tick()
+  expect(detail(fourth)).toMatchObject({ status: 'cancelled', taskIds: [] })
+  expect(runtime.services.jobs.list()).toHaveLength(4)
+})
+it('holds a cancelled run slot while its worker is still stopping', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const { jobs, agents, store } = runtime.services
+  const flow = createFlow()
+  flow.policy = { concurrencyLimit: 1 }
+  store.update(() => ({ ...f.workspace, automations: [flow] }))
+  let exit!: () => void
+  const stopping = new Promise<void>((resolve) => {
+    exit = resolve
+  })
+  cleanups.push(async () => exit())
+  let started = 0
+  let aborted = false
+  vi.spyOn(agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (++started === 1) {
+        run.signal.addEventListener(
+          'abort',
+          () => {
+            aborted = true
+          },
+          { once: true },
+        )
+        await stopping
+      } else run.onText('Next run')
+    },
+  })
+  const first = jobs.startManual(flow.id, 'first')
+  const next = jobs.startManual(flow.id, 'next')
+  jobs.tick()
+  await waitForJob(() => expect(started).toBe(1))
+  await jobs.cancel(first)
+  await waitForJob(() => expect(aborted).toBe(true))
+  jobs.tick()
+  expect(jobs.detail(next).queuedForAdmission).toBe(true)
+  expect(started).toBe(1)
+  exit()
+  await waitForJob(() => {
+    jobs.tick()
+    expect(jobs.detail(next).waitingNodeId).toBe('review')
+  })
+  expect(started).toBe(2)
+})
+it('restores shared step order from when runs reached the pool, independently of run order', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const options = {
+    databasePath: await databaseFile('step-pool.sqlite'),
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  }
+  let runtime = await startRuntime(options)
+  cleanups.push(() => runtime.close())
+  const flow = createFlow()
+  flow.policy = { concurrencyLimit: 3, concurrencyPool: 'builders' }
+  flow.nodes[1].data.stepPool = { name: 'builders', limit: 1 }
+  const gated = {
+    ...structuredClone(flow),
+    id: 'gated',
+    edges: [
+      { id: 'one', source: 'trigger', target: 'review' },
+      { id: 'two', source: 'review', target: 'task' },
+    ],
+  }
+  const later = { ...structuredClone(flow), id: 'later' }
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [flow, gated, later] }))
+  let exit!: () => void
+  const worker = new Promise<void>((resolve) => {
+    exit = resolve
+  })
+  let started = 0
+  let aborted = false
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async ({ signal }) => {
+      started++
+      signal.addEventListener(
+        'abort',
+        () => {
+          aborted = true
+        },
+        { once: true },
+      )
+      await worker
+    },
+  })
+  cleanups.push(async () => exit())
+  const jobs = () => runtime.services.jobs
+  const tick = () => jobs().tick()
+  const detail = (id: string) => jobs().detail(id)
+  const enqueue = (id: string) =>
+    waitForJob(() => {
+      tick()
+      expect(detail(id)).toMatchObject({ status: 'waiting', waitingForStepPool: 'builders' })
+      expect(detail(id).waitingNodeId).toBeUndefined()
+      expect(detail(id).taskIds).toHaveLength(0)
+    })
+  const holder = jobs().start(flow.id)
+  const olderRun = jobs().start(gated.id)
+  await waitForJob(() => {
+    tick()
+    expect(detail(olderRun).waitingNodeId).toBe('review')
+    expect(started).toBe(1)
+  })
+  const firstStepRequest = jobs().start(later.id)
+  await enqueue(firstStepRequest)
+  jobs().approve(olderRun, true)
+  await enqueue(olderRun)
+  expect(() => jobs().approve(firstStepRequest, true)).toThrow('not waiting for review')
+  await jobs().cancel(holder)
+  await waitForJob(() => expect(aborted).toBe(true))
+  tick()
+  expect(started).toBe(1)
+  expect(detail(firstStepRequest).waitingForStepPool).toBe('builders')
+
+  const closing = runtime.close()
+  exit()
+  await closing
+  runtime = await startRuntime(options)
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  expect(detail(firstStepRequest).waitingForStepPool).toBe('builders')
+  expect(detail(olderRun).waitingForStepPool).toBe('builders')
+  tick()
+  expect(detail(firstStepRequest).status).toBe('running')
+  expect(detail(olderRun).waitingForStepPool).toBe('builders')
+  await waitForJob(() => expect(detail(firstStepRequest).waitingNodeId).toBe('review'))
+  tick()
+  await waitForJob(() => expect(detail(olderRun).status).toBe('completed'))
+  expect(detail(firstStepRequest).status).toBe('waiting')
+})
+it('pauses at a completed step, restores the pause and still requires review after resume', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const options = {
+    databasePath: await databaseFile('paused-run.sqlite'),
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  }
+  let runtime = await startRuntime(options)
+  cleanups.push(() => runtime.close())
+  const flow = createFlow()
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  let completed!: () => void
+  const hold = new Promise<void>((resolve) => {
+    completed = resolve
+  })
+  cleanups.push(async () => completed())
+  const worker = vi.fn<AgentAdapter['run']>(async (input) => {
+    await hold
+    expect(input.signal.aborted).toBe(false)
+    input.onText('Saved work')
+  })
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: worker,
+  })
+  const post = (action: string, input: object, credential = options.ownerToken) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/jobs/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const id = runtime.services.jobs.start(flow.id)
+  const detail = () => runtime.services.jobs.detail(id)
+  await waitForJob(() => expect(worker).toHaveBeenCalledOnce())
+  expect((await post('pause', { id }, 'invalid')).status).toBe(401)
+  expect((await post('pause', { id })).status).toBe(200)
+  expect(detail()).toMatchObject({ status: 'running', pause: { phase: 'afterStep' } })
+  expect((await post('resume', { id })).status).toBe(200)
+  expect(detail().pause).toBeUndefined()
+  expect((await post('pause', { id })).status).toBe(200)
+  completed()
+  await waitForJob(() =>
+    expect(detail()).toMatchObject({
+      status: 'waiting',
+      pause: { phase: 'paused' },
+      waitingNodeId: undefined,
+      completedNodes: ['trigger', 'task'],
+    }),
+  )
+  await runtime.close()
+  runtime = await startRuntime(options)
+  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: worker,
+  })
+  expect(detail().pause?.phase).toBe('paused')
+  expect((await post('review', { id, allow: true })).status).toBe(409)
+  expect((await post('resume', { id })).status).toBe(200)
+  await waitForJob(() => expect(detail().waitingNodeId).toBe('review'))
+  expect((await post('pause', { id })).status).toBe(200)
+  expect((await post('review', { id, allow: true, nodeId: 'review', attempt: 1 })).status).toBe(409)
+  expect((await post('resume', { id })).status).toBe(200)
+  expect((await post('review', { id, allow: true, nodeId: 'review', attempt: 1 })).status).toBe(200)
+  await waitForJob(() => expect(detail().status).toBe('completed'))
+  expect(worker).toHaveBeenCalledOnce()
+})
+it('withdraws an automation’s outstanding form when cancelling at a review gate', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const options = {
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  }
+  const runtime = await startRuntime(options)
+  cleanups.push(() => runtime.close())
+  const { jobs, agents, store, tasks, questions } = runtime.services
+  const flow = createFlow()
+  store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const prompt = (title: string) =>
+    decode(questionPromptSchema, {
+      title,
+      blocking: false,
+      questions: [
+        {
+          id: 'choice',
+          header: 'Choice',
+          question: 'Continue?',
+          options: [{ value: 'yes', label: 'Yes' }],
+        },
+      ],
+    })
+  let started = 0
+  vi.spyOn(agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) => {
+      input.onQuestions?.(prompt(++started === 1 ? 'Automation form' : 'Independent form'))
+      input.onText('Done')
+    },
+  })
+  const id = jobs.start(flow.id)
+  await waitForJob(() => {
+    expect(jobs.detail(id).waitingNodeId).toBe('review')
+    expect(questions.list()).toHaveLength(1)
+  })
+  const form = questions.list()[0]
+  await tasks.send(form.taskId, randomUUID(), 'Independent follow-up')
+  await waitForJob(() => {
+    expect(questions.list()).toHaveLength(2)
+    expect(store.taskSummary(form.taskId).status).toBe('review')
+  })
+  const post = (path: string, input: object) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+  expect((await post('/api/jobs/cancel', { id })).status).toBe(200)
+  expect(jobs.detail(id)).toMatchObject({ status: 'cancelled', waitingNodeId: undefined })
+  expect(jobs.detail(id).reviewDecisions).toBeUndefined()
+  expect(questions.list().map((request) => request.prompt.title)).toEqual(['Independent form'])
+  expect(
+    (await post('/api/tasks/answer', { id: form.id, answers: { choice: ['yes'] } })).status,
+  ).toBe(409)
+  expect(
+    store.task(form.taskId).messages.some((message) => message.id === `answer:${form.id}`),
+  ).toBe(false)
 })
 it('shuts down running jobs before storage closes and resumes interrupted work explicitly', async () => {
   const f = await fixture()
@@ -1881,7 +2218,14 @@ it.each([true, false])(
     const databasePath = await databaseFile('review-receipt.sqlite')
     let runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
     cleanups.push(() => runtime.close())
-    runtime.services.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+    const flow = createFlow()
+    const reviewNode = flow.nodes.find(({ id }) => id === 'review')!
+    reviewNode.data.reviewPrompt = {
+      instructions: 'Check the deployment plan',
+      link: 'http://review.lan/plan#diff',
+      requireReason: true,
+    }
+    runtime.services.store.update(() => ({ ...f.workspace, automations: [flow] }))
     const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Fixture done'))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
@@ -1889,19 +2233,37 @@ it.each([true, false])(
     })
     const id = runtime.services.jobs.startManual('flow', 'start-review')
     await waitForJob(() => expect(runtime.services.jobs.detail(id).waitingNodeId).toBe('review'))
-    const review = (choice: boolean) =>
+    const review = (choice: boolean, reason?: string, attempt = 1) =>
       fetch(`http://127.0.0.1:${runtime.port}/api/jobs/review`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, nodeId: 'review', attempt: 1, allow: choice }),
+        body: JSON.stringify({ id, nodeId: 'review', attempt, allow: choice, reason }),
       })
     const status = allow ? 'completed' : 'cancelled'
-    expect((await review(allow)).status).toBe(200)
+    expect(
+      runtime.services.jobs.detail(id).steps?.find(({ nodeId }) => nodeId === 'review')
+        ?.reviewPrompt,
+    ).toEqual(reviewNode.data.reviewPrompt)
+    expect((await review(allow, '  ')).status).toBe(400)
+    expect((await review(allow, 'Reviewed the plan', 0)).status).toBe(409)
+    expect(runtime.services.jobs.detail(id).status).toBe('waiting')
+    expect((await review(allow, 'Reviewed the plan')).status).toBe(200)
     await waitForJob(() => expect(runtime.services.jobs.detail(id).status).toBe(status))
     await runtime.close()
     runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
-    expect((await review(allow)).status).toBe(200)
-    expect((await review(!allow)).status).toBe(409)
+    expect((await review(allow, ' Reviewed the plan ')).status).toBe(200)
+    expect((await review(allow, 'Different reason')).status).toBe(409)
+    expect((await review(!allow, 'Reviewed the plan')).status).toBe(409)
+    expect(runtime.services.jobs.detail(id).reviewDecisions).toEqual([
+      {
+        nodeId: 'review',
+        attempt: 1,
+        allow,
+        reason: 'Reviewed the plan',
+        answeredAt: expect.any(String),
+        answeredBy: expect.any(String),
+      },
+    ])
     expect(runtime.services.jobs.detail(id).status).toBe(status)
     expect(run).toHaveBeenCalledOnce()
   },

@@ -91,11 +91,45 @@ export function StepFields({
         onChangeText={(label) => onChange({ label })}
       />
       {data.kind === 'review' && !data.pipelineWait ? (
-        <Text style={styles.muted}>
-          <InterfaceText>
-            {'Pause here until you approve this run. Rejecting stops the remaining steps.'}
-          </InterfaceText>
-        </Text>
+        snapshot?.automationReviewPromptSupported ? (
+          <>
+            <Field
+              label={uiText('Review instructions')}
+              value={data.reviewPrompt?.instructions ?? ''}
+              maxLength={4000}
+              multiline
+              editable={!disabled}
+              onChangeText={(instructions) =>
+                onChange({ reviewPrompt: { ...data.reviewPrompt, instructions } })
+              }
+            />
+            <Field
+              label={uiText('Review link')}
+              value={data.reviewPrompt?.link ?? ''}
+              maxLength={2000}
+              editable={!disabled}
+              onChangeText={(link) => onChange({ reviewPrompt: { ...data.reviewPrompt, link } })}
+            />
+            <Choice
+              label={uiText('Require a reason for the decision')}
+              value={data.reviewPrompt?.requireReason ? 'yes' : 'no'}
+              items={[
+                { id: 'no', name: uiText('No') },
+                { id: 'yes', name: uiText('Yes') },
+              ]}
+              disabled={disabled}
+              onChange={(value) =>
+                onChange({ reviewPrompt: { ...data.reviewPrompt, requireReason: value === 'yes' } })
+              }
+            />
+          </>
+        ) : (
+          <Text style={styles.muted}>
+            <InterfaceText>
+              {'Pause here until you approve this run. Rejecting stops the remaining steps.'}
+            </InterfaceText>
+          </Text>
+        )
       ) : data.pipelineWait ? (
         snapshot?.automationPipelineWaitSupported ? (
           <>
@@ -161,6 +195,38 @@ export function StepFields({
         )
       ) : (
         <>
+          {data.kind === 'task' && (snapshot?.automationStepPoolsSupported || data.stepPool) && (
+            <>
+              <Field
+                label={uiText('Shared step pool (optional)')}
+                value={data.stepPool?.name ?? ''}
+                maxLength={120}
+                editable={!disabled && !!snapshot?.automationStepPoolsSupported}
+                onChangeText={(name) =>
+                  onChange({
+                    stepPool: name.trim() ? { name, limit: data.stepPool?.limit ?? 1 } : undefined,
+                  })
+                }
+              />
+              {data.stepPool && (
+                <Field
+                  label={uiText('Concurrent steps')}
+                  value={data.stepPool.limit ? String(data.stepPool.limit) : ''}
+                  keyboardType="number-pad"
+                  editable={!disabled && !!snapshot?.automationStepPoolsSupported}
+                  onChangeText={(value) => {
+                    if (/^\d*$/.test(value))
+                      onChange({ stepPool: { name: data.stepPool!.name, limit: Number(value) } })
+                  }}
+                />
+              )}
+              {!snapshot?.automationStepPoolsSupported && (
+                <Text style={styles.muted}>
+                  {uiText('Update this runtime to edit shared step pools.')}
+                </Text>
+              )}
+            </>
+          )}
           <Field
             label={uiText('Instructions')}
             value={data.objective}

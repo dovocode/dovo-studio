@@ -44,6 +44,8 @@ jobs:
           echo "$PWD/lean-4.34.0-linux/bin" >> "$GITHUB_PATH"
       - name: Verify thread outcomes
         run: BEND_NO_TELEMETRY=1 bend verification/thread/PROOF.bend --verdict
+      - name: Verify automation admission
+        run: BEND_NO_TELEMETRY=1 bend verification/automation/PROOF.bend --verdict
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

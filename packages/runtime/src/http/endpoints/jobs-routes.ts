@@ -248,10 +248,14 @@ export function jobsRoute(
             allow: Schema.Boolean,
             nodeId: Schema.optional(Schema.String),
             attempt: Schema.optional(Schema.Number),
+            reason: Schema.optional(maxValue(Schema.String, 4000)),
           }),
           yield* serviceResult(body(request)),
         )
-        s.jobs.approve(input.id, input.allow, input)
+        s.jobs.approve(input.id, input.allow, {
+          ...input,
+          answeredBy: actor.kind === 'person' ? (actor.deviceName ?? 'Studio owner') : undefined,
+        })
         return yield* serviceResult({
           ok: true,
         })
@@ -262,6 +266,14 @@ export function jobsRoute(
         return yield* serviceResult({
           ok: true,
         })
+      }
+      if (method === 'POST' && (path === '/api/jobs/pause' || path === '/api/jobs/resume')) {
+        if (actor.kind !== 'person')
+          throw new HttpError(403, 'Use a paired client or Studio Automations to control this run.')
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        if (path === '/api/jobs/pause') s.jobs.pause(id)
+        else s.jobs.resume(id)
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/jobs/webhook-secret') {
         s.policy.require('webhookTasks')

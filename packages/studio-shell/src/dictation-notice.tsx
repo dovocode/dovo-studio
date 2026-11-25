@@ -14,7 +14,7 @@ export function DictationNotice() {
     if (session && !session.remote && !preferences.dictationEnabled) void dictationSession.cancel()
   }, [!!session, session?.remote, preferences.dictationEnabled])
   useEffect(() => {
-    if (!session) return
+    if (!session || session.transient) return
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -23,8 +23,8 @@ export function DictationNotice() {
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [!!session])
-  if (!session) return null
+  }, [!!session, session?.transient])
+  if (!session || session.transient) return null
   return (
     <aside
       aria-label="Dictation"

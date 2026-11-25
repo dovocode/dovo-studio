@@ -15,7 +15,7 @@ import {
   type ThreadLifecycleAction,
 } from '../../agents/tasks/thread-deletion.js'
 import { validateShared } from '../../storage/shared-settings-validation.js'
-import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
+import { readBoundedFile, readRtfFile } from '../../scm/repositories/bounded-file-read.js'
 import {
   taskMessageSchema,
   taskHistoryCounts,
@@ -428,6 +428,10 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         const oauth = s.mcpApps.oauth
         if (command.action === 'status') return { statuses: oauth.status(command.servers) }
         if (command.action === 'connect') return yield* serviceResult(oauth.connect(command.server))
+        if (command.action === 'thread-warnings')
+          return { warnings: s.mcpApps.threadOAuthWarnings(command.taskId) }
+        if (command.action === 'thread-connect')
+          return yield* serviceResult(s.mcpApps.connectThreadOAuth(command.taskId, command.warning))
         if (command.action === 'flow') return oauth.flow(command.flowId)
         if (command.action === 'cancel') return oauth.cancel(command.flowId)
         if (command.action === 'complete')
@@ -1516,6 +1520,8 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
               mutableStruct({
                 startLine: Schema.optional(Schema.Number),
                 maxBytes: Schema.optional(Schema.Number),
+                cursor: Schema.optional(maxValue(Schema.String, 100)),
+                format: Schema.optional(Schema.Literal('rtf')),
               }),
             ),
           }),
@@ -1646,7 +1652,9 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           return yield* runtimeOperation(async () => {
             const { handle } = await openContainedPreview(root, filePath)
             try {
-              return await readBoundedFile(handle, filePath, preview)
+              return preview.format === 'rtf'
+                ? await readRtfFile(handle, filePath)
+                : await readBoundedFile(handle, filePath, preview)
             } finally {
               await handle.close()
             }

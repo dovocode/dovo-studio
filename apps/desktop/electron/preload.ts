@@ -85,8 +85,11 @@ contextBridge.exposeInMainWorld('dovo', {
     status: (): Promise<import('@dovo/protocol').DictationStatus> =>
       ipcRenderer.invoke('dictation:status'),
     install: (id: string): Promise<void> => ipcRenderer.invoke('dictation:install', id),
-    start: (id: string, language: import('@dovo/protocol').DictationLanguage): Promise<void> =>
-      ipcRenderer.invoke('dictation:start', id, language),
+    start: (
+      id: string,
+      language: import('@dovo/protocol').DictationLanguage,
+      provider?: import('@dovo/protocol').DictationProvider,
+    ): Promise<void> => ipcRenderer.invoke('dictation:start', id, language, provider),
     feed: (id: string, pcm: ArrayBuffer): Promise<void> =>
       ipcRenderer.invoke('dictation:feed', id, pcm),
     finish: (id: string): Promise<string> => ipcRenderer.invoke('dictation:finish', id),

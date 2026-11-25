@@ -16,7 +16,19 @@ export const runLabels = {
   cancelled: 'Cancelled',
 } satisfies Record<JobRun['status'], string>
 export const runLabel = (run: JobRun) =>
-  run.pipelineWait ? 'Waiting for CI' : run.retryAt ? 'Waiting for provider' : runLabels[run.status]
+  run.pause?.phase === 'paused'
+    ? 'Paused'
+    : run.pause?.phase === 'afterStep'
+      ? 'Pausing after current step'
+      : run.queuedForAdmission
+        ? 'Queued'
+        : run.waitingForStepPool
+          ? `Waiting for step pool · ${run.waitingForStepPool}`
+          : run.pipelineWait
+            ? 'Waiting for CI'
+            : run.retryAt
+              ? 'Waiting for provider'
+              : runLabels[run.status]
 export function runSteps(run: JobRun, flow: Automation): RunStep[] {
   // New runs carry their own step snapshot, so editing the graph cannot rewrite run history.
   if (run.steps) return run.steps

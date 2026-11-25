@@ -50,9 +50,19 @@ export function RoutineOptions({
           {uiText('Update this runtime to configure provider startup retry.')}
         </Text>
       )}
+      {snapshot?.automationConcurrencySupported && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Set a concurrent run limit to queue additional runs.'}</InterfaceText>
+        </Text>
+      )}
       {(Object.keys(routineOptionLabels) as Array<keyof typeof routineOptionLabels>)
         .filter((key) => key !== 'jsonPointer' || jsonMonitoringSupported)
         .filter((key) => key !== 'matter' || findingGroupsSupported)
+        .filter(
+          (key) =>
+            !['concurrencyLimit', 'concurrencyPool'].includes(key) ||
+            snapshot?.automationConcurrencySupported,
+        )
         .filter((key) => !['mcpServer', 'mcpUri'].includes(key) || mcpMonitoringSupported)
         .map((key) =>
           key === 'startupRetry' ? (

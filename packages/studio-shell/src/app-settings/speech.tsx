@@ -7,6 +7,7 @@ import {
   dictationLanguages,
   dictationLanguageSchema,
   dictationModel,
+  dictationProviderSchema,
   dictationStatusSchema,
   botVoicePauseOptions,
   botVoicePauseSchema,
@@ -76,6 +77,8 @@ export function SpeechSettings() {
       </>
     )
   const downloading = installing || status?.downloading
+  const apple = preferences.dictationProvider === 'apple'
+  const ready = apple ? status?.appleSpeech : status?.model
   const install = async () => {
     setError('')
     setInstalling(true)
@@ -99,6 +102,38 @@ export function SpeechSettings() {
         title={uiText('Speech')}
         description="Dictate messages with live preview. Speech is processed on this computer, including when connected to a remote runtime."
       >
+        {(status?.appleSpeech || apple) && (
+          <SettingRow
+            label="Speech engine"
+            description={
+              apple
+                ? 'Apple Speech runs on this Mac. Apple may download language assets the first time you dictate.'
+                : undefined
+            }
+          >
+            <SettingsSelect
+              label="Speech engine"
+              value={preferences.dictationProvider}
+              options={
+                status?.appleSpeech
+                  ? [
+                      ['nemotron', dictationModel.name],
+                      ['apple', 'Apple Speech'],
+                    ]
+                  : [
+                      ['nemotron', dictationModel.name],
+                      ['apple', 'Apple Speech (unavailable)'],
+                    ]
+              }
+              disabled={!!downloading}
+              onChange={(value) =>
+                updateAppPreferences({
+                  dictationProvider: decode(dictationProviderSchema, value),
+                })
+              }
+            />
+          </SettingRow>
+        )}
         <SettingRow
           label="Enable dictation"
           description="Show the microphone in the message composer."
@@ -106,56 +141,66 @@ export function SpeechSettings() {
           <Toggle
             label="Enable dictation"
             checked={preferences.dictationEnabled}
-            disabled={!status?.model || !!downloading}
+            disabled={(!ready && !preferences.dictationEnabled) || !!downloading}
             onChange={(dictationEnabled) => updateAppPreferences({ dictationEnabled })}
           />
         </SettingRow>
-        <SettingRow
-          label="Speech model"
-          description={`${dictationModel.name} · Q8 · 751 MB download. Works offline after downloading. No account or GPU required.`}
-        >
-          <div className="flex flex-col items-end gap-2">
-            {downloading ? (
-              <>
-                <span role="status" className="text-xs text-muted-foreground">
-                  Downloading…{' '}
-                  {Math.min(
-                    100,
-                    Math.floor(((status?.downloaded ?? 0) / dictationModel.bytes) * 100),
+        {!apple && (
+          <SettingRow
+            label="Speech model"
+            description={`${dictationModel.name} · Q8 · 751 MB download. Works offline after downloading. No account or GPU required.`}
+          >
+            <div className="flex flex-col items-end gap-2">
+              {downloading ? (
+                <>
+                  <span role="status" className="text-xs text-muted-foreground">
+                    Downloading…{' '}
+                    {Math.min(
+                      100,
+                      Math.floor(((status?.downloaded ?? 0) / dictationModel.bytes) * 100),
+                    )}
+                    %
+                  </span>
+                  {downloadInFlight && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void bridge
+                          .cancel(downloadId)
+                          .catch((cause: unknown) => setError(String(cause)))
+                      }}
+                    >
+                      Cancel download
+                    </Button>
                   )}
-                  %
-                </span>
-                {downloadInFlight && (
+                </>
+              ) : (
+                <>
+                  {status?.model && (
+                    <span role="status" className="text-xs text-muted-foreground">
+                      Downloaded · ready for offline dictation
+                    </span>
+                  )}
                   <Button
                     variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      void bridge
-                        .cancel(downloadId)
-                        .catch((cause: unknown) => setError(String(cause)))
-                    }}
+                    disabled={!status?.engine}
+                    onClick={() => void install()}
                   >
-                    Cancel download
+                    {status?.model ? 'Download model again' : 'Download & enable dictation'}
                   </Button>
-                )}
-              </>
-            ) : (
-              <>
-                {status?.model && (
-                  <span role="status" className="text-xs text-muted-foreground">
-                    Downloaded · ready for offline dictation
-                  </span>
-                )}
-                <Button variant="outline" disabled={!status?.engine} onClick={() => void install()}>
-                  {status?.model ? 'Download model again' : 'Download & enable dictation'}
-                </Button>
-              </>
-            )}
-          </div>
-        </SettingRow>
+                </>
+              )}
+            </div>
+          </SettingRow>
+        )}
         <SettingRow
           label="Dictation language"
-          description="Select a language to guide recognition, or detect it automatically."
+          description={
+            apple
+              ? 'Choose a language or use the Mac’s preferred language.'
+              : 'Select a language to guide recognition, or detect it automatically.'
+          }
         >
           <SettingsSelect
             label="Dictation language"
@@ -166,10 +211,11 @@ export function SpeechSettings() {
             }
           />
         </SettingRow>
-        {status && !status.engine && (
+        {status && !(apple ? status.appleSpeech : status.engine) && (
           <p role="alert" className="text-sm text-destructive">
-            The dictation engine is missing. Reinstall the desktop app, or run pnpm
-            prepare:dictation in a development checkout.
+            {apple
+              ? 'Apple Speech is unavailable on this Mac. Select Nemotron to use desktop dictation.'
+              : 'The dictation engine is missing. Reinstall the desktop app, or run pnpm prepare:dictation in a development checkout.'}
           </p>
         )}
         {error && (

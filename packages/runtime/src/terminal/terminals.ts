@@ -32,6 +32,11 @@ import {
   type TerminalProcess,
 } from './holder-client.js'
 import { TerminalScreenState } from './screen.js'
+import {
+  TERMINAL_SEQUENCE_GROUND,
+  skipTerminalSnapshotContinuation,
+  terminalSequenceStateAfter,
+} from './replay-boundary.js'
 import type { HolderRootActivity } from './holder-protocol.js'
 import { hookActivityHistory, type TerminalHookActivity } from './hook-activity.js'
 import {
@@ -87,11 +92,13 @@ class RetainedOutput {
   private chunks: (string | undefined)[] = []
   private head = 0
   private length = 0
+  prefixState = TERMINAL_SEQUENCE_GROUND
   truncated = false
   discardPrefix() {
     this.chunks = []
     this.head = 0
     this.length = 0
+    this.prefixState = TERMINAL_SEQUENCE_GROUND
     this.truncated = true
   }
   append(data: string) {
@@ -99,6 +106,9 @@ class RetainedOutput {
     if (!data.length) return
     if (this.length + data.length > cap) this.truncated = true
     if (data.length >= cap) {
+      for (const chunk of this.chunks.slice(this.head))
+        if (chunk) this.prefixState = terminalSequenceStateAfter(this.prefixState, chunk)
+      this.prefixState = terminalSequenceStateAfter(this.prefixState, data, 0, data.length - cap)
       this.chunks = [data.slice(-cap)]
       this.head = 0
       this.length = cap
@@ -116,6 +126,7 @@ class RetainedOutput {
     while (this.length > cap) {
       const first = this.chunks[this.head]!
       const remove = Math.min(this.length - cap, first.length)
+      this.prefixState = terminalSequenceStateAfter(this.prefixState, first, 0, remove)
       this.length -= remove
       if (remove === first.length) this.chunks[this.head++] = undefined
       else this.chunks[this.head] = first.slice(remove)
@@ -1588,8 +1599,15 @@ export class Terminals {
   }
   attachScreen(id: string, replay: (data: string) => void, live: (data: string) => void) {
     const session = this.get(id)
-    type Capture = { raw: string; queued: string[]; length: number }
+    type Capture = { raw: string; prefixState: number; queued: string[]; length: number }
     let pending: Capture | undefined
+    let continuation = TERMINAL_SEQUENCE_GROUND
+    const writeLive = (data: string) => {
+      if (continuation === TERMINAL_SEQUENCE_GROUND) return live(data)
+      const result = skipTerminalSnapshotContinuation(continuation, data)
+      continuation = result.state
+      if (result.data.length) live(result.data)
+    }
     const finish = (capture: Capture, screen?: string) => {
       if (
         pending !== capture ||
@@ -1599,22 +1617,32 @@ export class Terminals {
         return
       pending = undefined
       try {
-        replay(screen ?? capture.raw)
-        if (capture.queued.length) live(capture.queued.join(''))
+        continuation = TERMINAL_SEQUENCE_GROUND
+        if (screen === undefined && capture.prefixState !== TERMINAL_SEQUENCE_GROUND) {
+          const clipped = skipTerminalSnapshotContinuation(capture.prefixState, capture.raw)
+          continuation = clipped.state
+          replay(clipped.data)
+        } else replay(screen ?? capture.raw)
+        if (capture.queued.length) writeLive(capture.queued.join(''))
       } catch (error) {
         console.error('Terminal client failed', error)
       }
     }
     const listener = (data: string) => {
       if (pending && pending.length + data.length > 64 * 1024) finish(pending)
-      if (!pending) live(data)
+      if (!pending) writeLive(data)
       else if (data.length) {
         pending.queued.push(data)
         pending.length += data.length
       }
     }
     const reseed = (fallback?: string) => {
-      const capture = { raw: fallback ?? session.buffer, queued: [], length: 0 }
+      const capture = {
+        raw: fallback ?? session.buffer,
+        prefixState: fallback === undefined ? session.output.prefixState : TERMINAL_SEQUENCE_GROUND,
+        queued: [],
+        length: 0,
+      }
       pending = capture
       if (!session.screenFromCheckpoint && !session.output.truncated && !session.screen.alternate) {
         finish(capture)

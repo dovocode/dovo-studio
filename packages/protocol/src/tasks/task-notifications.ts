@@ -1,6 +1,7 @@
 import { hasUnviewedTaskCompletion } from '../workspace.js'
 import { taskInputOwner } from './delegation.js'
 import type { RuntimeOverview } from '../runtime/connection/runtime-fleet.js'
+import { automationRunNeedsReview } from '../runtime/connection/runtime.js'
 import type { SideThreadRequest } from './side-thread-attention.js'
 
 export type NotificationTarget = {
@@ -96,7 +97,7 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
         target: { runtimeId: entry.profile.id, viewId: 'jobs', entityId: run.id },
         running: run.status === 'running' || run.status === 'waiting',
         // A review step waits for a person to approve the run.
-        needsInput: run.status === 'waiting' && !run.pipelineWait,
+        needsInput: automationRunNeedsReview(run),
         failed: run.status === 'failed',
         automation: true,
         cancelled: run.status === 'cancelled',

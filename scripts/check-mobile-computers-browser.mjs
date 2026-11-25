@@ -163,6 +163,12 @@ try {
     assert.equal(await page.getByRole('checkbox').count(), 0)
   }
   await singleList()
+  await page.getByRole('button', { name: 'Connection map', exact: true }).click()
+  const map = page.getByRole('dialog', { name: 'Connection map' })
+  await map.getByText('Mac Studio', { exact: true }).waitFor()
+  await map.getByText('Linux server', { exact: true }).waitFor()
+  await map.getByText(/Saved address · http:\/\/server\.vpn:51464/).waitFor()
+  await map.getByRole('button', { name: 'Close', exact: true }).click()
   await page.clock.runFor(6001)
   assert.deepEqual(await page.evaluate(() => window.calls), [])
   await page.getByRole('button', { name: 'Manage linked computers', exact: true }).click()

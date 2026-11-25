@@ -20,7 +20,7 @@ const state={marketplaces:[],plugins:[]}
 let oauth={connected:false,flow:undefined}
 window.calls=[]
 export async function request(path,input,schema){
-  window.calls.push({path,input:structuredClone(input)})
+  window.calls.push({path,input:structuredClone(input),computer:window.computer})
   let result
   if(path==='/api/agents/plugins'){
     const marketplace=state.marketplaces[0]
@@ -33,7 +33,8 @@ export async function request(path,input,schema){
     else if(input.action==='remove'){ state.plugins=state.plugins.filter(p=>p.id!==input.id); result=state }
   } else if(path==='/api/agents/mcp/oauth'){
     if(input.action==='status') result={statuses:input.servers.map(s=>({name:s.name,url:s.url,state:oauth.connected?'connected':'disconnected',refreshable:oauth.connected}))}
-    else if(input.action==='connect'){ oauth.flow='flow-1'; result={flowId:'flow-1',authorizationUrl:'https://auth.example/authorize?state=s',redirectUri:'http://127.0.0.1:43123/callback',expiresAt:'2026-11-25T10:10:00Z'} }
+    else if(input.action==='thread-warnings') result={warnings:oauth.connected?[]:[{name:'tracker',revision:(window.computer==='secondary'?'b':'a').repeat(64)}]}
+    else if(input.action==='connect'||input.action==='thread-connect'){ oauth.flow='flow-1'; result={flowId:'flow-1',authorizationUrl:'https://auth.example/authorize?state=s',redirectUri:'http://127.0.0.1:43123/callback',expiresAt:'2026-11-25T10:10:00Z'} }
     else if(input.action==='flow') result={flowId:input.flowId,state:'pending'}
     else if(input.action==='complete'){ if(!input.callbackUrl.includes('state=s')) throw new Error('This address belongs to a different sign-in'); oauth={connected:true}; result={flowId:input.flowId,state:'connected'} }
     else if(input.action==='disconnect'){ oauth={connected:false}; result={revoked:true} }
@@ -47,13 +48,14 @@ const mobileControls = `export const View=({children,style})=><div style={style}
 
 async function bundle(mobile) {
   const views = mobile
-    ? `import {AgentPlugins} from '${root}/apps/mobile/src/screens/agent-plugins.tsx';import {McpOAuthSection as OAuth} from '${root}/apps/mobile/src/resources/mcp-oauth.tsx';import {PluginActivations} from '${root}/apps/mobile/src/resources/plugin-activations.tsx';`
-    : `import {AgentPlugins} from '${root}/packages/extension-tasks/src/studio-extensions/agent-plugins.tsx';import {McpOAuthPanel as OAuth} from '${root}/packages/studio-ui/src/resources/mcp-oauth.tsx';import {PluginActivations} from '${root}/packages/extension-agents/src/resources/plugin-activations.tsx';`
-  const workspace = `import {request} from 'runtime';const snapshot={harnessPluginsSupported:true,mcpOAuthSupported:true,runtimeHost:'build-box'};const value={request,call:request,connected:true,snapshot,runtimes:[],overviews:[],activeRuntimeId:'local',activeId:'local'};export const useWorkspace=()=>value;export const useRuntime=()=>value;`
+    ? `import {AgentPlugins} from '${root}/apps/mobile/src/screens/agent-plugins.tsx';import {McpOAuthSection as OAuth} from '${root}/apps/mobile/src/resources/mcp-oauth.tsx';import {PluginActivations} from '${root}/apps/mobile/src/resources/plugin-activations.tsx';import {ThreadMcpSignIn} from '${root}/apps/mobile/src/tasks/conversation/components/mcp-sign-in.tsx';`
+    : `import {AgentPlugins} from '${root}/packages/extension-tasks/src/studio-extensions/agent-plugins.tsx';import {McpOAuthPanel as OAuth} from '${root}/packages/studio-ui/src/resources/mcp-oauth.tsx';import {PluginActivations} from '${root}/packages/extension-agents/src/resources/plugin-activations.tsx';import {ThreadMcpSignIn} from '${root}/packages/extension-tasks/src/chat/thread/mcp-sign-in.tsx';`
+  const workspace = `import {request} from 'runtime';export {clientScopeKey} from '@dovo/client-runtime';const state=()=>{const id=window.computer??'primary';const profile={id,name:id,connection:{address:'http://'+id+'.lan',token:'device'}};const snapshot={harnessPluginsSupported:true,mcpOAuthSupported:true,threadMcpOAuthSupported:id!=='legacy',runtimeHost:id==='primary'?'build-box':id};return {request,call:request,connected:true,snapshot,runtimes:[],overviews:[],activeRuntimeId:id,activeId:id,profile,connection:profile.connection}};export const useWorkspace=state;export const useRuntime=state;`
   const stubs = {
     runtime,
     '@dovo/studio-core': workspace,
     '../runtime/connection/provider': workspace,
+    '../../../runtime/connection/provider': workspace,
     '@dovo/studio-ui': desktopControls,
     'react-native': mobileControls,
     '../ui/controls/action': mobileControls,
@@ -72,7 +74,7 @@ async function bundle(mobile) {
 import {createRoot} from 'react-dom/client';import {useState} from 'react'
 function Activations(){const [resources,setResources]=useState({mcpServers:[],skills:[]});return <PluginActivations settings={resources} resources={resources} inherited={{mcpServers:[],skills:[]}} scopeLabel="Platform organization" disabled={false} change={async update=>{const next=update(resources);window.saved=next;setResources(next)}} save={async update=>{const next=update(resources);window.saved=next;setResources(next)}}/>}
 function Server(){const [server,setServer]=useState({name:'tracker',enabled:true,transport:'http',command:'',args:[],url:'https://tracker.example/mcp',env:{},headerEnv:{},bearerTokenEnv:''});window.server=server;return <OAuth draft={server} server={server} onChange={setServer} disabled={false}/>}
-function App(){const [view,setView]=useState('plugins');window.show=setView;return view==='plugins'?<AgentPlugins/>:view==='oauth'?<Server/>:<Activations/>}
+function App(){const [view,setView]=useState('plugins');const [computer,setComputer]=useState('primary');window.show=setView;window.selectComputer=setComputer;window.computer=computer;return view==='plugins'?<AgentPlugins/>:view==='oauth'?<Server/>:view==='thread'?<ThreadMcpSignIn taskId="same-thread" status="review"/>:<Activations/>}
 createRoot(document.getElementById('app')).render(<App/>)`,
     },
     bundle: true,
@@ -85,6 +87,7 @@ createRoot(document.getElementById('app')).render(<App/>)`,
       react: `${root}/packages/studio-ui/node_modules/react`,
       'react-dom': `${root}/packages/studio-ui/node_modules/react-dom`,
       '@dovo/protocol': `${root}/packages/protocol/src/index.ts`,
+      '@dovo/client-runtime': `${root}/packages/client-runtime/src/index.ts`,
     },
     nodePaths: [`${root}/packages/studio-ui/node_modules`],
     plugins: [
@@ -213,6 +216,46 @@ try {
     await page.getByRole('button', { name: 'Connect', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => JSON.stringify(window.server.oauth)), '{}')
 
+    await page.evaluate(() => {
+      window.selectComputer('legacy')
+      window.show('thread')
+    })
+    assert.equal((await calls('thread-warnings')).length, 0)
+    await page.evaluate(() => window.selectComputer('primary'))
+    await page.getByText('tracker needs MCP sign-in on build-box.').waitFor()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await page.getByLabel('Browser address after sign-in').waitFor()
+    await page.evaluate(() => window.selectComputer('secondary'))
+    await page.getByText('tracker needs MCP sign-in on secondary.').waitFor()
+    assert.equal(await page.getByLabel('Browser address after sign-in').count(), 0)
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await page
+      .getByLabel('Browser address after sign-in')
+      .fill('http://127.0.0.1:43123/callback?code=c&state=s')
+    await page.getByRole('button', { name: 'Finish sign-in' }).click()
+    await page.getByText('tracker needs MCP sign-in on secondary.').waitFor({ state: 'detached' })
+    const starts = await calls('thread-connect')
+    assert.deepEqual(
+      starts.map(({ computer, input }) => [computer, input]),
+      [
+        [
+          'primary',
+          {
+            action: 'thread-connect',
+            taskId: 'same-thread',
+            warning: { name: 'tracker', revision: 'a'.repeat(64) },
+          },
+        ],
+        [
+          'secondary',
+          {
+            action: 'thread-connect',
+            taskId: 'same-thread',
+            warning: { name: 'tracker', revision: 'b'.repeat(64) },
+          },
+        ],
+      ],
+    )
     assert.deepEqual(errors, [])
     await page.close()
     console.log(`${name}: agent plugins, group activation and MCP OAuth views passed`)

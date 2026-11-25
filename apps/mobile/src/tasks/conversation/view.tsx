@@ -77,6 +77,7 @@ import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { ToolActivityRow, ReasoningActivity } from './components/tool-activity-row'
 import { TaskActivity } from './components/activity'
+import { ThreadMcpSignIn } from './components/mcp-sign-in'
 import { TaskApprovals } from '../detail/approvals'
 import { Pill } from '../../ui/controls/pill'
 import { ConnectionPill } from '../../runtime/connection/connection-status'
@@ -1195,6 +1196,9 @@ export function Conversation({
                 {handoffs.latest && <HarnessHandoffDivider {...handoffs.latest} />}
                 <ConversationThreadActions />
                 {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
+                {!car && visible && !task.replica && (
+                  <ThreadMcpSignIn taskId={task.id} status={task.status} />
+                )}
                 <TaskApprovals taskId={task.id} />
                 {showFailure && (task.error || task.status === 'failed') && (
                   <FailedTaskRetry task={task} />

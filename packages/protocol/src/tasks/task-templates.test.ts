@@ -57,4 +57,31 @@ it('turns a task into a template and a template into draft fields', () => {
     'inherited',
   )
   expect(inheritedTemplate).not.toHaveProperty('worktreeFromOrigin')
+  const multiRepo = {
+    ...task,
+    linkedCheckouts: [
+      {
+        id: 'api',
+        repositoryId: 'api',
+        execution: 'worktree' as const,
+        access: 'edit' as const,
+        existingWorktreePath: '/existing',
+      },
+      {
+        id: 'reference',
+        repositoryId: 'docs',
+        execution: 'main' as const,
+        access: 'read-only' as const,
+      },
+    ],
+  }
+  expect(templateFromTask(multiRepo, 'Single checkout', 'single')).not.toHaveProperty(
+    'linkedCheckouts',
+  )
+  const multiTemplate = templateFromTask(multiRepo, 'Multiple checkouts', 'multi', true)
+  expect(templateTaskFields(multiTemplate, false)).not.toHaveProperty('linkedCheckouts')
+  expect(templateTaskFields(multiTemplate, true).linkedCheckouts).toEqual([
+    { id: 'api', repositoryId: 'api', execution: 'worktree', access: 'edit' },
+    { id: 'reference', repositoryId: 'docs', execution: 'main', access: 'read-only' },
+  ])
 })

@@ -111,132 +111,136 @@ export class DictationEngine {
         )
       this.verified = true
     }
-    signal.throwIfAborted()
-    const child = spawn(
+    return startDictationProcess(
       this.binary,
       [this.modelPath, language, String(Math.min(4, availableParallelism()))],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      },
+      signal,
+      onText,
     )
-    let text = '',
-      diagnostics = '',
-      pending = Buffer.alloc(0),
-      total = 0
-    let started = false,
-      finishing = false
-    let failure: Error | undefined
-    const fail = (error: Error) => {
-      failure ??= error
-      child.kill('SIGKILL')
-    }
-    const abort = () => fail(new Error('Dictation was cancelled.'))
-    signal.addEventListener('abort', abort, { once: true })
-    let readyResolve: () => void, readyReject: (error: Error) => void
-    const ready = new Promise<void>((resolve, reject) => {
-      readyResolve = resolve
-      readyReject = reject
-    })
-    const startupTimer = setTimeout(
-      () => fail(new Error('The speech model took too long to load.')),
-      120_000,
-    )
-    let finishTimer: ReturnType<typeof setTimeout> | undefined
-    const limitTimer = setTimeout(
-      () => fail(new Error('Dictation exceeded its recording time limit.')),
-      420_000,
-    )
-    child.stderr.on('data', (chunk: Buffer) => {
-      diagnostics = (diagnostics + chunk.toString('utf8')).slice(-4000)
-    })
-    child.stdout.on('data', (chunk: Buffer) => {
-      pending = Buffer.concat([pending, chunk])
-      while (pending.length >= 4) {
-        const length = pending.readUInt32LE(0)
-        if (length > 100_000)
-          return fail(new Error('The dictation transcript was unexpectedly large.'))
-        if (pending.length < 4 + length) return
-        const value = pending.subarray(4, 4 + length).toString('utf8')
-        pending = pending.subarray(4 + length)
-        if (!started) {
-          if (length) return fail(new Error('Invalid dictation engine response.'))
-          started = true
-          clearTimeout(startupTimer)
-          readyResolve()
-        } else {
-          text = value
-          try {
-            onText(text)
-          } catch (cause) {
-            return fail(cause instanceof Error ? cause : new Error(String(cause)))
-          }
-        }
-      }
-    })
-    child.stdin.on('error', fail)
-    child.stdout.on('error', fail)
-    const done = new Promise<void>((resolve, reject) => {
-      child.on('error', (error) => {
-        failure ??= error
-      })
-      child.on('close', (code) => {
-        signal.removeEventListener('abort', abort)
-        clearTimeout(startupTimer)
-        clearTimeout(finishTimer)
-        clearTimeout(limitTimer)
-        if (!failure && (code !== 0 || !started || !finishing || pending.length))
-          failure = new Error(
-            `Local dictation failed${diagnostics ? ': ' + diagnostics.trim() : '.'}`,
-          )
-        if (failure) {
-          readyReject(failure)
-          reject(failure)
-        } else resolve()
-      })
-    })
-    // Feed/finish and the IPC owner observe failures; attach now while waiting for readiness.
-    void done.catch(() => undefined)
-    await ready
-    signal.throwIfAborted()
-    return {
-      done,
-      feed: async (pcm) => {
-        validateDictationPcm(pcm)
-        if (failure) throw failure
-        if (finishing) throw new Error('Dictation is already finishing.')
-        total += pcm.byteLength
-        if (total > maxDictationSamples * 2) {
-          const error = new Error('Dictation is limited to five minutes.')
-          fail(error)
-          throw error
-        }
-        await new Promise<void>((resolve, reject) => {
-          child.stdin.write(Buffer.from(pcm), (error) => (error ? reject(error) : resolve()))
-        })
-      },
-      finish: async () => {
-        if (failure) throw failure
-        if (finishing) throw new Error('Dictation is already finishing.')
-        if (total < 320) {
-          fail(new Error('No speech was recorded.'))
-          await done
-        }
-        finishing = true
-        finishTimer = setTimeout(
-          () => fail(new Error('Dictation took too long to finish.')),
-          120_000,
-        )
-        child.stdin.end()
-        await done
-        return text.trim()
-      },
-    }
   }
   async transcribe(pcm: ArrayBuffer, signal: AbortSignal, language: DictationLanguage = 'auto') {
     validateDictationPcm(pcm)
     const session = await this.start(language, signal, () => {})
     await session.feed(pcm)
     return session.finish()
+  }
+}
+
+export async function startDictationProcess(
+  binary: string,
+  args: string[],
+  signal: AbortSignal,
+  onText: (text: string) => void,
+): Promise<DictationSession> {
+  signal.throwIfAborted()
+  const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+  let text = '',
+    diagnostics = '',
+    pending = Buffer.alloc(0),
+    total = 0
+  let started = false,
+    finishing = false
+  let failure: Error | undefined
+  const fail = (error: Error) => {
+    failure ??= error
+    child.kill('SIGKILL')
+  }
+  const abort = () => fail(new Error('Dictation was cancelled.'))
+  signal.addEventListener('abort', abort, { once: true })
+  let readyResolve: () => void, readyReject: (error: Error) => void
+  const ready = new Promise<void>((resolve, reject) => {
+    readyResolve = resolve
+    readyReject = reject
+  })
+  const startupTimer = setTimeout(
+    () => fail(new Error('The speech model took too long to load.')),
+    120_000,
+  )
+  let finishTimer: ReturnType<typeof setTimeout> | undefined
+  const limitTimer = setTimeout(
+    () => fail(new Error('Dictation exceeded its recording time limit.')),
+    420_000,
+  )
+  child.stderr.on('data', (chunk: Buffer) => {
+    diagnostics = (diagnostics + chunk.toString('utf8')).slice(-4000)
+  })
+  child.stdout.on('data', (chunk: Buffer) => {
+    pending = Buffer.concat([pending, chunk])
+    while (pending.length >= 4) {
+      const length = pending.readUInt32LE(0)
+      if (length > 100_000)
+        return fail(new Error('The dictation transcript was unexpectedly large.'))
+      if (pending.length < 4 + length) return
+      const value = pending.subarray(4, 4 + length).toString('utf8')
+      pending = pending.subarray(4 + length)
+      if (!started) {
+        if (length) return fail(new Error('Invalid dictation engine response.'))
+        started = true
+        clearTimeout(startupTimer)
+        readyResolve()
+      } else {
+        text = value
+        try {
+          onText(text)
+        } catch (cause) {
+          return fail(cause instanceof Error ? cause : new Error(String(cause)))
+        }
+      }
+    }
+  })
+  child.stdin.on('error', fail)
+  child.stdout.on('error', fail)
+  const done = new Promise<void>((resolve, reject) => {
+    child.on('error', (error) => {
+      failure ??= error
+    })
+    child.on('close', (code) => {
+      signal.removeEventListener('abort', abort)
+      clearTimeout(startupTimer)
+      clearTimeout(finishTimer)
+      clearTimeout(limitTimer)
+      if (!failure && (code !== 0 || !started || !finishing || pending.length))
+        failure = new Error(
+          `Local dictation failed${diagnostics ? ': ' + diagnostics.trim() : '.'}`,
+        )
+      if (failure) {
+        readyReject(failure)
+        reject(failure)
+      } else resolve()
+    })
+  })
+  // Feed/finish and the IPC owner observe failures; attach now while waiting for readiness.
+  void done.catch(() => undefined)
+  await ready
+  signal.throwIfAborted()
+  return {
+    done,
+    feed: async (pcm) => {
+      validateDictationPcm(pcm)
+      if (failure) throw failure
+      if (finishing) throw new Error('Dictation is already finishing.')
+      total += pcm.byteLength
+      if (total > maxDictationSamples * 2) {
+        const error = new Error('Dictation is limited to five minutes.')
+        fail(error)
+        throw error
+      }
+      await new Promise<void>((resolve, reject) => {
+        child.stdin.write(Buffer.from(pcm), (error) => (error ? reject(error) : resolve()))
+      })
+    },
+    finish: async () => {
+      if (failure) throw failure
+      if (finishing) throw new Error('Dictation is already finishing.')
+      if (total < 320) {
+        fail(new Error('No speech was recorded.'))
+        await done
+      }
+      finishing = true
+      finishTimer = setTimeout(() => fail(new Error('Dictation took too long to finish.')), 120_000)
+      child.stdin.end()
+      await done
+      return text.trim()
+    },
   }
 }

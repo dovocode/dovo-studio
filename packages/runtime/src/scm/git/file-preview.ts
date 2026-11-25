@@ -64,15 +64,17 @@ export async function createFilePreview(
     if (full && bytes.length !== file.size)
       throw new HttpError(409, 'The file changed while loading its diff. Reload and try again.')
     if (bytes.includes(0)) return { kind: 'binary', size: file.size, truncated: false }
-    // Streaming decoding keeps a UTF-8 character cut at the prefix boundary out of the preview.
-    try {
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, {
-        stream: bytes.length < file.size,
-      })
-      return { kind: 'text', size: file.size, text, truncated: bytes.length < file.size }
-    } catch {
-      return { kind: 'binary', size: file.size, truncated: false }
+    const truncated = bytes.length < file.size
+    // A compact prefix can end in the middle of a character in either encoding.
+    for (const encoding of ['utf-8', 'gb18030']) {
+      try {
+        const text = new TextDecoder(encoding, { fatal: true }).decode(bytes, { stream: truncated })
+        return { kind: 'text', size: file.size, text, truncated }
+      } catch {
+        // The decoder rejects invalid bytes. Try the next supported encoding.
+      }
     }
+    return { kind: 'binary', size: file.size, truncated: false }
   }
   const [before, after] = await Promise.all([side(metadata.before), side(metadata.after)])
   const completeText = [before, after].every(

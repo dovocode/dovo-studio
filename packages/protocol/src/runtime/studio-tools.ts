@@ -166,6 +166,8 @@ export const studioAutomationsCommandSchema = Schema.Union([
       'readRun',
       'runs',
       'cancel',
+      'pause',
+      'resume',
       'retry',
       'eventStatus',
     ]),

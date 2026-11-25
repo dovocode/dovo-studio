@@ -24,7 +24,7 @@ import { WatchMessageCard } from './watch-message'
 import { MessageSource } from './message-source'
 import { Message, MessageContent, Button } from '@dovo/studio-ui'
 import { TaskMessageResponse } from './task-message-response'
-import { Reply, Star } from 'lucide-react'
+import { Quote, Reply, Star } from 'lucide-react'
 import { threadTimeline, finalReplyIndex } from './thread-timeline'
 import { TurnCheckpoint } from './turn-checkpoint'
 import { MessageAttachments } from '../composer/message-attachments'
@@ -35,6 +35,7 @@ import { ForkMessage } from '../actions/fork-message'
 import { SuggestRoutine } from '../actions/suggest-routine'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity } from './task-activity'
+import { QuoteSelection } from './quote-selection'
 
 const hasReasoning = (tool: ReturnType<typeof recentTools>[number]) => {
   const presentation = toolPresentation(tool.payload, tool.summary, tool.inputPayload)
@@ -87,6 +88,7 @@ export const ChatMessage = memo(function ChatMessage({
 }) {
   const { responseStreaming } = useAppPreferences()
   const [bookmarkError, setBookmarkError] = useState('')
+  const [quoting, setQuoting] = useState(false)
   const timeline = useMemo(
     () =>
       message.role === 'assistant'
@@ -289,15 +291,35 @@ export const ChatMessage = memo(function ChatMessage({
             )}
             {!!message.text && <MessageCopy text={message.text} />}
             {message.role === 'assistant' && !!message.text && onUseTemplate && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="size-7 p-0"
-                aria-label="Reply to response"
-                onClick={() => onUseTemplate(responseReply(message))}
-              >
-                <Reply className="size-3.5" />
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="size-7 p-0"
+                  aria-label="Reply to response"
+                  onClick={() => onUseTemplate(responseReply(message))}
+                >
+                  <Reply className="size-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="size-7 p-0"
+                  aria-label="Quote selection"
+                  onClick={() => setQuoting(true)}
+                >
+                  <Quote className="size-3.5" />
+                </Button>
+                {quoting && (
+                  <QuoteSelection
+                    taskId={taskId}
+                    messageId={message.id}
+                    text={message.text}
+                    onQuote={onUseTemplate}
+                    onClose={() => setQuoting(false)}
+                  />
+                )}
+              </>
             )}
             {message.role === 'assistant' && turn?.status !== 'running' && (
               <Button

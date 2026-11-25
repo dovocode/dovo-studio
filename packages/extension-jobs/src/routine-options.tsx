@@ -34,6 +34,12 @@ export function RoutineOptions({
         Manual tests always run. Quiet hours defer successful Bot reports. Failures and approvals
         stay visible. Usage limits depend on provider reports and can overrun.
       </p>
+      {snapshot?.automationConcurrencySupported && (
+        <p className="my-2 text-muted-foreground">
+          Set a concurrent run limit to queue additional runs. Use the same pool name on automations
+          that share a resource. Leave both fields blank to use the default scheduling behavior.
+        </p>
+      )}
       {!snapshot?.automationStartupRetrySupported && (
         <p className="my-2 text-muted-foreground">
           Update this runtime to configure provider startup retry.
@@ -43,6 +49,11 @@ export function RoutineOptions({
         {(Object.keys(routineOptionLabels) as Array<keyof typeof routineOptionLabels>)
           .filter((key) => key !== 'jsonPointer' || jsonMonitoringSupported)
           .filter((key) => key !== 'matter' || findingGroupsSupported)
+          .filter(
+            (key) =>
+              !['concurrencyLimit', 'concurrencyPool'].includes(key) ||
+              snapshot?.automationConcurrencySupported,
+          )
           .filter((key) => !['mcpServer', 'mcpUri'].includes(key) || mcpMonitoringSupported)
           .map((key) => (
             <FormField key={key} label={routineOptionLabels[key]}>
@@ -80,9 +91,11 @@ export function RoutineOptions({
               throw Error('Update this runtime to edit MCP monitoring.')
             onSave(parseRoutineOptions(fields))
             setError('')
-          } catch {
+          } catch (cause) {
             setError(
-              'Check the limits, source URL, and quiet hours. Limits must be positive. Use HH:mm and a valid time zone.',
+              cause instanceof Error
+                ? cause.message
+                : 'Check the limits, source URL, and quiet hours.',
             )
           }
         }}

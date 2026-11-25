@@ -690,6 +690,7 @@ it('recovers saved apps and completed actions, and never replays interrupted cal
     s.runtime.services.store,
     s.runtime.services.activity,
     s.runtime.services.approvals,
+    s.runtime.services.runtimeId,
   )
   cleanups.push(() => restored.dispose())
   expect(restored.read(s.task.id, ref.id).connected).toBe(true)

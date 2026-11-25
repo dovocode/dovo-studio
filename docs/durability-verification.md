@@ -95,6 +95,82 @@ pnpm exec vp test run packages/runtime/src/http/endpoints/{thread-start,message-
 pnpm exec vp test run packages/runtime/src/scm/tasks/linked-checkouts.test.ts
 ```
 
+## File pages and quote drafts
+
+The [file page laws](../verification/thread/FilePages.bend) check that a stale cursor or a changed
+read requires refresh, that a page advances by consumed bytes, and that the last page has no next
+cursor. The HTTP test reads a newline-free span across a UTF-8 boundary and then replaces the file
+with another of the same size. It also checks formatted RTF and the original source.
+
+The [quote draft laws](../verification/thread/QuoteDraft.bend) check cancellation followed by a late
+transcript, and confirmation followed by repeated confirmation. The Chromium fixture opens the quote
+dialog during main-composer dictation and checks cancellation. It also dictates a comment and adds
+it to the saved selection.
+
+```sh
+bend verification/thread/PROOF.bend --verdict
+pnpm prove -- packages/runtime/src/http/bounded-file-preview.test.ts
+pnpm exec playwright install chromium
+node scripts/check-project-file-preview-browser.mjs
+node scripts/check-mobile-thread-files-browser.mjs
+node scripts/check-dictation-browser.mjs
+```
+
+## Thread MCP sign-in
+
+The [Bend sign-in model](../verification/thread/McpSignIn.bend) checks that a stale warning or a
+connected server cannot start consent. A session that used an earlier connection cannot mark a newer
+credential as expired. The [paired HTTP test](../packages/runtime/src/mcp-oauth/oauth.test.ts)
+changes the server URL before clicking the warning, signs in with a real local provider, then checks
+that an old session cannot reopen the warning after a new sign-in.
+
+## Linked thread reads
+
+The [Bend linked-read model](../verification/thread/LinkedRead.bend) checks that the exact thread
+and saved link authorize the response. Unlinking or replacing a link while a read is underway keeps
+the returned page out of the client. The runtime rechecks the link and the parent pairing after
+forwarding a read. The [runtime test](../packages/runtime/src/studio/subagents.test.ts) serves an
+eligible transcript through a paired computer, rejects a different thread or computer, and rejects
+later reads after unlinking.
+
+## First visible thread frame
+
+`pnpm test:web-workbench-history:browser` runs the production web build against two loopback
+runtimes that use the same thread ID. It records the time from the navigation key press to the first
+animation frame where the owning computer's reply is visible, then confirms a frame has elapsed. It
+prints a first switch and eight warm switches. The measurements are from headless Chromium and
+include runtime selection, data delivery, and the conversation render.
+
+## Automation admission
+
+The [Bend admission laws](../verification/automation/LAWS.bend) model one occupied slot and the
+first queued run. Cancellation holds the slot across scheduler ticks and restarts until the current
+worker's exit has been confirmed. Observing the exit and dispatching starts the queued run once. The
+model assumes one confirmed exit for the current worker and treats saving the admission as atomic.
+The [HTTP regression](../packages/runtime/src/jobs/jobs.test.ts) checks a shared pool with limits of
+two and one, FIFO selection, queued cancellation and retry receipts through a runtime restart backed
+by SQLite.
+
+[Step pool laws](../verification/automation/StepPool.bend) model one slot and candidates in saved
+step-arrival order. A reservation can dispatch once after restart. A step that had already begun
+dispatch enters interrupted recovery. The SQLite test reverses run creation and step arrival across
+two workflows and checks that a cancelling worker holds the slot until it exits.
+
+[Run control laws](../verification/automation/RunControl.bend) model a pause at a completed step,
+clearing a pause request before that step ends, and fencing an old CI result across pause and
+resume. They also model withdrawal of a pending question by its owning run. Runtime tests use the
+HTTP controls, reopen the database, and hold a forge read open while pausing. A question test
+cancels an automation at a review gate and tries to answer the withdrawn form. A form created by an
+independent turn in the same thread remains available.
+
+The [Bend review laws](../verification/automation/Review.bend) cover a required but missing reason,
+a response for an older step attempt, and a changed decision after a result was saved. The HTTP test
+exercises these cases, including replay of the saved decision after a restart.
+
+```sh
+BEND_NO_TELEMETRY=1 bend verification/automation/PROOF.bend --verdict
+```
+
 ## Queue restore, offline sends, and model changes
 
 [ChatRecovery.lean](../verification/ChatRecovery.lean) checks three related boundaries.

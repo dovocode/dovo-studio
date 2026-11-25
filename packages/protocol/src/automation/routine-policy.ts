@@ -1,23 +1,31 @@
 import { Schema } from 'effect'
-import { maxValue, minValue, mutableStruct } from '../shared/schema.js'
+import { maxValue, minValue, mutableStruct, refine } from '../shared/schema.js'
 const positive = Schema.Number.pipe(
   Schema.check(Schema.isFinite()),
   Schema.check(Schema.isGreaterThan(0)),
 )
-export const routinePolicySchema = mutableStruct({
-  startupRetry: Schema.optional(Schema.Boolean),
-  matter: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
-  minutes: Schema.optional(maxValue(positive, 1440)),
-  tokens: Schema.optional(maxValue(positive.pipe(Schema.check(Schema.isInt())), 100000000)),
-  costUsd: Schema.optional(maxValue(positive, 10000)),
-  quietHours: Schema.optional(
-    mutableStruct({
-      start: Schema.String.pipe(Schema.check(Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/))),
-      end: Schema.String.pipe(Schema.check(Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/))),
-      timezone: maxValue(minValue(Schema.String, 1), 100),
-    }),
-  ),
-})
+export const routinePolicySchema = refine(
+  mutableStruct({
+    startupRetry: Schema.optional(Schema.Boolean),
+    concurrencyLimit: Schema.optional(positive.pipe(Schema.check(Schema.isInt()))),
+    concurrencyPool: Schema.optional(
+      maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120),
+    ),
+    matter: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+    minutes: Schema.optional(maxValue(positive, 1440)),
+    tokens: Schema.optional(maxValue(positive.pipe(Schema.check(Schema.isInt())), 100000000)),
+    costUsd: Schema.optional(maxValue(positive, 10000)),
+    quietHours: Schema.optional(
+      mutableStruct({
+        start: Schema.String.pipe(Schema.check(Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/))),
+        end: Schema.String.pipe(Schema.check(Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/))),
+        timezone: maxValue(minValue(Schema.String, 1), 100),
+      }),
+    ),
+  }),
+  (policy) => policy.concurrencyPool === undefined || policy.concurrencyLimit !== undefined,
+  'A shared pool needs a concurrent run limit.',
+)
 export const routineJsonPointerSchema = maxValue(Schema.String, 1000).pipe(
   Schema.check(Schema.isPattern(/^(?:\/(?:[^~]|~[01])*)*$/)),
 )
@@ -60,6 +68,8 @@ export function routineOptionFields(flow: {
 }) {
   return {
     startupRetry: flow.policy?.startupRetry ? 'yes' : 'no',
+    concurrencyLimit: flow.policy?.concurrencyLimit?.toString() ?? '',
+    concurrencyPool: flow.policy?.concurrencyPool ?? '',
     matter: flow.policy?.matter ?? '',
     minutes: flow.policy?.minutes?.toString() ?? '',
     tokens: flow.policy?.tokens?.toString() ?? '',
@@ -81,6 +91,8 @@ export function parseRoutineOptions(fields: ReturnType<typeof routineOptionField
     throw new Error('Choose yes or no for provider startup retry.')
   const policy = Schema.decodeUnknownSync(routinePolicySchema)({
     startupRetry: fields.startupRetry === 'yes',
+    concurrencyLimit: fields.concurrencyLimit.trim() ? Number(fields.concurrencyLimit) : undefined,
+    concurrencyPool: fields.concurrencyPool.trim() || undefined,
     matter: fields.matter.trim() || undefined,
     minutes: fields.minutes.trim() ? Number(fields.minutes) : undefined,
     tokens: fields.tokens.trim() ? Number(fields.tokens) : undefined,
@@ -111,6 +123,8 @@ export function parseRoutineOptions(fields: ReturnType<typeof routineOptionField
 }
 export const routineOptionLabels = {
   startupRetry: 'Retry provider startup',
+  concurrencyLimit: 'Concurrent runs',
+  concurrencyPool: 'Shared run pool (optional)',
   matter: 'Finding group (optional, shared across routines for this Bot)',
   url: 'Monitor source URL',
   jsonPointer: 'JSON pointer (optional, e.g. /release/version)',

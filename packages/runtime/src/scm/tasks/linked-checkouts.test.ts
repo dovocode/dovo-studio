@@ -9,7 +9,7 @@ import { fixture } from '../../testing/fixture.js'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../git/worktrees.js'
 import type { AgentAdapter } from '../../agents/execution/types.js'
-import type { Automation } from '@dovo/protocol'
+import { templateFromTask, templateTaskFields, type Automation } from '@dovo/protocol'
 import { WorkspaceStore } from '../../storage/workspace.js'
 
 vi.setConfig(runtimeIntegration)
@@ -76,6 +76,89 @@ async function recoveryFixture() {
   await writeFile(join(secondary.directory, 'hello.txt'), 'later backend\n')
   return { ...f, task, turn }
 }
+
+it('starts separate read-only linked worktrees from drafts created with the same template', async () => {
+  const { s, secondary, ownerToken, port } = await setup()
+  const worktreesRoot = await mkdtemp(join(tmpdir(), 'dovo-template-worktrees-'))
+  cleanups.push(() => rm(worktreesRoot, { recursive: true, force: true }))
+  s.preferences.save({ worktreesRoot })
+  const source = s.tasks.create({
+    title: 'Check linked docs',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Read the secondary project',
+    linkedCheckouts: [
+      {
+        id: 'reference',
+        repositoryId: 'backend',
+        execution: 'worktree',
+        access: 'read-only',
+        branch: 'original',
+      },
+    ],
+  })
+  const template = templateFromTask(
+    s.store.task(source.id),
+    'Check linked docs',
+    'reference-template',
+    true,
+  )
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repository) =>
+      repository.id === 'repo' ? { ...repository, templates: [template] } : repository,
+    ),
+  }))
+  const saved = s.store.get().repositories.find(({ id }) => id === 'repo')?.templates?.[0]
+  if (!saved) throw new Error('Missing linked checkout template')
+  const directories: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      const reference = run.linkedDirectories?.[0]
+      expect(reference?.access).toBe('read-only')
+      if (!reference) throw new Error('Missing reference checkout')
+      directories.push(reference.path)
+      run.onText('Read the reference checkout')
+    },
+  })
+  for (const id of ['first-template-draft', 'second-template-draft']) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/workspace`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collection: 'tasks',
+        id,
+        changes: {},
+        create: {
+          id,
+          title: template.name,
+          repositoryId: 'repo',
+          agentId: 'agent',
+          status: 'draft',
+          messages: [],
+          files: [],
+          example: false,
+          createdAt: new Date().toISOString(),
+          ...templateTaskFields(saved, true),
+        },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(s.store.taskSummary(id).linkedCheckoutSetup).toBeUndefined()
+    const sent = await fetch(`http://127.0.0.1:${port}/api/tasks/message`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, messageId: `${id}-message`, text: saved.objective }),
+    })
+    expect({ status: sent.status, body: await sent.text() }).toMatchObject({ status: 200 })
+    await waitForRuntime(() =>
+      expect(s.store.taskSummary(id).history.latestTurn?.status).toBe('completed'),
+    )
+  }
+  expect(new Set(directories).size).toBe(2)
+  expect(directories).not.toContain(await realpath(secondary.directory))
+})
 
 it('reuses the published linked after tree when saving is retried after a later edit', async () => {
   const { s, secondary, port, ownerToken } = await setup()

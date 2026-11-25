@@ -33,6 +33,7 @@ const credentialSchema = mutableStruct({
   clientInformation: Schema.optional(Schema.Unknown),
   tokens: Schema.optional(Schema.Unknown),
   expiresAt: Schema.optional(Schema.String),
+  needsSignIn: Schema.optional(Schema.Literal(true)),
   discoveryState: Schema.optional(Schema.Unknown),
   connectedAt: Schema.optional(Schema.String),
 })
@@ -132,6 +133,7 @@ class StoredProvider implements OAuthClientProvider {
   }
   redirectToAuthorization(_url: URL): void {
     // A running agent can refresh tokens but never starts a consent flow.
+    if (this.current()) this.store.update(this.key, this.server, { needsSignIn: true })
     throw new McpOAuthRequired(this.server.name)
   }
   saveCodeVerifier(_verifier: string) {}
@@ -261,6 +263,7 @@ export class McpOAuth {
     this.update(key, server, {
       ...connection,
       tokens: saved,
+      needsSignIn: undefined,
       expiresAt:
         tokens.expires_in === undefined
           ? undefined
@@ -275,14 +278,14 @@ export class McpOAuth {
     const target = { name: server.name, url: server.url, scope: server.oauth.scope }
     const key = mcpOAuthKey(target)
     const saved = this.read(key)
-    if (!saved?.tokens) throw new McpOAuthRequired(server.name)
+    if (!saved?.tokens || saved.needsSignIn) throw new McpOAuthRequired(server.name)
     return new StoredProvider(this, key, target, saved.connectionId)
   }
 
   connectionId(server: McpServer) {
     if (!server.oauth || server.transport !== 'http') return undefined
     const saved = this.read(mcpOAuthKey(server))
-    if (!saved?.tokens) throw new McpOAuthRequired(server.name)
+    if (!saved?.tokens || saved.needsSignIn) throw new McpOAuthRequired(server.name)
     return saved.connectionId ?? 'legacy'
   }
 
@@ -291,7 +294,8 @@ export class McpOAuth {
       const saved = this.read(mcpOAuthKey(server))
       const tokens = saved?.tokens ? decode(tokenFieldsSchema, saved.tokens) : undefined
       const expired =
-        !!saved?.expiresAt && Date.parse(saved.expiresAt) <= this.now() && !tokens?.refresh_token
+        saved?.needsSignIn ||
+        (!!saved?.expiresAt && Date.parse(saved.expiresAt) <= this.now() && !tokens?.refresh_token)
       return {
         name: server.name,
         url: server.url,

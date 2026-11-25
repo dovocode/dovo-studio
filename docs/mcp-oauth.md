@@ -17,6 +17,12 @@ servers that agents use. To let another AI app use Dovo as an MCP server, see
      sign-in**.
 4. Save the server. The editor shows **Signed in on** and the computer name.
 
+A thread also shows a sign-in warning when an enabled OAuth server in its effective settings needs
+authentication. Select **Sign in** to open the sign-in page from the thread. Studio checks the saved
+server on the thread's computer before opening the flow. If the server configuration changes, reopen
+the thread to load the current warning. After sign-in, retry the agent action that needed the
+server.
+
 **Test connection** uses the same sign-in. Select **Reconnect** to sign in again, for example with
 another account. Select **Disconnect** to remove the sign-in from that computer. Studio asks the
 provider to revoke the tokens and reports whether it confirmed this.

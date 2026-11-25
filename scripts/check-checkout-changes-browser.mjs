@@ -283,6 +283,16 @@ try {
   await changes.getByRole('button', { name: 'Show changed files', exact: true }).click()
   await list.waitFor()
 
+  await page.evaluate(() => {
+    window.changes = [{ path: 'math.test.ts', before: 'before\n', after: 'after\n', viewed: false }]
+  })
+  await refresh.click()
+  await changes.getByText('1 file', { exact: true }).waitFor()
+  await changes.getByRole('button', { name: 'Hide test files', exact: true }).click()
+  await changes.getByText('1 test file hidden', { exact: true }).waitFor()
+  await changes.getByRole('button', { name: 'Show test files', exact: true }).click()
+  await changes.getByText('1 file', { exact: true }).waitFor()
+
   // An empty checkout shows a clear state and hides file navigation.
   await page.evaluate(() => {
     window.changes = []

@@ -10,6 +10,7 @@ import { SettingsPage } from '@dovo/studio-ui'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { resolveThreadRuntime } from '@dovo/protocol'
+import { LinkedThreadPreview } from './linked-thread-preview'
 import type { StudioViewProps, RuntimeProfile } from '@dovo/studio-core'
 import { useRuntimeSources, useStudioHost, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
 import {
@@ -32,11 +33,26 @@ export default function RuntimeView({
 
   const sources = useRuntimeSources()
   const studio = useStudioHost()
-  const { runtimeRegistry, runtimes } = useWorkspace()
+  const { runtimeRegistry, runtimes, activeRuntimeId, snapshot } = useWorkspace()
   const resumed = useRef<StudioViewProps['threadConnection']>(undefined)
   const pairedTarget = threadConnection?.runtimeIdentity
     ? resolveThreadRuntime(threadConnection, runtimeRegistry.profiles, runtimes)
     : undefined
+  const parent = threadConnection?.parent
+  const previewTarget =
+    !pairedTarget && parent && threadConnection?.runtimeIdentity
+      ? {
+          parentTaskId: parent.threadId,
+          runtimeIdentity: threadConnection.runtimeIdentity,
+          threadId: threadConnection.threadId,
+        }
+      : undefined
+  const parentProfile = parent && resolveThreadRuntime(parent, runtimeRegistry.profiles, runtimes)
+  const localParent =
+    parent &&
+    parent.runtimeId === null &&
+    activeRuntimeId === null &&
+    (!parent.runtimeIdentity || parent.runtimeIdentity === snapshot?.runtimeId)
   useEffect(() => {
     if (!threadConnection || !pairedTarget || resumed.current === threadConnection) return
     resumed.current = threadConnection
@@ -66,8 +82,19 @@ export default function RuntimeView({
     >
       {threadConnection && (
         <section className="studio-settings-group space-y-3 border-b border-border/50 pb-5">
+          {previewTarget &&
+            (parentProfile ? (
+              <WorkspaceScope profile={parentProfile}>
+                <LinkedThreadPreview key={JSON.stringify(previewTarget)} target={previewTarget} />
+              </WorkspaceScope>
+            ) : (
+              localParent && (
+                <LinkedThreadPreview key={JSON.stringify(previewTarget)} target={previewTarget} />
+              )
+            ))}
           <h2 className="text-sm font-semibold tracking-tight">
-            Pair computer to open {threadConnection.title}
+            {previewTarget ? 'Pair computer to interact with' : 'Pair computer to open'}{' '}
+            {threadConnection.title}
           </h2>
           <p className="text-xs text-muted-foreground">
             Pair the computer running this thread with its LAN/VPN address and pairing code. The

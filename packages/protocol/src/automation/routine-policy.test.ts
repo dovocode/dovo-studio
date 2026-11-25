@@ -22,6 +22,9 @@ it('keeps HTTP sources and validates optional budgets and quiet-hour fields cons
   })
   for (const invalid of [
     { tokens: '1.5' },
+    { concurrencyLimit: '1.5' },
+    { concurrencyLimit: '0' },
+    { concurrencyPool: 'shared' },
     { minutes: '0' },
     { costUsd: 'abc' },
     { url: 'ftp://host' },
@@ -29,6 +32,12 @@ it('keeps HTTP sources and validates optional budgets and quiet-hour fields cons
     { start: '22:00', end: '07:00', timezone: 'Invalid/Zone' },
   ])
     expect(() => parseRoutineOptions({ ...fields, ...invalid })).toThrow(Error)
+  expect(parseRoutineOptions({ ...fields, concurrencyLimit: '2' }).policy.concurrencyLimit).toBe(2)
+  expect(
+    parseRoutineOptions({ ...fields, concurrencyLimit: '2', concurrencyPool: ' shared ' }).policy
+      .concurrencyPool,
+  ).toBe('shared')
+  expect(parseRoutineOptions(fields).policy.concurrencyLimit).toBeUndefined()
 })
 it('validates and preserves optional JSON pointers on both clients', () => {
   const fields = routineOptionFields({

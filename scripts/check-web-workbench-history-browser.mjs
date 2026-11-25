@@ -3,10 +3,8 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { serve } from '../apps/web/node_modules/srvx/dist/adapters/node.mjs'
-import { staticMiddleware } from '../apps/web/node_modules/srvx/dist/static.mjs'
-import web from '../apps/web/dist/server/server.js'
+import web from '../apps/web/serve.mjs'
 import {
   decode,
   repositorySchema,
@@ -77,14 +75,25 @@ const server = serve({
   hostname: '127.0.0.1',
   port: 0,
   silent: true,
-  middleware: [
-    staticMiddleware({ dir: fileURLToPath(new URL('../apps/web/dist/client/', import.meta.url)) }),
-  ],
 })
 let browser
 try {
   browser = await chromium.launch()
   await server.ready()
+  const shell = await fetch(server.url)
+  assert.equal(shell.status, 200)
+  assert.doesNotMatch(shell.headers.get('cache-control') ?? '', /immutable/)
+  const html = await shell.text()
+  const assets = new Set(
+    [...html.matchAll(/(?:src|href)="(\/assets\/[^"?]+\.(?:css|js))"/g)].map((match) => match[1]),
+  )
+  assert([...assets].some((asset) => asset.endsWith('.css')))
+  assert([...assets].some((asset) => asset.endsWith('.js')))
+  for (const asset of assets) {
+    const result = await fetch(new URL(asset, server.url), { method: 'HEAD' })
+    assert.equal(result.status, 200, asset)
+    assert.match(result.headers.get('cache-control') ?? '', /max-age=31536000, immutable/)
+  }
   const first = await start('First computer')
   const second = await start('Second computer')
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
@@ -124,6 +133,15 @@ try {
   await pair(first)
   const runtimeSettings = page.getByRole('dialog', { name: 'Settings' })
   await pair(second)
+  await runtimeSettings.getByRole('button', { name: 'Connection map', exact: true }).click()
+  const map = runtimeSettings.getByRole('region', { name: 'Connection map' })
+  for (const runtime of [first, second])
+    await map
+      .getByText(`HTTP requests · Saved address · http://127.0.0.1:${runtime.port}`, {
+        exact: true,
+      })
+      .waitFor()
+  await runtimeSettings.getByRole('button', { name: 'Connection list', exact: true }).click()
   await runtimeSettings.getByRole('button', { name: 'Close', exact: true }).click()
   const selectThread = async (name) => {
     await page
@@ -131,18 +149,49 @@ try {
       .first()
       .press('Enter')
   }
+  const measureThreadFrame = async (name) => {
+    await page.evaluate((expected) => {
+      window.threadFrame = new Promise((resolve) => {
+        const onKey = (event) => {
+          if (event.key !== 'Enter') return
+          document.removeEventListener('keydown', onKey, true)
+          const started = performance.now()
+          const visibleReply = (frameTime) => {
+            const reply = [...document.querySelectorAll('p, [data-message-id]')].find((element) => {
+              if (element.textContent !== expected || !element.checkVisibility()) return false
+              const rect = element.getBoundingClientRect()
+              return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight
+            })
+            if (reply) requestAnimationFrame(() => resolve(Math.max(0, frameTime - started)))
+            else if (frameTime - started > 10000) resolve(null)
+            else requestAnimationFrame(visibleReply)
+          }
+          requestAnimationFrame(visibleReply)
+        }
+        document.addEventListener('keydown', onKey, true)
+      })
+    }, `Fixture reply from ${name}`)
+    await selectThread(name)
+    const ms = await page.evaluate(() => window.threadFrame)
+    assert.notEqual(ms, null, `${name} did not render its own reply`)
+    return ms
+  }
   const thread = async (active, runtime, name) => {
     await active.waitForURL(
       (url) =>
         url.searchParams.get('thread') === 'same-thread-id' &&
         url.searchParams.get('computer') === runtime.services.runtimeId,
     )
-    await active
-      .getByRole('button', { name: 'Thread actions', exact: true })
-      .filter({
-        hasText: name + ' thread',
+    try {
+      await active
+        .getByRole('button', { name: 'Thread actions', exact: true })
+        .filter({ hasText: name + ' thread' })
+        .waitFor()
+    } catch (error) {
+      throw new Error(`${errors.join('\n')}\n${await active.locator('body').innerText()}`, {
+        cause: error,
       })
-      .waitFor()
+    }
   }
   await selectThread('First computer')
   await thread(page, first, 'First computer')
@@ -150,6 +199,28 @@ try {
   await selectThread('Second computer')
   await thread(page, second, 'Second computer')
   const secondUrl = page.url()
+  await page.keyboard.press('Control+k')
+  const commands = page.getByRole('combobox', { name: 'Search commands' })
+  await commands.waitFor()
+  await page.getByRole('option', { name: 'Settle thread', exact: true }).waitFor()
+  await page.getByRole('option', { name: 'Archive thread', exact: true }).waitFor()
+  await page
+    .getByRole('option', { name: /^Snooze thread/ })
+    .first()
+    .waitFor()
+  const pin = page.waitForResponse(
+    (response) =>
+      response.url() === `http://127.0.0.1:${second.port}/api/workspace` &&
+      response.request().method() === 'PATCH' &&
+      response.ok(),
+  )
+  await page.getByRole('option', { name: 'Pin thread', exact: true }).click()
+  await pin
+  assert.equal(second.services.store.taskSummary('same-thread-id').pinned, true)
+  assert.notEqual(first.services.store.taskSummary('same-thread-id').pinned, true)
+  await page.keyboard.press('Control+k')
+  await page.getByRole('option', { name: 'Unpin thread', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
   const composer = page.getByRole('textbox', { name: 'Message thread' })
   await composer.fill('Draft on the second computer')
   await mainNavigation.getByRole('button', { name: 'Terminals', exact: true }).click()
@@ -433,6 +504,31 @@ try {
   await unknown.getByRole('heading', { name: 'Pair computer to open this thread' }).waitFor()
   assert.equal(unknown.url(), unknownUrl.href)
   await unknown.close()
+
+  // Measure the real production workbench once the route and draft scenarios have finished.
+  await context.unroute('http://127.0.0.1:' + second.port + '/**')
+  for (const { runtime, name } of [
+    { runtime: first, name: 'First computer' },
+    { runtime: second, name: 'Second computer' },
+  ]) {
+    runtime.services.store.updateTaskHistory('same-thread-id', (task) => ({
+      ...task,
+      messages: [{ id: 'reply', role: 'assistant', text: `Fixture reply from ${name}` }],
+    }))
+  }
+  await page.goto(firstUrl)
+  await page.getByText('Fixture reply from First computer', { exact: true }).waitFor()
+  const firstSwitch = await measureThreadFrame('Second computer')
+  const warmFrames = []
+  for (let index = 0; index < 4; index++) {
+    warmFrames.push(await measureThreadFrame('First computer'))
+    warmFrames.push(await measureThreadFrame('Second computer'))
+  }
+  const rounded = (value) => Math.round(value * 10) / 10
+  console.log('Key press to first animation frame with the correct visible reply', {
+    firstSwitchMs: rounded(firstSwitch),
+    warmMs: warmFrames.map(rounded),
+  })
 } finally {
   await browser?.close()
   await Promise.all([server.close(), ...[...runtimes].map((runtime) => runtime.close())])

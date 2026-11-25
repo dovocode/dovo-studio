@@ -27,6 +27,8 @@ export function JobControls({
     (run) => run.automationId === flow.id && (run.status === 'running' || run.status === 'waiting'),
   )
   const pending = actions.pendingStart(flow.id)
+  const queues =
+    snapshot?.automationConcurrencySupported && flow.policy?.concurrencyLimit !== undefined
   const webhook = actions.webhook(flow.id)
   const disabled = !connected || actions.busy || !!syncError
   const [dryRun, setDryRun] = useState(false)
@@ -37,7 +39,7 @@ export function JobControls({
         <span className="flex-1" />
         <Button
           size="sm"
-          disabled={disabled || (!!active && !pending) || validation.length > 0}
+          disabled={disabled || (!!active && !pending && !queues) || validation.length > 0}
           onClick={() => void actions.start(flow.id, onRun)}
         >
           {pending ? <RotateCw /> : <Play />}

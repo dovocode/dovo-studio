@@ -303,6 +303,45 @@ export function NodeInspector({
       )}
       {data.kind === 'task' && (
         <>
+          {(snapshot?.automationStepPoolsSupported || data.stepPool) && (
+            <>
+              <FormField label="Shared step pool (optional)">
+                <Input
+                  value={data.stepPool?.name ?? ''}
+                  maxLength={120}
+                  disabled={!snapshot?.automationStepPoolsSupported}
+                  onChange={(event) => {
+                    const name = event.target.value
+                    field({
+                      stepPool: name.trim()
+                        ? { name, limit: data.stepPool?.limit ?? 1 }
+                        : undefined,
+                    })
+                  }}
+                />
+              </FormField>
+              {data.stepPool && (
+                <FormField label="Concurrent steps">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={data.stepPool.limit || ''}
+                    disabled={!snapshot?.automationStepPoolsSupported}
+                    onChange={(event) =>
+                      field({
+                        stepPool: { name: data.stepPool!.name, limit: Number(event.target.value) },
+                      })
+                    }
+                  />
+                </FormField>
+              )}
+              {!snapshot?.automationStepPoolsSupported && (
+                <p className="text-muted-foreground">
+                  Update this runtime to edit shared step pools.
+                </p>
+              )}
+            </>
+          )}
           {(snapshot?.botsSupported || data.botId) && (
             <FormField label="Thread target">
               <ChoicePicker
@@ -440,11 +479,48 @@ export function NodeInspector({
           </fieldset>
         </>
       )}
-      {data.kind === 'review' && !data.pipelineWait && (
-        <p className="text-muted-foreground">
-          This step represents a human approval before downstream work may execute.
-        </p>
-      )}
+      {data.kind === 'review' &&
+        !data.pipelineWait &&
+        (snapshot?.automationReviewPromptSupported ? (
+          <>
+            <FormField label="Review instructions">
+              <Textarea
+                value={data.reviewPrompt?.instructions ?? ''}
+                maxLength={4000}
+                onChange={(event) =>
+                  field({
+                    reviewPrompt: { ...data.reviewPrompt, instructions: event.target.value },
+                  })
+                }
+              />
+            </FormField>
+            <FormField label="Review link">
+              <Input
+                value={data.reviewPrompt?.link ?? ''}
+                maxLength={2000}
+                onChange={(event) =>
+                  field({ reviewPrompt: { ...data.reviewPrompt, link: event.target.value } })
+                }
+              />
+            </FormField>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={data.reviewPrompt?.requireReason ?? false}
+                onChange={(event) =>
+                  field({
+                    reviewPrompt: { ...data.reviewPrompt, requireReason: event.target.checked },
+                  })
+                }
+              />
+              Require a reason for the decision
+            </label>
+          </>
+        ) : (
+          <p className="text-muted-foreground">
+            Update this runtime to add review instructions, a link, or a required reason.
+          </p>
+        ))}
       {data.pipelineWait &&
         (snapshot?.automationPipelineWaitSupported ? (
           <>

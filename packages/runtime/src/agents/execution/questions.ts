@@ -45,6 +45,7 @@ function promptIdentity(taskId: string, prompt: QuestionPrompt) {
 }
 type Pending = {
   signal: AbortSignal
+  runId?: string
   info: PendingQuestion
   finish: (
     answers: QuestionAnswers | null,
@@ -164,6 +165,7 @@ export class Questions {
     onResponse?: (answers: QuestionAnswers | null, receipt: ResponseReceipt) => void,
     requestId?: string,
     onUnanswered?: (outcomes: QuestionOutcomes) => void,
+    runId?: string,
   ) {
     if (signal.aborted) return Promise.resolve(null)
     const prompt = decode(questionPromptSchema, value),
@@ -290,6 +292,7 @@ export class Questions {
       }
       this.requests.set(id, {
         signal,
+        runId,
         info,
         finish,
         validate,
@@ -481,9 +484,13 @@ export class Questions {
     // The existing fingerprint receipt also makes a repeated native submission safe.
     this.respond(input.id, { [input.fieldId]: [input.value] })
   }
-  cancelTask(taskId: string) {
+  cancelTask(taskId: string, runIds?: ReadonlySet<string>) {
     for (const request of this.requests.values())
-      if (request.info.taskId === taskId) request.finish(null, 'cancelled')
+      if (
+        request.info.taskId === taskId &&
+        (!runIds || (request.runId && runIds.has(request.runId)))
+      )
+        request.finish(null, 'cancelled')
   }
   dispose() {
     for (const request of this.requests.values()) request.finish(null, 'cancelled')

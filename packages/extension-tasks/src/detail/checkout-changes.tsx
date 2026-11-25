@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp, FolderTree, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronUp, FlaskConical, FolderTree, RefreshCw } from 'lucide-react'
 import {
   buildFileTree,
   filePreviewLabel,
@@ -11,7 +11,7 @@ import {
 import { Schema } from 'effect'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { FileBrowserTree, FileChangeCounts, IconButton, cn } from '@dovo/studio-ui'
+import { Button, FileBrowserTree, FileChangeCounts, IconButton, cn } from '@dovo/studio-ui'
 import { CheckpointDiff } from '../files/saved-file-diff'
 import { SavedFilePreview } from '../files/saved-file-preview'
 import { fileStats } from '../files/presentation'
@@ -40,6 +40,7 @@ export function CheckoutChanges({
   const [loading, setLoading] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [listOpen, setListOpen] = useState(true)
+  const [hideTests, setHideTests] = useState(false)
   const listId = useId()
   useEffect(() => {
     if (!connected) return
@@ -97,7 +98,13 @@ export function CheckoutChanges({
       }),
     [files],
   )
-  const order = useMemo(() => fileTreePaths(buildFileTree(entries)), [entries])
+  const visible = useMemo(
+    () => (hideTests ? entries.filter((entry) => entry.changeKind !== 'tests') : entries),
+    [entries, hideTests],
+  )
+  const hasTests = entries.some((entry) => entry.changeKind === 'tests')
+  const hiddenTests = entries.length - visible.length
+  const order = useMemo(() => fileTreePaths(buildFileTree(visible)), [visible])
   // When a refresh removes the open file, stay at the same place in the list.
   const lastIndex = useRef(0)
   const path = order.includes(selected)
@@ -106,8 +113,8 @@ export function CheckoutChanges({
   const index = path === undefined ? -1 : order.indexOf(path)
   if (index >= 0) lastIndex.current = index
   const file = files?.find((item) => item.path === path)
-  const additions = entries.reduce((total, entry) => total + (entry.additions ?? 0), 0)
-  const deletions = entries.reduce((total, entry) => total + (entry.deletions ?? 0), 0)
+  const additions = visible.reduce((total, entry) => total + (entry.additions ?? 0), 0)
+  const deletions = visible.reduce((total, entry) => total + (entry.deletions ?? 0), 0)
   const previous = index > 0 ? order[index - 1] : undefined
   const next = index >= 0 ? order[index + 1] : undefined
   return (
@@ -137,6 +144,16 @@ export function CheckoutChanges({
           <FileChangeCounts additions={additions} deletions={deletions} />
         )}
         <span className="flex-1" />
+        {hasTests && (!hideTests || !!visible.length) && (
+          <IconButton
+            label={uiText(hideTests ? 'Show test files' : 'Hide test files')}
+            className="size-7"
+            aria-pressed={hideTests}
+            onClick={() => setHideTests((value) => !value)}
+          >
+            <FlaskConical size={14} />
+          </IconButton>
+        )}
         {order.length > 1 && (
           <nav aria-label={uiText('Changed file navigation')} className="flex items-center">
             <IconButton
@@ -194,7 +211,7 @@ export function CheckoutChanges({
           aria-label={uiText('Changed files')}
           className="max-h-[40%] shrink-0 overflow-auto overscroll-contain border-b p-1"
         >
-          <FileBrowserTree files={entries} selected={path} onSelect={onSelect} />
+          <FileBrowserTree files={visible} selected={path} onSelect={onSelect} />
         </nav>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -208,6 +225,17 @@ export function CheckoutChanges({
           </p>
         ) : file ? (
           <CheckpointDiff file={file} />
+        ) : hiddenTests ? (
+          <div className="flex flex-col items-start gap-2 p-4 text-xs text-muted-foreground">
+            <p role="status">
+              {uiText(hiddenTests === 1 ? '1 test file hidden' : '{count} test files hidden', {
+                count: hiddenTests,
+              })}
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setHideTests(false)}>
+              {uiText('Show test files')}
+            </Button>
+          </div>
         ) : (
           connected &&
           !error && (

@@ -16,6 +16,7 @@ function useDictationService() {
   const local = useDictation()
   const runtime = useRuntimeDictation()
   const [owner, setOwner] = useState<Owner>()
+  const currentOwner = useRef<Owner | undefined>(undefined)
   const starting = useRef(false)
   const speech = owner?.remote ? runtime : local
   const busy = isActive(speech)
@@ -24,6 +25,10 @@ function useDictationService() {
     runtime,
     owner,
     busy,
+    cancel(key: string) {
+      const current = currentOwner.current
+      if (current?.key === key) return (current.remote ? runtime : local).cancel()
+    },
     async start(
       key: string,
       title: string,
@@ -32,7 +37,9 @@ function useDictationService() {
     ) {
       if (starting.current || busy) return
       starting.current = true
-      setOwner({ key, title, remote: !!input })
+      const next = { key, title, remote: !!input }
+      currentOwner.current = next
+      setOwner(next)
       try {
         if (input) {
           runtime.clearError()

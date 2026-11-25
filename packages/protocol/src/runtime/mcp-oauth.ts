@@ -29,6 +29,15 @@ export type McpOAuthStatus = typeof mcpOAuthStatusSchema.Type
 export const mcpOAuthStatusListSchema = mutableStruct({
   statuses: mutableArray(mcpOAuthStatusSchema),
 })
+const threadMcpOAuthWarningSchema = mutableStruct({
+  name: mcpOAuthServerSchema.fields.name,
+  revision: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+})
+export type ThreadMcpOAuthWarning = typeof threadMcpOAuthWarningSchema.Type
+export const threadMcpOAuthWarningsSchema = mutableStruct({
+  warnings: mutableArray(threadMcpOAuthWarningSchema),
+})
+const threadId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
 
 export const mcpOAuthFlowSchema = mutableStruct({
   flowId: Schema.String,
@@ -49,6 +58,12 @@ export type McpOAuthFlowState = typeof mcpOAuthFlowStateSchema.Type
 export const mcpOAuthCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('status'), servers: mutableArray(mcpOAuthServerSchema) }),
   mutableStruct({ action: Schema.Literal('connect'), server: mcpOAuthServerSchema }),
+  mutableStruct({ action: Schema.Literal('thread-warnings'), taskId: threadId }),
+  mutableStruct({
+    action: Schema.Literal('thread-connect'),
+    taskId: threadId,
+    warning: threadMcpOAuthWarningSchema,
+  }),
   mutableStruct({ action: Schema.Literal('flow'), flowId: Schema.String }),
   mutableStruct({
     action: Schema.Literal('complete'),

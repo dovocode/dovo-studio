@@ -9,6 +9,7 @@ import {
   type McpOAuthFlow,
   type McpOAuthStatus,
   type McpServer,
+  type ThreadMcpOAuthWarning,
 } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRuntime } from '../runtime/connection/provider'
@@ -22,15 +23,18 @@ import { useSettingsTheme as useTheme } from '../screens/settings-theme'
  * OAuth sign-in for one remote MCP server on the connected computer. The token stays on that
  * computer. A phone cannot open the computer's loopback page, so the person pastes its address.
  */
-export function McpOAuthSection({
-  server,
-  onChange,
-  disabled,
-}: {
-  server: McpServer
-  onChange: (server: McpServer) => void
-  disabled: boolean
-}) {
+export function McpOAuthSection(
+  props: {
+    disabled: boolean
+  } & (
+    | { server: McpServer; onChange: (server: McpServer) => void }
+    | { thread: { taskId: string; warning: ThreadMcpOAuthWarning }; onConnected: () => void }
+  ),
+) {
+  const editor = 'server' in props ? props : undefined
+  const server = editor?.server
+  const thread = 'thread' in props ? props : undefined
+  const { disabled } = props
   const { call, connected, snapshot, overviews, activeId } = useRuntime()
   const { styles } = useTheme()
   const uiText = useInterfaceText()
@@ -43,10 +47,15 @@ export function McpOAuthSection({
   const [callback, setCallback] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const target = { name: server.name.trim(), url: server.url.trim(), scope: server.oauth?.scope }
-  const ready = supported && connected && !!target.name && /^https?:\/\//.test(target.url)
+  const target = server && {
+    name: server.name.trim(),
+    url: server.url.trim(),
+    scope: server.oauth?.scope,
+  }
+  const ready =
+    supported && connected && (thread || (target?.name && /^https?:\/\//.test(target.url)))
   const refresh = async () => {
-    if (!ready || !server.oauth) return setStatus(undefined)
+    if (!ready || !server?.oauth || !target) return setStatus(undefined)
     const result = await call(
       '/api/agents/mcp/oauth',
       { action: 'status', servers: [target] },
@@ -57,7 +66,7 @@ export function McpOAuthSection({
   useEffect(() => {
     void refresh().catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, server.oauth !== undefined, target.name, target.url])
+  }, [!!ready, server?.oauth !== undefined, target?.name, target?.url])
   useEffect(() => {
     if (!flow) return
     const timer = setInterval(() => {
@@ -75,6 +84,7 @@ export function McpOAuthSection({
               ? uiText('Signed in.')
               : (state.error ?? uiText('Sign-in {value0}.', { value0: state.state })),
           )
+          if (state.state === 'connected') thread?.onConnected()
           void refresh()
         })
         .catch(() => {})
@@ -97,48 +107,67 @@ export function McpOAuthSection({
 
   return (
     <View style={{ gap: 8 }}>
-      <Choice
-        label={uiText('Sign in with OAuth')}
-        value={server.oauth ? 'true' : 'false'}
-        disabled={disabled || (!supported && !server.oauth)}
-        items={[
-          { id: 'false', name: uiText('Off') },
-          { id: 'true', name: uiText('On') },
-        ]}
-        onChange={(value) =>
-          onChange({ ...server, oauth: value === 'true' ? { ...(server.oauth ?? {}) } : undefined })
-        }
-      />
+      {thread && (
+        <Text style={styles.text}>
+          {uiText('{server} needs MCP sign-in on {computer}.', {
+            server: thread.thread.warning.name,
+            computer,
+          })}
+        </Text>
+      )}
+      {editor && (
+        <Choice
+          label={uiText('Sign in with OAuth')}
+          value={editor.server.oauth ? 'true' : 'false'}
+          disabled={disabled || (!supported && !editor.server.oauth)}
+          items={[
+            { id: 'false', name: uiText('Off') },
+            { id: 'true', name: uiText('On') },
+          ]}
+          onChange={(value) =>
+            editor.onChange({
+              ...editor.server,
+              oauth: value === 'true' ? { ...(editor.server.oauth ?? {}) } : undefined,
+            })
+          }
+        />
+      )}
       {!supported && (
         <Text style={styles.muted}>
           {uiText('Update the runtime on this computer to sign in to MCP servers with OAuth.')}
         </Text>
       )}
-      {server.oauth && (
+      {(server?.oauth || thread) && (
         <>
-          <Field
-            label={uiText('Scopes (optional)')}
-            value={server.oauth.scope ?? ''}
-            editable={!disabled}
-            autoCapitalize="none"
-            onChangeText={(scope) => onChange({ ...server, oauth: scope.trim() ? { scope } : {} })}
-          />
+          {editor && (
+            <Field
+              label={uiText('Scopes (optional)')}
+              value={editor.server.oauth?.scope ?? ''}
+              editable={!disabled}
+              autoCapitalize="none"
+              onChangeText={(scope) =>
+                editor.onChange({ ...editor.server, oauth: scope.trim() ? { scope } : {} })
+              }
+            />
+          )}
           <Text style={styles.muted}>
             {uiText('Each computer signs in separately. Tokens stay on {value0}.', {
               value0: computer,
             })}
           </Text>
-          <Text accessibilityLiveRegion="polite">
-            {!ready
-              ? uiText('Enter a name and server URL, and connect to the computer, to sign in.')
-              : status?.state === 'connected'
-                ? uiText('Signed in on {value0}.', { value0: computer })
-                : status?.state === 'expired'
-                  ? uiText('The sign-in on {value0} expired. Select Reconnect.', {
-                      value0: computer,
-                    })
-                  : uiText('Not signed in on {value0}.', { value0: computer })}
-          </Text>
+          {!thread && (
+            <Text accessibilityLiveRegion="polite">
+              {!ready
+                ? uiText('Enter a name and server URL, and connect to the computer, to sign in.')
+                : status?.state === 'connected'
+                  ? uiText('Signed in on {value0}.', { value0: computer })
+                  : status?.state === 'expired'
+                    ? uiText('The sign-in on {value0} expired. Select Reconnect.', {
+                        value0: computer,
+                      })
+                    : uiText('Not signed in on {value0}.', { value0: computer })}
+            </Text>
+          )}
           {flow ? (
             <>
               <Text>
@@ -177,6 +206,7 @@ export function McpOAuthSection({
                         ? uiText('Signed in.')
                         : (state.error ?? uiText('Sign-in {value0}.', { value0: state.state })),
                     )
+                    if (state.state === 'connected') thread?.onConnected()
                     await refresh()
                   })
                 }
@@ -203,16 +233,20 @@ export function McpOAuthSection({
                 <Action
                   secondary
                   label={
-                    !status || status.state === 'disconnected'
-                      ? uiText('Connect')
-                      : uiText('Reconnect')
+                    thread
+                      ? uiText('Sign in')
+                      : !status || status.state === 'disconnected'
+                        ? uiText('Connect')
+                        : uiText('Reconnect')
                   }
                   disabled={blocked}
                   onPress={() =>
                     void run(async () => {
                       const started = await call(
                         '/api/agents/mcp/oauth',
-                        { action: 'connect', server: target },
+                        thread
+                          ? { action: 'thread-connect', ...thread.thread }
+                          : { action: 'connect', server: target },
                         mcpOAuthFlowSchema,
                       )
                       setFlow(started)

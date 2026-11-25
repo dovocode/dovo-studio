@@ -258,18 +258,22 @@ export function TaskReview({
   const [related, setRelated] = useState(true),
     [toolsOpen, setToolsOpen] = useState(false),
     [wrapLines, setWrapLines] = useState(false)
+  const [hideTests, setHideTests] = useState(false)
+  const hasTests = sourceFiles.some((file) => pullFileKind(file) === 'tests')
   const files = useMemo(
     () =>
       orderReviewFiles(
-        sourceFiles.map((file) => {
-          const state =
-            !commit && !checkpoint && !checkoutId && scope === 'working' ? file : fileState(file)
-          return {
-            ...file,
-            viewed: state?.viewed ?? false,
-            changedSinceViewed: state?.changedSinceViewed,
-          }
-        }),
+        sourceFiles
+          .filter((file) => !hideTests || pullFileKind(file) !== 'tests')
+          .map((file) => {
+            const state =
+              !commit && !checkpoint && !checkoutId && scope === 'working' ? file : fileState(file)
+            return {
+              ...file,
+              viewed: state?.viewed ?? false,
+              changedSinceViewed: state?.changedSinceViewed,
+            }
+          }),
         review.progress?.groups ?? [],
         related,
       ),
@@ -283,8 +287,10 @@ export function TaskReview({
       checkpoint,
       checkoutId,
       scope,
+      hideTests,
     ],
   )
+  const hiddenTests = sourceFiles.length - files.length
   const stats = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, fileStats(file)])),
     [sourceFiles],
@@ -685,6 +691,14 @@ export function TaskReview({
             </Sheet>
           )}
         </View>
+        {hasTests && (!hideTests || !!files.length) && (
+          <Action
+            secondary
+            disabled={!!edit}
+            label={uiText(hideTests ? 'Show test files' : 'Hide test files')}
+            onPress={() => setHideTests((value) => !value)}
+          />
+        )}
         {!!files.length && (
           <View
             style={{
@@ -728,7 +742,20 @@ export function TaskReview({
             />
           </View>
         )}
-        {!file && !edit ? (
+        {!file && !edit && hiddenTests ? (
+          <View style={styles.content}>
+            <Text style={styles.muted}>
+              {uiText(hiddenTests === 1 ? '1 test file hidden' : '{count} test files hidden', {
+                count: hiddenTests,
+              })}
+            </Text>
+            <Action
+              secondary
+              label={uiText('Show test files')}
+              onPress={() => setHideTests(false)}
+            />
+          </View>
+        ) : !file && !edit ? (
           <Text style={[styles.muted, styles.content]}>
             <InterfaceText>{'No changed files.'}</InterfaceText>
           </Text>

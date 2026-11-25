@@ -13,7 +13,7 @@ import {
   mutableStruct,
 } from '@dovo/protocol'
 import { conversationPageSchema, taskTranscript, type ConversationPage } from '@dovo/protocol'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
   useConfirmation,
@@ -92,8 +92,10 @@ export function TaskContextMenu({
   selectionMenu,
   toolsMenu,
   dropdown = false,
+  palette = false,
 }: {
   dropdown?: boolean
+  palette?: boolean
   selectionMenu?: ReactNode
   /** Tool shortcuts supplied by the thread header, shown in the first menu. */
   toolsMenu?: ReactNode
@@ -165,6 +167,10 @@ export function TaskContextMenu({
   const [removeWorktrees, setRemoveWorktrees] = useApplicationState(false)
   const [archiveDays, setArchiveDays] = useApplicationState('7')
   const [templateName, setTemplateName] = useApplicationState(task.title)
+  const [templateLinks, setTemplateLinks] = useApplicationState(false)
+  const templateCheckouts = source.linkedCheckoutTemplatesSupported
+    ? (task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? [])
+    : []
   const templates = repository?.templates ?? []
   const local = source.runtimeId === store.activeRuntimeId
   const [title, setTitle] = useApplicationState(task.title)
@@ -216,6 +222,129 @@ export function TaskContextMenu({
     )
   }
   const patch = (updates: TaskRowChanges) => client.patch(task, updates)
+  const canSettle = canEdit && !task.bot && !task.archivedAt && task.status !== 'running'
+  const canSnooze = canEdit && !task.bot && !task.archived && !task.archivedAt
+  const canArchive =
+    canEdit &&
+    !task.bot &&
+    task.status !== 'running' &&
+    !(task.archivedAt && task.machineHandoff?.state === 'moved')
+  const snoozed = isSnoozed(task, Date.now())
+  const pin = () =>
+    void run(async () => {
+      if (!canEdit) return
+      if (
+        task.pinned &&
+        readAppPreferences().confirmUnpin &&
+        !(await confirm({
+          title: `Unpin “${task.title}”?`,
+          description: 'This thread will return to its usual position in the list.',
+          confirmLabel: 'Unpin thread',
+        }))
+      )
+        return
+      if (isCurrent()) await patch({ pinned: !task.pinned })
+    })
+  const settle = () =>
+    void run(async () => {
+      if (canSettle && isCurrent()) await patch({ archived: !task.archived, snoozedUntil: null })
+    })
+  const snooze = (until: string | null) =>
+    void run(async () => {
+      if (canSnooze && isCurrent()) await patch({ snoozedUntil: until })
+    })
+  const archive = () =>
+    void run(async () => {
+      if (!canArchive) return
+      if (
+        !task.archivedAt &&
+        readAppPreferences().confirmArchive &&
+        !(await confirm({
+          title: `Archive “${task.title}”?`,
+          description: 'You can restore it from Settings → Archived threads.',
+          confirmLabel: 'Archive thread',
+        }))
+      )
+        return
+      if (!isCurrent()) return
+      await client.request(
+        '/api/tasks/lifecycle',
+        { id: task.id, action: task.archivedAt ? 'restore' : 'archive' },
+        responses.ok,
+      )
+      if (!isCurrent()) return
+      if (selected && !task.archivedAt) onDeselect()
+      await client.refresh()
+    })
+  const commands = useRef({ pin, settle, snooze, archive })
+  useLayoutEffect(() => {
+    commands.current = { pin, settle, snooze, archive }
+  })
+  const { registerCommand } = host
+  const pinned = !!task.pinned
+  const settled = !!task.archived
+  const archived = !!task.archivedAt
+  useEffect(() => {
+    if (!palette || !canEdit) return
+    const dispose = [
+      registerCommand({
+        id: 'tasks.pin-current',
+        title: uiText(pinned ? 'Unpin thread' : 'Pin thread'),
+        run: () => commands.current.pin(),
+      }),
+    ]
+    if (canSettle)
+      dispose.push(
+        registerCommand({
+          id: 'tasks.settle-current',
+          title: uiText(settled ? 'Reopen thread' : 'Settle thread'),
+          run: () => commands.current.settle(),
+        }),
+      )
+    if (canArchive)
+      dispose.push(
+        registerCommand({
+          id: 'tasks.archive-current',
+          title: uiText(archived ? 'Restore thread' : 'Archive thread'),
+          run: () => commands.current.archive(),
+        }),
+      )
+    if (canSnooze) {
+      for (const choice of taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule))
+        dispose.push(
+          registerCommand({
+            id: `tasks.snooze-current:${choice.id}`,
+            title: uiText('Snooze thread · {value0}', { value0: uiText(choice.label) }),
+            run: () => commands.current.snooze(choice.until()),
+          }),
+        )
+      if (snoozed)
+        dispose.push(
+          registerCommand({
+            id: 'tasks.unsnooze-current',
+            title: uiText('Unsnooze thread'),
+            run: () => commands.current.snooze(null),
+          }),
+        )
+    }
+    return () => {
+      for (const remove of dispose) remove()
+    }
+  }, [
+    palette,
+    canEdit,
+    pinned,
+    canSettle,
+    settled,
+    canArchive,
+    archived,
+    canSnooze,
+    snoozed,
+    taskSnoozeMinutes,
+    taskSnoozeSchedule,
+    registerCommand,
+    uiText,
+  ])
   /** Dialogs that read runtime state must use the computer that owns this thread. */
   const inOwnerScope = (node: ReactNode) =>
     local ? (
@@ -295,42 +424,12 @@ export function TaskContextMenu({
               <Pencil />
               Rename…
             </Menu.Item>
-            <Menu.Item
-              className={itemClass}
-              disabled={!canEdit}
-              onSelect={() => {
-                void run(async () => {
-                  if (
-                    task.pinned &&
-                    readAppPreferences().confirmUnpin &&
-                    !(await confirm({
-                      title: `Unpin “${task.title}”?`,
-                      description: 'This thread will return to its usual position in the list.',
-                      confirmLabel: 'Unpin thread',
-                    }))
-                  )
-                    return
-                  if (!isCurrent()) return
-                  await patch({ pinned: !task.pinned })
-                })
-              }}
-            >
+            <Menu.Item className={itemClass} disabled={!canEdit} onSelect={pin}>
               {task.pinned ? <PinOff /> : <Pin />}
               {task.pinned ? 'Unpin' : 'Pin'}
             </Menu.Item>
             {!task.bot && (
-              <Menu.Item
-                className={itemClass}
-                disabled={!canEdit || !!task.archivedAt || task.status === 'running'}
-                onSelect={() =>
-                  void run(() =>
-                    patch({
-                      archived: !task.archived,
-                      snoozedUntil: null,
-                    }),
-                  )
-                }
-              >
+              <Menu.Item className={itemClass} disabled={!canSettle} onSelect={settle}>
                 {task.archived ? <Undo2 /> : <Check />}
                 {task.archived ? 'Reopen' : 'Settle'}
               </Menu.Item>
@@ -361,7 +460,7 @@ export function TaskContextMenu({
             </Menu.Item>
             {!task.bot && !task.archived && (
               <Menu.Sub>
-                <Menu.SubTrigger className={itemClass} disabled={!canEdit}>
+                <Menu.SubTrigger className={itemClass} disabled={!canSnooze}>
                   <AlarmClock />
                   Snooze
                   <ChevronRight className="ml-auto" />
@@ -370,32 +469,13 @@ export function TaskContextMenu({
                   <Menu.SubContent className={menuClass} collisionPadding={8}>
                     {taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule).map(
                       ({ id, until, label }) => (
-                        <Menu.Item
-                          key={id}
-                          className={itemClass}
-                          onSelect={() =>
-                            void run(() =>
-                              patch({
-                                snoozedUntil: until(),
-                              }),
-                            )
-                          }
-                        >
+                        <Menu.Item key={id} className={itemClass} onSelect={() => snooze(until())}>
                           {label}
                         </Menu.Item>
                       ),
                     )}
-                    {isSnoozed(task, Date.now()) && (
-                      <Menu.Item
-                        className={itemClass}
-                        onSelect={() =>
-                          void run(() =>
-                            patch({
-                              snoozedUntil: null,
-                            }),
-                          )
-                        }
-                      >
+                    {snoozed && (
+                      <Menu.Item className={itemClass} onSelect={() => snooze(null)}>
                         Unsnooze
                       </Menu.Item>
                     )}
@@ -535,6 +615,7 @@ export function TaskContextMenu({
                         disabled={!canEdit || !repository || !local}
                         onSelect={() => {
                           setTemplateName(task.title)
+                          setTemplateLinks(false)
                           setError('')
                           setDialog('template')
                         }}
@@ -787,41 +868,7 @@ export function TaskContextMenu({
             {!task.bot && (
               <>
                 <Menu.Separator className={separatorClass} />
-                <Menu.Item
-                  className={itemClass}
-                  disabled={
-                    !canEdit ||
-                    task.status === 'running' ||
-                    // A moved thread is kept for recovery; the destination owns it now.
-                    (!!task.archivedAt && task.machineHandoff?.state === 'moved')
-                  }
-                  onSelect={() => {
-                    void run(async () => {
-                      if (
-                        !task.archivedAt &&
-                        readAppPreferences().confirmArchive &&
-                        !(await confirm({
-                          title: `Archive “${task.title}”?`,
-                          description: 'You can restore it from Settings → Archived threads.',
-                          confirmLabel: 'Archive thread',
-                        }))
-                      )
-                        return
-                      if (!isCurrent()) return
-                      await client.request(
-                        '/api/tasks/lifecycle',
-                        {
-                          id: task.id,
-                          action: task.archivedAt ? 'restore' : 'archive',
-                        },
-                        responses.ok,
-                      )
-                      if (!isCurrent()) return
-                      if (selected && !task.archivedAt) onDeselect()
-                      await client.refresh()
-                    })
-                  }}
-                >
+                <Menu.Item className={itemClass} disabled={!canArchive} onSelect={archive}>
                   <Archive />
                   {task.archivedAt ? 'Restore thread' : 'Archive thread'}
                 </Menu.Item>
@@ -984,7 +1031,7 @@ export function TaskContextMenu({
                           ...item,
                           templates: [
                             ...(item.templates ?? []),
-                            templateFromTask(task, name, randomUUID()),
+                            templateFromTask(task, name, randomUUID(), templateLinks),
                           ],
                         }
                       : item,
@@ -1003,6 +1050,26 @@ export function TaskContextMenu({
                 disabled={pending}
               />
             </FormField>
+            {!!templateCheckouts.length && (
+              <div className="grid gap-1 text-xs">
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={templateLinks}
+                    onCheckedChange={(checked) => setTemplateLinks(checked === true)}
+                    disabled={pending}
+                  />
+                  Include linked checkouts
+                </label>
+                {templateCheckouts.map((link) => (
+                  <span key={link.id} className="pl-6 text-muted-foreground">
+                    {source.repositories.find(({ id }) => id === link.repositoryId)?.name ??
+                      link.repositoryId}
+                    {' · '}
+                    {link.access === 'edit' ? 'Edit' : 'Read-only'}
+                  </span>
+                ))}
+              </div>
+            )}
             {error && (
               <p role="alert" className="text-xs text-destructive">
                 {error}

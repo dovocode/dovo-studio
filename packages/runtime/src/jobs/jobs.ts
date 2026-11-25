@@ -57,6 +57,8 @@ import {
   stepWorkerTurn,
   type StoredRun,
 } from './run-state.js'
+const startupRetryChanged =
+  'Provider startup retry stopped because the task or retry setting changed. Review the run.'
 const recordSchema = mutableStruct({
   value: Schema.String,
 })
@@ -79,6 +81,7 @@ export function botStepMessageId(runId: string, nodeId: string, attempt: number)
 export class Jobs {
   revision = 0
   private runs = new Map<string, StoredRun>()
+  private stepArrival = 0
   private active = new Map<string, Fiber.Fiber<void, never>>()
   private deletionReservations = new Map<string, symbol>()
   private readonly executor = ManagedRuntime.make(Layer.empty)
@@ -209,7 +212,7 @@ export class Jobs {
         },
         (id, message) => this.activity?.add('job', id, message),
       )
-    for (const row of db.prepare('SELECT value FROM job_runs').all()) {
+    for (const row of db.prepare('SELECT value FROM job_runs ORDER BY rowid').all()) {
       let stored: StoredRun
       try {
         stored = decode(storedRunSchema, JSON.parse(decode(recordSchema, row).value))
@@ -220,11 +223,18 @@ export class Jobs {
       }
       const run = {
         ...stored,
+        readyToAdvance: stored.readyToAdvance ?? stored.resumeAfterPipelineWait,
+        resumeAfterPipelineWait: undefined,
         steps: runSteps(stored),
       }
       this.runs.set(run.id, run)
+      this.stepArrival = Math.max(this.stepArrival, run.stepAdmission?.order ?? 0)
       this.revision++
-      if (run.status === 'running' && !run.resumeAfterPipelineWait) {
+      if (
+        run.status === 'running' &&
+        !run.readyToAdvance &&
+        run.stepAdmission?.phase !== 'reserved'
+      ) {
         const recovered = this.reconcileCompletedTasks(run)
         this.runs.set(run.id, recovered)
         if (runReadyToFinish(recovered)) this.finish(run.id, 'completed')
@@ -419,6 +429,11 @@ export class Jobs {
   private withTiming(run: StoredRun): StoredRun {
     return {
       ...run,
+      waitingForStepPool:
+        run.stepAdmission?.phase === 'queued'
+          ? run.flow.nodes.find((node) => node.id === run.stepAdmission?.nodeId)?.data.stepPool
+              ?.name
+          : undefined,
       failures: runFailures(run),
       steps: runSteps(run).map((step) => {
         if (step.workStartedAt) return step
@@ -502,23 +517,158 @@ export class Jobs {
       if (this.deletionReservations.get(id) === reservation) this.deletionReservations.delete(id)
   }
   requireIdle(automationId: string, except?: string, reservation?: symbol) {
+    this.requireAdmissionOpen(automationId, reservation)
+    if (this.blockingRun(automationId, except))
+      throw new HttpError(409, 'This automation already has an active run')
+  }
+  private requireAdmissionOpen(automationId: string, reservation?: symbol) {
     const activeDeletion = this.deletionReservations.get(automationId)
     if (activeDeletion && activeDeletion !== reservation)
       throw new HttpError(409, 'This automation is being deleted.')
     if (this.stopping) throw new HttpError(503, 'Runtime is shutting down')
-    if (this.blockingRun(automationId, except))
-      throw new HttpError(409, 'This automation already has an active run')
+  }
+  private occupiesSlot(run: StoredRun) {
+    return (
+      (!run.queuedForAdmission && (run.status === 'running' || run.status === 'waiting')) ||
+      this.active.has(run.id) ||
+      (run.stepAdmission?.phase === 'executing' && this.stepWorkerStillStopping(run)) ||
+      // A cancelled run holds its slot until its own workers stop.
+      this.ownedTaskIds(run).some((id) => this.tasks.hasWorkingFamily(id))
+    )
   }
   private blockingRun(automationId: string, except?: string) {
     return [...this.runs.values()].find(
       (run) =>
         run.id !== except &&
         run.automationId === automationId &&
-        (['running', 'waiting'].includes(run.status) ||
-          this.active.has(run.id) ||
-          // A finished run's Bot step does not own later work in that Bot's thread.
-          this.ownedTaskIds(run).some((id) => this.tasks.hasWorkingFamily(id))),
+        (run.queuedForAdmission || this.occupiesSlot(run)),
     )
+  }
+  private admitQueuedRuns() {
+    const queued = [...this.runs.values()].filter((run) => run.queuedForAdmission && !run.pause)
+    if (!queued.length) return
+    const limits = new Map(
+      this.store.get().automations.map((flow) => [flow.id, flow.policy?.concurrencyLimit ?? 1]),
+    )
+    const counts = new Map<string, number>()
+    const pools = new Map<string, { count: number; limit: number }>()
+    const addToPool = (run: StoredRun) => {
+      const { concurrencyPool: key, concurrencyLimit: limit } = run.flow.policy ?? {}
+      if (key === undefined || limit === undefined) return
+      const pool = pools.get(key)
+      pools.set(key, {
+        count: (pool?.count ?? 0) + 1,
+        limit: Math.min(limit, pool?.limit ?? limit),
+      })
+    }
+    for (const run of this.runs.values()) {
+      if (!this.occupiesSlot(run)) continue
+      counts.set(run.automationId, (counts.get(run.automationId) ?? 0) + 1)
+      addToPool(run)
+    }
+    const waitingPools = new Set<string>()
+    for (const run of queued) {
+      const { automationId } = run
+      const limit = limits.get(automationId)
+      if (this.deletionReservations.has(automationId)) continue
+      if (limit === undefined) {
+        this.finish(run, 'failed', 'The automation was removed before this run started.')
+        continue
+      }
+      const count = counts.get(automationId) ?? 0
+      const key = run.flow.policy?.concurrencyPool
+      const pool = key === undefined ? undefined : pools.get(key)
+      const requested = run.flow.policy?.concurrencyLimit ?? limit
+      if (
+        (key !== undefined && waitingPools.has(key)) ||
+        count >= Math.min(limit, requested) ||
+        (pool && pool.count >= Math.min(pool.limit, requested))
+      ) {
+        if (key !== undefined) waitingPools.add(key)
+        continue
+      }
+      if (run.deliveryKey?.startsWith('webhook:')) {
+        try {
+          this.policy?.require('webhookTasks')
+        } catch (error) {
+          this.finish(run, 'failed', errorMessage(error))
+          continue
+        }
+      }
+      this.save({ ...run, status: 'running', readyToAdvance: true, queuedForAdmission: undefined })
+      counts.set(automationId, count + 1)
+      addToPool(run)
+      this.launch(run.id)
+    }
+  }
+  private stepWorkerStillStopping(run: StoredRun) {
+    if (this.active.has(run.id)) return true
+    const step = runSteps(run).find((item) => item.nodeId === run.stepAdmission?.nodeId)
+    if (!step?.taskId) return false
+    const node = run.flow.nodes.find((item) => item.id === step.nodeId)
+    if (node?.data.botId !== step.taskId) return this.tasks.hasWorkingFamily(step.taskId)
+    const state = step.messageId && this.botStep(step.taskId, step.messageId)
+    return (
+      !!state &&
+      (state.kind === 'queued' ||
+        state.kind === 'running' ||
+        (state.kind === 'starting' && state.owned))
+    )
+  }
+  private admitQueuedSteps() {
+    const pools = new Map<string, { count: number; limit: number }>()
+    const queued: Array<{
+      run: StoredRun
+      admission: NonNullable<StoredRun['stepAdmission']>
+      name: string
+      limit: number
+    }> = []
+    const occupy = (name: string, limit: number) => {
+      const pool = pools.get(name)
+      pools.set(name, {
+        count: (pool?.count ?? 0) + 1,
+        limit: Math.min(pool?.limit ?? limit, limit),
+      })
+    }
+    for (const run of this.runs.values()) {
+      const admission = run.stepAdmission
+      if (!admission) continue
+      const pool = run.flow.nodes.find((node) => node.id === admission.nodeId)?.data.stepPool
+      if (!pool) continue
+      if (admission.phase === 'queued') {
+        if (!run.pause) queued.push({ run, admission, ...pool })
+      } else if (run.status === 'running' || this.stepWorkerStillStopping(run)) {
+        occupy(pool.name, pool.limit)
+      } else {
+        this.save({ ...run, stepAdmission: undefined })
+      }
+    }
+    const blocked = new Set<string>()
+    for (const { run, admission, name, limit } of queued.sort(
+      (a, b) => a.admission.order - b.admission.order,
+    )) {
+      if (blocked.has(name)) continue
+      const pool = pools.get(name)
+      if (this.active.has(run.id) || (pool && pool.count >= Math.min(pool.limit, limit))) {
+        blocked.add(name)
+        continue
+      }
+      if (run.deliveryKey?.startsWith('webhook:')) {
+        try {
+          this.policy?.require('webhookTasks')
+        } catch (error) {
+          this.finish(run, 'failed', errorMessage(error))
+          continue
+        }
+      }
+      this.save({
+        ...run,
+        status: 'running',
+        stepAdmission: { ...admission, phase: 'reserved' },
+      })
+      occupy(name, limit)
+      this.launch(run.id)
+    }
   }
   startManual(id: string, requestId?: string) {
     const key = requestId ? `manual:${requestId}` : undefined
@@ -569,7 +719,9 @@ export class Jobs {
     } catch (error) {
       throw new HttpError(400, errorMessage(error))
     }
-    this.requireIdle(id)
+    const queued = flow.policy?.concurrencyLimit !== undefined
+    if (queued) this.requireAdmissionOpen(id)
+    else this.requireIdle(id)
     const now = new Date().toISOString()
     const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')
     const scheduledTime = key?.startsWith('schedule:')
@@ -584,7 +736,8 @@ export class Jobs {
       triggerPayload,
       ...(mcpEvent ? { mcpEvent } : {}),
       deliveryKey: key,
-      status: 'running',
+      status: queued ? 'waiting' : 'running',
+      queuedForAdmission: queued ? true : undefined,
       completedNodes: [],
       taskIds: [],
       createdAt: now,
@@ -613,14 +766,14 @@ export class Jobs {
     })
     this.runs.set(run.id, run)
     this.revision++
-    this.launch(run.id)
+    if (!queued) this.launch(run.id)
     return run.id
   }
   retry(id: string) {
     const existing = this.runs.get(id)
     if (!existing) throw new HttpError(404, 'Job not found')
     if (existing.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
-    if (this.active.has(id))
+    if (this.active.has(id) || (existing.stepAdmission && this.stepWorkerStillStopping(existing)))
       throw new HttpError(409, 'Wait for the current step to stop before retrying')
     if (!['failed', 'cancelled'].includes(existing.status))
       throw new HttpError(409, 'Only failed or stopped runs can be retried')
@@ -670,6 +823,7 @@ export class Jobs {
       outcome: undefined,
       retryAt: undefined,
       retryTurnId: undefined,
+      stepAdmission: undefined,
       finishedAt: undefined,
       reportDeferred: undefined,
     })
@@ -679,20 +833,80 @@ export class Jobs {
   private reconcileCompletedTasks(run: StoredRun) {
     return reconcileCompletedTasks(run, this.store.get().tasks, (id) => this.store.task(id))
   }
-  approve(id: string, allow: boolean, expected?: { nodeId?: string; attempt?: number }) {
+  pause(id: string, now = Date.now()) {
+    const run = this.runs.get(id)
+    if (!run) throw new HttpError(404, 'Run not found')
+    this.requireAdmissionOpen(run.automationId)
+    if (run.pause) return
+    if (run.status !== 'running' && run.status !== 'waiting')
+      throw new HttpError(409, 'This run has already finished')
+    const executing =
+      run.status === 'running' &&
+      runSteps(run).some((step) => step.nodeId === run.currentNodeId && step.status === 'running')
+    const at = new Date(now).toISOString()
+    if (executing) {
+      this.save({ ...run, pause: { phase: 'afterStep', at } })
+      return
+    }
+    this.save({
+      ...run,
+      status: 'waiting',
+      pause: { phase: 'paused', at },
+      stepAdmission: run.stepAdmission && { ...run.stepAdmission, phase: 'queued' },
+      readyToAdvance: undefined,
+    })
+  }
+  resume(id: string, now = Date.now()) {
+    const run = this.runs.get(id)
+    if (!run) throw new HttpError(404, 'Run not found')
+    this.requireAdmissionOpen(run.automationId)
+    if (!run.pause) return
+    if (run.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
+    if (run.pause.phase === 'afterStep') {
+      this.save({ ...run, pause: undefined })
+      return
+    }
+    const held = Math.max(0, now - Date.parse(run.pause.at))
+    const extend = (deadline: string) => new Date(Date.parse(deadline) + held).toISOString()
+    const waiting = !!(
+      run.queuedForAdmission ||
+      run.stepAdmission ||
+      run.waitingNodeId ||
+      run.retryAt
+    )
+    this.save({
+      ...run,
+      status: waiting ? 'waiting' : 'running',
+      readyToAdvance: waiting ? undefined : true,
+      pause: undefined,
+      pausedDurationMs: (run.pausedDurationMs ?? 0) + held,
+      pipelineWait: run.pipelineWait && {
+        ...run.pipelineWait,
+        until: extend(run.pipelineWait.until),
+      },
+      retryAt: run.retryAt && extend(run.retryAt),
+    })
+    this.launch(id)
+  }
+  approve(
+    id: string,
+    allow: boolean,
+    expected?: { nodeId?: string; attempt?: number; reason?: string; answeredBy?: string },
+  ) {
     if (this.stopping) throw new HttpError(503, 'Runtime is shutting down')
     const run = this.runs.get(id)
+    const reason = expected?.reason?.trim() || undefined
     if (expected?.nodeId !== undefined && expected.attempt !== undefined) {
       const recorded = run?.reviewDecisions?.find(
         (choice) => choice.nodeId === expected.nodeId && choice.attempt === expected.attempt,
       )
       if (recorded) {
-        if (recorded.allow !== allow)
+        if (recorded.allow !== allow || recorded.reason !== reason)
           throw new HttpError(409, 'This review already has a different decision.')
         return
       }
     }
-    if (!run || run.status !== 'waiting' || !run.waitingNodeId || run.pipelineWait)
+    if (!run || run.status !== 'waiting' || run.pause || !run.waitingNodeId || run.pipelineWait)
       throw new HttpError(409, 'Job is not waiting for review')
     const step = runSteps(run).find((item) => item.nodeId === run.waitingNodeId)
     const legacy = expected?.nodeId === undefined && expected?.attempt === undefined
@@ -707,11 +921,23 @@ export class Jobs {
           : step.nodeId !== expected.nodeId || step.attempt !== expected.attempt))
     )
       throw new HttpError(409, 'This review changed. Refresh the run and review the current step.')
+    if (step.reviewPrompt?.requireReason && !reason)
+      throw new HttpError(400, 'Enter a reason for this review decision.')
     if (allow && run.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     const nodeId = run.waitingNodeId
     const reviewed = {
       ...run,
-      reviewDecisions: [...(run.reviewDecisions ?? []), { nodeId, attempt: step.attempt, allow }],
+      reviewDecisions: [
+        ...(run.reviewDecisions ?? []),
+        {
+          nodeId,
+          attempt: step.attempt,
+          allow,
+          reason,
+          answeredAt: new Date().toISOString(),
+          answeredBy: expected?.answeredBy,
+        },
+      ],
     }
     if (!allow) {
       this.finish(reviewed, 'cancelled')
@@ -723,6 +949,7 @@ export class Jobs {
         finishedAt: new Date().toISOString(),
       }),
       status: 'running',
+      readyToAdvance: true,
       completedNodes: [...run.completedNodes, nodeId],
       currentNodeId: undefined,
       waitingNodeId: undefined,
@@ -802,7 +1029,8 @@ export class Jobs {
     const current =
       runSteps(run).find(
         (step) =>
-          step.nodeId === (run.currentNodeId ?? run.waitingNodeId) && step.status !== 'completed',
+          step.nodeId === (run.currentNodeId ?? run.waitingNodeId ?? run.stepAdmission?.nodeId) &&
+          step.status !== 'completed',
       ) ?? runSteps(run).find((step) => step.status === 'running')
     const next = current
       ? updateStep(run, current.nodeId, {
@@ -815,23 +1043,29 @@ export class Jobs {
       {
         ...next,
         status,
+        queuedForAdmission: undefined,
+        pause: undefined,
+        pausedDurationMs: this.pausedTime(run, Date.parse(finishedAt)) || undefined,
+        stepAdmission: run.stepAdmission?.phase === 'executing' ? run.stepAdmission : undefined,
         error,
         interrupted,
         finishedAt,
         currentNodeId: undefined,
         waitingNodeId: undefined,
         pipelineWait: undefined,
-        resumeAfterPipelineWait: undefined,
+        readyToAdvance: undefined,
         failedNodeId: status === 'failed' ? current?.nodeId : undefined,
         retryAt: undefined,
         retryTurnId: undefined,
         reportDeferred:
-          next.outcome !== 'unchanged' && next.flow.nodes.some((node) => node.data.botId)
+          !run.queuedForAdmission &&
+          next.outcome !== 'unchanged' &&
+          next.flow.nodes.some((node) => node.data.botId)
             ? true
             : undefined,
       },
       () => {
-        if (!next.flow.monitor) return
+        if (run.queuedForAdmission || !next.flow.monitor) return
         const key = 'automation-source:' + run.automationId
         if (status === 'completed' && next.sourceHash && next.sourceUrl) {
           this.db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)').run(
@@ -855,10 +1089,11 @@ export class Jobs {
           .run(status, key)
       },
     )
+    if (status === 'cancelled') this.tasks.withdrawAutomationQuestions(run.id, run.taskIds)
     if (finished.reportDeferred) this.tryReportBotRun(finished)
   }
   private launch(id: string) {
-    if (this.active.has(id) || this.stopping) return
+    if (this.active.has(id) || this.stopping || this.runs.get(id)?.status !== 'running') return
     const pending = this.executor.runFork(
       Effect.yieldNow.pipe(
         Effect.andThen(this.advanceEffect(id)),
@@ -1225,34 +1460,38 @@ export class Jobs {
       const initial = this.runs.get(id)
       if (initial?.flow.monitor && !initial.sourceChecked) {
         const monitor = initial.flow.monitor
-        const source = yield* Effect.tryPromise(async () => {
-          if (!monitor.mcp)
-            return readRoutineSource(monitor.url, AbortSignal.timeout(15000), monitor.jsonPointer)
-          const ids = new Set(
-            initial.flow.nodes
-              .filter((node) => node.data.kind === 'task')
-              .map((node) => node.data.botId),
-          )
-          const botId = [...ids][0]
-          if (ids.size !== 1 || !botId || !this.botServices)
-            throw new HttpError(400, 'MCP monitoring needs one Bot target for every task step.')
-          this.botTarget(botId)
-          const cwd = await this.botServices.checkouts.fileDirectory(botId)
-          const bytes = await this.botServices.mcpApps.readMonitoringResource(
-            botId,
-            monitor.mcp.server,
-            monitor.mcp.uri,
-            cwd,
-            AbortSignal.timeout(15000),
-          )
-          this.botTarget(botId)
-          return routineSourceContent(
-            bytes,
-            `mcp:${JSON.stringify([monitor.mcp.server, monitor.mcp.uri])}`,
-            monitor.jsonPointer,
-          )
-        })
-        if (this.stopping || this.runs.get(id)?.status !== 'running') return
+        const result = yield* Effect.exit(
+          Effect.tryPromise(async () => {
+            if (!monitor.mcp)
+              return readRoutineSource(monitor.url, AbortSignal.timeout(15000), monitor.jsonPointer)
+            const ids = new Set(
+              initial.flow.nodes
+                .filter((node) => node.data.kind === 'task')
+                .map((node) => node.data.botId),
+            )
+            const botId = [...ids][0]
+            if (ids.size !== 1 || !botId || !this.botServices)
+              throw new HttpError(400, 'MCP monitoring needs one Bot target for every task step.')
+            this.botTarget(botId)
+            const cwd = await this.botServices.checkouts.fileDirectory(botId)
+            const bytes = await this.botServices.mcpApps.readMonitoringResource(
+              botId,
+              monitor.mcp.server,
+              monitor.mcp.uri,
+              cwd,
+              AbortSignal.timeout(15000),
+            )
+            this.botTarget(botId)
+            return routineSourceContent(
+              bytes,
+              `mcp:${JSON.stringify([monitor.mcp.server, monitor.mcp.uri])}`,
+              monitor.jsonPointer,
+            )
+          }),
+        )
+        if (this.stopping || this.runs.get(id) !== initial) return
+        if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
+        const source = result.value
         const baseline = this.sourceBaseline(initial.automationId)
         // An older baseline has no outcome. Use run history while it remains. After it
         // expires, the baseline is the last known outcome, and only a completed run writes it.
@@ -1308,6 +1547,28 @@ export class Jobs {
           return
         }
         const step = runSteps(run).find((step) => step.nodeId === node.id)!
+        if (
+          run.retryTurnId &&
+          run.stepAdmission?.phase === 'reserved' &&
+          !this.startupRetryStillAvailable(run)
+        ) {
+          this.finish(run, 'failed', startupRetryChanged)
+          return
+        }
+        if (
+          node.data.stepPool &&
+          (run.stepAdmission?.phase !== 'reserved' || run.stepAdmission.nodeId !== node.id)
+        ) {
+          this.save({
+            ...run,
+            status: 'waiting',
+            currentNodeId: undefined,
+            retryAt: undefined,
+            readyToAdvance: undefined,
+            stepAdmission: { nodeId: node.id, phase: 'queued', order: ++this.stepArrival },
+          })
+          return
+        }
         const startedAt = new Date().toISOString()
         const waiting = node.data.kind === 'review'
         const next = {
@@ -1323,7 +1584,8 @@ export class Jobs {
           currentNodeId: node.id,
           status: waiting ? ('waiting' as const) : ('running' as const),
           waitingNodeId: waiting ? node.id : undefined,
-          resumeAfterPipelineWait: undefined,
+          readyToAdvance: undefined,
+          stepAdmission: run.stepAdmission && { ...run.stepAdmission, phase: 'executing' as const },
         }
         if (node.data.pipelineWait) {
           try {
@@ -1488,7 +1750,7 @@ export class Jobs {
         }
         const current = this.runs.get(id)
         if (!current || current.status !== 'running' || this.stopping) return
-        this.save({
+        const nextRun: StoredRun = {
           ...updateStep(current, node.id, {
             status: 'completed',
             finishedAt: new Date().toISOString(),
@@ -1498,7 +1760,19 @@ export class Jobs {
           ...(output ? { outputs: { ...current.outputs, [node.id]: output } } : {}),
           currentNodeId: undefined,
           retryTurnId: undefined,
-        })
+          stepAdmission: undefined,
+          readyToAdvance: true,
+        }
+        if (current.pause?.phase === 'afterStep' && !runReadyToFinish(nextRun)) {
+          this.save({
+            ...nextRun,
+            status: 'waiting',
+            readyToAdvance: undefined,
+            pause: { phase: 'paused', at: new Date().toISOString() },
+          })
+          return
+        }
+        this.save(nextRun)
       }
     }).pipe(
       Effect.catchCause((cause) =>
@@ -1546,12 +1820,17 @@ export class Jobs {
       task.history.latestTurn?.status !== 'failed'
     )
       return false
+    const pause = run.pause
+      ? { phase: 'paused' as const, at: new Date(now).toISOString() }
+      : undefined
     this.save({
       ...run,
       status: 'waiting',
+      pause,
       retryAt: new Date(now + delays[count]! * 60000).toISOString(),
       startupRetryCount: count + 1,
       retryTurnId: task.history.latestTurn.id,
+      stepAdmission: undefined,
       error,
       steps: runSteps(run).map((item) =>
         item.nodeId === run.currentNodeId ? { ...item, status: 'waiting' as const, error } : item,
@@ -1565,7 +1844,10 @@ export class Jobs {
       this.stopping = true
       const stopped = yield* Effect.forEach(
         [...this.runs.values()].filter(
-          (run) => run.status === 'running' && !run.resumeAfterPipelineWait,
+          (run) =>
+            run.status === 'running' &&
+            !run.readyToAdvance &&
+            run.stepAdmission?.phase !== 'reserved',
         ),
         (run) =>
           Effect.exit(
@@ -1603,6 +1885,7 @@ export class Jobs {
         !['running', 'waiting'].includes(run.status) &&
         !run.reportDeferred &&
         !this.active.has(run.id) &&
+        !run.stepAdmission &&
         (run.finishedAt ?? run.updatedAt ?? run.createdAt) < before,
     )
     this.db.transaction(() => {
@@ -1615,6 +1898,12 @@ export class Jobs {
     for (const run of stale) this.runs.delete(run.id)
     if (stale.length) this.revision++
     return stale.length
+  }
+  private pausedTime(run: StoredRun, now: number) {
+    return (
+      (run.pausedDurationMs ?? 0) +
+      (run.pause?.phase === 'paused' ? Math.max(0, now - Date.parse(run.pause.at)) : 0)
+    )
   }
   /** Best effort: providers can report usage late. Includes descendants and approval wait time. */
   enforceBudgets(now = Date.now()) {
@@ -1668,7 +1957,8 @@ export class Jobs {
         countTurn(task, turn)
       }
       const reason =
-        policy.minutes && now - Date.parse(run.createdAt) >= policy.minutes * 60000
+        policy.minutes &&
+        now - Date.parse(run.createdAt) - this.pausedTime(run, now) >= policy.minutes * 60000
           ? 'time'
           : policy.tokens && tokens >= policy.tokens
             ? 'token'
@@ -1722,6 +2012,7 @@ export class Jobs {
         const wait = run.pipelineWait
         if (
           run.status !== 'waiting' ||
+          run.pause ||
           !wait ||
           this.runs.get(run.id) !== run ||
           this.active.has(run.id)
@@ -1776,7 +2067,7 @@ export class Jobs {
           currentNodeId: undefined,
           waitingNodeId: undefined,
           pipelineWait: undefined,
-          resumeAfterPipelineWait: true,
+          readyToAdvance: true,
         })
         this.launch(run.id)
       }
@@ -1784,11 +2075,36 @@ export class Jobs {
       this.readingPipelineWaits = false
     }
   }
+  private startupRetryStillAvailable(run: StoredRun) {
+    const nodeId = run.currentNodeId ?? run.stepAdmission?.nodeId
+    const step = runSteps(run).find((item) => item.nodeId === nodeId)
+    const task = step?.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)
+    const flow = this.store.get().automations.find((item) => item.id === run.automationId)
+    return (
+      flow?.policy?.startupRetry &&
+      (flow.enabled || run.deliveryKey?.startsWith('once:')) &&
+      task &&
+      task.history.latestTurn?.id === run.retryTurnId &&
+      task.status === 'failed' &&
+      !task.activeRunId &&
+      !task.runPhase &&
+      !task.pendingHarness &&
+      task.runAttempt?.promptAccepted === false &&
+      !task.queue?.length &&
+      !task.subagentInbox?.length &&
+      !this.tasks.hasWorkingFamily(task.id)
+    )
+  }
   tick(now = Date.now()) {
     this.enforceBudgets(now)
     this.flushReports(now)
     for (const run of this.runs.values()) {
-      if (run.status === 'waiting' && run.pipelineWait && Date.parse(run.pipelineWait.until) <= now)
+      if (
+        run.status === 'waiting' &&
+        !run.pause &&
+        run.pipelineWait &&
+        Date.parse(run.pipelineWait.until) <= now
+      )
         this.finish(run, 'failed', 'The GitHub Actions attempt did not finish before the deadline.')
       if (run.status !== 'running' || this.active.has(run.id) || !runReadyToFinish(run)) continue
       try {
@@ -1797,44 +2113,36 @@ export class Jobs {
         console.warn('Could not record completed automation', run.id, errorMessage(error))
       }
     }
-    if (this.tasks.isRestarting()) return
+    if (this.tasks.isRestarting() || this.stopping) return
+    this.admitQueuedRuns()
+    this.admitQueuedSteps()
     for (const run of this.runs.values()) {
-      if (run.status === 'running' && run.resumeAfterPipelineWait) {
+      if (
+        run.status === 'running' &&
+        (run.readyToAdvance || run.stepAdmission?.phase === 'reserved')
+      ) {
         this.launch(run.id)
         continue
       }
       if (
         run.status !== 'waiting' ||
+        run.pause ||
         !run.retryAt ||
         Date.parse(run.retryAt) > now ||
         this.active.has(run.id)
       )
         continue
-      const step = runSteps(run).find((item) => item.nodeId === run.currentNodeId)
-      const task = step?.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)
-      const flow = this.store.get().automations.find((item) => item.id === run.automationId)
-      if (
-        !flow?.policy?.startupRetry ||
-        (!flow.enabled && !run.deliveryKey?.startsWith('once:')) ||
-        !task ||
-        task.history.latestTurn?.id !== run.retryTurnId ||
-        task.status !== 'failed' ||
-        task.activeRunId ||
-        task.runPhase ||
-        task.pendingHarness ||
-        task.runAttempt?.promptAccepted !== false ||
-        task.queue?.length ||
-        task.subagentInbox?.length ||
-        this.tasks.hasWorkingFamily(task.id)
-      ) {
-        this.finish(
-          run.id,
-          'failed',
-          'Provider startup retry stopped because the task or retry setting changed. Review the run.',
-        )
+      if (!this.startupRetryStillAvailable(run)) {
+        this.finish(run, 'failed', startupRetryChanged)
         continue
       }
-      this.save({ ...run, status: 'running', retryAt: undefined, error: undefined })
+      this.save({
+        ...run,
+        status: 'running',
+        readyToAdvance: true,
+        retryAt: undefined,
+        error: undefined,
+      })
       this.launch(run.id)
     }
     const flows = this.store.get().automations

@@ -28,6 +28,7 @@ import {
   providerSchema,
   taskSchema,
   taskModelSelectionSchema,
+  automationReviewPromptSchema,
 } from '../../workspace.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from '../../conversation/workflow/questions.js'
@@ -224,6 +225,7 @@ export const jobRunStepSchema = mutableStruct({
   label: Schema.String,
   kind: Schema.Literals(['trigger', 'task', 'review']),
   waitsForCi: Schema.optional(Schema.Literal(true)),
+  reviewPrompt: Schema.optional(automationReviewPromptSchema),
   status: Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']),
   taskId: Schema.optional(Schema.String),
   /** The isolated worker turn whose result the step recorded. */
@@ -254,6 +256,26 @@ export const jobRunFailureSchema = mutableStruct({
 })
 export type JobRunFailure = typeof jobRunFailureSchema.Type
 export const jobRunSchema = mutableStruct({
+  queuedForAdmission: Schema.optional(Schema.Literal(true)),
+  waitingForStepPool: Schema.optional(Schema.String),
+  pause: Schema.optional(
+    mutableStruct({
+      phase: Schema.Literals(['afterStep', 'paused']),
+      at: Schema.String,
+    }),
+  ),
+  reviewDecisions: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        nodeId: Schema.String,
+        attempt: Schema.Number,
+        allow: Schema.Boolean,
+        reason: Schema.optional(maxValue(Schema.String, 4000)),
+        answeredAt: Schema.optional(Schema.String),
+        answeredBy: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
   mcpEvent: Schema.optional(
     mutableStruct({
       server: Schema.String,
@@ -415,6 +437,8 @@ export const snapshotSchema = mutableStruct({
   taskSearchScopeSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
   botsSupported: Schema.optional(Schema.Literal(true)),
+  projectFilePagingSupported: Schema.optional(Schema.Literal(true)),
+  projectRtfPreviewSupported: Schema.optional(Schema.Literal(true)),
   studioDataSourcesSupported: Schema.optional(Schema.Literal(true)),
   studioSourcePoliciesSupported: Schema.optional(Schema.Literal(true)),
   dashboardsSupported: Schema.optional(Schema.Literal(true)),
@@ -428,6 +452,8 @@ export const snapshotSchema = mutableStruct({
   harnessPluginsSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/agents/mcp/oauth` and `McpServer.oauth` for outbound MCP sign-in. */
   mcpOAuthSupported: Schema.optional(Schema.Literal(true)),
+  threadMcpOAuthSupported: Schema.optional(Schema.Literal(true)),
+  linkedThreadReadSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionsRevision: Schema.optional(Schema.Number),
   botBackupSupported: Schema.optional(Schema.Literal(true)),
   /** `unattendedSpendLimitUsd` preference, `Task.spendPause` and `/api/tasks/spend-limit/continue`. */
@@ -455,6 +481,11 @@ export const snapshotSchema = mutableStruct({
   automationStepInputsSupported: Schema.optional(Schema.Literal(true)),
   automationStepResultsSupported: Schema.optional(Schema.Literal(true)),
   automationStartupRetrySupported: Schema.optional(Schema.Literal(true)),
+  automationConcurrencySupported: Schema.optional(Schema.Literal(true)),
+  automationStepPoolsSupported: Schema.optional(Schema.Literal(true)),
+  automationPauseSupported: Schema.optional(Schema.Literal(true)),
+  automationReviewPromptSupported: Schema.optional(Schema.Literal(true)),
+  linkedCheckoutTemplatesSupported: Schema.optional(Schema.Literal(true)),
   browserTimezoneSupported: Schema.optional(Schema.Literal(true)),
   browserCertificatesSupported: Schema.optional(Schema.Literal(true)),
   localBrowserPreviewSupported: Schema.optional(Schema.Literal(true)),
@@ -709,9 +740,24 @@ export function approvalActions(
 }
 export type TerminalInfo = Schema.Schema.Type<typeof terminalSchema>
 export type JobRun = Schema.Schema.Type<typeof jobRunSchema>
+export const automationRunNeedsReview = (run?: JobRun) =>
+  run?.status === 'waiting' &&
+  !run.pause &&
+  !run.queuedForAdmission &&
+  !run.waitingForStepPool &&
+  !run.pipelineWait &&
+  !run.retryAt
 export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
 export type ProviderStatus = Schema.Schema.Type<typeof providerStatusSchema>
 const filesResponseSchema = mutableStruct({ files: taskSchema.fields.files })
+const rtfSpan = mutableStruct({
+  text: Schema.String,
+  bold: Schema.optional(Schema.Literal(true)),
+  italic: Schema.optional(Schema.Literal(true)),
+  underline: Schema.optional(Schema.Literal(true)),
+})
+export type RtfSpan = typeof rtfSpan.Type
+
 export const responses = {
   relaySettings: relaySettingsSchema,
   internetStatus: internetStatusSchema,
@@ -777,6 +823,9 @@ export const responses = {
     truncated: Schema.optional(Schema.Boolean),
     startLine: Schema.optional(Schema.Number),
     hasMore: Schema.optional(Schema.Boolean),
+    cursor: Schema.optional(Schema.String),
+    nextCursor: Schema.optional(Schema.String),
+    document: Schema.optional(Schema.Array(Schema.Array(rtfSpan))),
   }),
   gitActionState: mutableStruct({
     dirty: Schema.Boolean,
