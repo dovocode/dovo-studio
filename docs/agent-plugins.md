@@ -87,9 +87,18 @@ anything. Installing downloads the reviewed revision into a folder on the comput
 it with Codex when you chose Codex. If the marketplace resolves a new revision after your review,
 the install stops and asks for a new review.
 
-Only paired people can add marketplaces, install, change or remove plugins, and sign in. Agent
-credentials receive an error. Installations, the plugin files and the computer default belong to the
-paired computer. They do not synchronize to other computers.
+Paired people can add marketplaces and manage plugin activation and removal. Installations, the
+plugin files and the computer default belong to the paired computer.
+
+## Install with a Bot
+
+Ask a Bot to find and install a plugin from one of the computer's configured marketplaces. The Bot
+can browse and preview a plugin with `studio_extensions` using `{"action":"plugins"}` to get its
+commands. When it requests an install, Studio makes an approval in the Bot thread with the
+repository, revision, harness and plugin contents summary. Approve that request to install the
+reviewed revision. The plugin starts with activation off. Turn it on from **Agent plugins** or, for
+Claude Code, in the organization or project settings. A marketplace refresh during review requires a
+new preview and approval.
 
 ## Verify
 

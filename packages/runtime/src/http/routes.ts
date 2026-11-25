@@ -143,6 +143,7 @@ import { desktopUpdate } from './desktop-updates.js'
 import { serverUpdateStatus, startServerUpdate } from './server-updates.js'
 import { defaultShell } from '../terminal/shell.js'
 import { agentsRoute } from './endpoints/agents-routes.js'
+import { botPluginCommand, botPluginToolSchema } from '../agents/plugins/bot-plugins.js'
 import { terminalsRoute } from './endpoints/terminals-routes.js'
 import { jobsRoute } from './endpoints/jobs-routes.js'
 import { dashboardsRoute } from './endpoints/dashboards-routes.js'
@@ -499,14 +500,36 @@ export function route(
           Schema.Struct({
             taskId: Schema.String,
             parentRunId: Schema.String,
-            command: studioExtensionCommandSchema,
+            command: Schema.Union([studioExtensionCommandSchema, botPluginToolSchema]),
           }),
           yield* serviceResult(body(request)),
         )
+        if (input.command.action === 'plugins') {
+          const plugins = input.command.plugins
+          return yield* runtimeOperation(async () => {
+            const controller = new AbortController()
+            const abort = () => controller.abort()
+            request.socket.once('close', abort)
+            try {
+              return await botPluginCommand(
+                s,
+                run,
+                plugins,
+                AbortSignal.any([run.signal, controller.signal]),
+                () => {
+                  authorizeRunRoute(s, token, method, path, input)
+                },
+              )
+            } finally {
+              request.socket.off('close', abort)
+            }
+          })
+        }
+        const command = input.command
         return yield* runtimeOperation(() =>
           Promise.resolve(
             s.studioExtensions.command(
-              input.command,
+              command,
               () => {
                 authorizeRunRoute(s, token, method, path, input)
               },

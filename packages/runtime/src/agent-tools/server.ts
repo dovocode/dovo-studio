@@ -412,15 +412,25 @@ const tools: Array<
   {
     name: 'studio_extensions',
     description:
-      'Studio extensions. catalog provides UI SDK schemas. marketplace actions: list/read/sources/stage. Stage new IDs at revision 0. Install requires opt-in. CLI drafts require a paired user. Call needs id, contributionId and expectedRevision.',
+      'Studio extensions: catalog has UI SDK schemas. Marketplace: list/read/sources/stage. Stage at revision 0 for new IDs. Install needs opt-in; CLI drafts need a person. Call uses id, contributionId and expectedRevision. Bots: action plugins for plugin commands and install approval.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         action: {
           type: 'string' as const,
           enum: readOnly
-            ? ['catalog', 'marketplace', 'list', 'read', 'validate', 'call']
-            : ['catalog', 'marketplace', 'list', 'read', 'validate', 'stage', 'install', 'call'],
+            ? ['catalog', 'marketplace', 'list', 'read', 'validate', 'call', 'plugins']
+            : [
+                'catalog',
+                'marketplace',
+                'list',
+                'read',
+                'validate',
+                'stage',
+                'install',
+                'call',
+                'plugins',
+              ],
         },
         id: { type: 'string' as const },
         contributionId: { type: 'string' as const },
@@ -428,6 +438,7 @@ const tools: Array<
         expectedRevision: { type: 'integer' as const },
         manifest: { type: 'object' as const },
         marketplace: { type: 'object' as const },
+        plugins: { type: 'object' as const },
       },
       required: ['action'],
     },

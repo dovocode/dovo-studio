@@ -110,8 +110,10 @@ export const studioThreadsCommandSchema = Schema.Union([
     messageId: id,
     offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   }),
-  mutableStruct({ action: Schema.Literal('snapshot'), id }),
-  mutableStruct({ action: Schema.Literals(['watch', 'unwatch']), id }),
+  mutableStruct({
+    action: Schema.Literals(['snapshot', 'watch', 'unwatch', 'stop', 'archive', 'unarchive']),
+    id,
+  }),
   mutableStruct({ action: Schema.Literal('watches') }),
   mutableStruct({ action: Schema.Literal('search'), query: text, id: Schema.optional(id) }),
   mutableStruct({
@@ -145,7 +147,6 @@ export const studioThreadsCommandSchema = Schema.Union([
     id,
     allowPermissionIncrease: Schema.optional(Schema.Boolean),
   }),
-  mutableStruct({ action: Schema.Literals(['stop', 'archive', 'unarchive']), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),
 ])
 // Reuse the full definition in JSON Schema instead of advertising three copies.
@@ -202,8 +203,7 @@ export const studioAutomationsCommandSchema = Schema.Union([
 const selector = maxValue(minValue(Schema.String, 1), 4096)
 export const studioUICommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list') }),
-  mutableStruct({ action: Schema.Literal('snapshot'), sessionId: id }),
-  mutableStruct({ action: Schema.Literal('theme-read'), sessionId: id }),
+  mutableStruct({ action: Schema.Literals(['snapshot', 'theme-read']), sessionId: id }),
   mutableStruct({
     action: Schema.Literal('theme-set'),
     sessionId: id,

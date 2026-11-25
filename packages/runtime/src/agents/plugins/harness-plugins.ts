@@ -125,6 +125,7 @@ export class HarnessPlugins {
 
   command(
     command: HarnessPluginCommand,
+    authorizeInstall?: () => void,
   ): Promise<HarnessPluginState | HarnessPluginCatalog | HarnessPluginPreview> {
     switch (command.action) {
       case 'list':
@@ -140,7 +141,7 @@ export class HarnessPlugins {
       case 'remove-marketplace':
         return this.serial(() => this.removeMarketplace(command.marketplaceId))
       case 'install':
-        return this.serial(() => this.install(command))
+        return this.serial(() => this.install(command, authorizeInstall))
       case 'set-enabled':
         return this.serial(() => this.setEnabled(command.id, command.enabled))
       case 'remove':
@@ -267,7 +268,7 @@ export class HarnessPlugins {
     if (!entry) throw new HttpError(404, `${name} is not in this marketplace revision`)
     return entry
   }
-  private async preview(id: string, name: string): Promise<HarnessPluginPreview> {
+  async preview(id: string, name: string): Promise<HarnessPluginPreview> {
     const marketplace = this.marketplace(id)
     const entry = await this.entry(marketplace, name)
     const snapshot = await readRevision(this.fetcher, marketplace.repository, marketplace.revision)
@@ -282,7 +283,11 @@ export class HarnessPlugins {
     }
   }
 
-  private async install(command: Extract<HarnessPluginCommand, { action: 'install' }>) {
+  private async install(
+    command: Extract<HarnessPluginCommand, { action: 'install' }>,
+    authorize?: () => void,
+  ) {
+    authorize?.()
     const marketplace = this.marketplace(command.marketplaceId)
     if (marketplace.revision !== command.revision)
       throw new HttpError(
@@ -296,7 +301,8 @@ export class HarnessPlugins {
     const entry = await this.entry(marketplace, command.plugin)
     const snapshot = await readRevision(this.fetcher, marketplace.repository, marketplace.revision)
     const preview = await previewPlugin(this.fetcher, snapshot, entry)
-    const written = await writeSnapshot(this.fetcher, snapshot, entry, this.root)
+    const written = await writeSnapshot(this.fetcher, snapshot, entry, this.root, authorize)
+    authorize?.()
     if (command.harness === 'codex') {
       // An update registers the new revision before retiring the old one.
       await this.codex.install(written.directory, entry.name)

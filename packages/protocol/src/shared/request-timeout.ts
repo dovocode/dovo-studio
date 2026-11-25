@@ -29,6 +29,17 @@ export function runtimeRequestTimeout(path: string, input?: unknown) {
   )
     return 35000
   if (path === '/api/studio/session') return 30000
+  if (
+    path === '/api/agent/studio-extensions' &&
+    input &&
+    typeof input === 'object' &&
+    'command' in input &&
+    input.command &&
+    typeof input.command === 'object' &&
+    'action' in input.command &&
+    input.command.action === 'plugins'
+  )
+    return 750000
   if (path === '/api/studio/tools') {
     if (input && typeof input === 'object' && 'part' in input) {
       if (input.part === 'threads') return 900000

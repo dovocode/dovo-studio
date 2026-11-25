@@ -1,16 +1,22 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
   decode,
+  defaultTaskHarness,
   harnessPluginCatalogSchema,
   harnessPluginPreviewSchema,
   harnessPluginStateSchema,
+  SCRATCH_PROJECT_ID,
 } from '@dovo/protocol'
 import { startRuntime } from '../../index.js'
 import { fixture } from '../../testing/fixture.js'
 import { runtimeIntegration } from '../../testing/integration.js'
+import { taskToolsServer } from '../../agent-tools/config.js'
 import { codexAppServerPlugins, HarnessPlugins, type CodexPluginHost } from './harness-plugins.js'
 import { first, pluginRepository as repository, second } from '../../testing/plugin-marketplace.js'
 
@@ -49,19 +55,21 @@ async function setup(codex: CodexPluginHost = recordingCodex()) {
     codex,
     repo.fetcher,
   )
-  const post = (command: unknown, headers: Record<string, string> = {}) =>
-    fetch(`http://127.0.0.1:${runtime.port}/api/agents/plugins`, {
+  const request = (path: string, command: unknown, headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${human}`, 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(command),
     })
+  const post = (command: unknown, headers?: Record<string, string>) =>
+    request('/api/agents/plugins', command, headers)
   const command = async (body: unknown) => {
     const response = await post(body)
     const value: unknown = await response.json()
     if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(value)}`)
     return value
   }
-  return { runtime, repo, root, post, command, f }
+  return { runtime, repo, root, post, request, command, f }
 }
 
 it('adds a GitHub marketplace, reviews entries as data and installs a Claude plugin bound to the reviewed revision', async () => {
@@ -259,6 +267,161 @@ it('installs Codex plugins through the Codex plugin API and keeps agents out', a
   // Removing an already removed plugin is a no-op.
   await t.command({ action: 'remove', id })
   expect(codex.calls).toHaveLength(3)
+})
+
+it('matches Lean’s Bot plugin install policy through the real approval and marketplace endpoints', async () => {
+  const t = await setup()
+  const s = t.runtime.services
+  const now = new Date().toISOString()
+  const taskId = randomUUID()
+  const runId = randomUUID()
+  s.store.update(() => ({
+    ...t.f.workspace,
+    tasks: [
+      {
+        id: taskId,
+        repositoryId: SCRATCH_PROJECT_ID,
+        title: 'Plugin helper',
+        agentId: '',
+        harness: defaultTaskHarness('claude'),
+        execution: 'main',
+        status: 'running',
+        activeRunId: runId,
+        createdAt: now,
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+        bot: {
+          role: 'Plugin helper',
+          responsibilities: 'Find plugins.',
+          state: 'active',
+          revision: randomUUID(),
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+    ],
+  }))
+  const controller = new AbortController()
+  cleanups.push(() => controller.abort())
+  const issue = (readOnly: boolean) =>
+    s.runCredentials.issue(
+      {
+        taskId,
+        runId,
+        permissions: { provider: 'claude', permission: 'workspace-write' },
+        readOnly,
+        artifacts: false,
+        pipelineWatching: false,
+        pullRequestWatching: false,
+        deviceHub: false,
+        memoryScopes: [],
+      },
+      controller.signal,
+    )
+  const token = issue(false)
+  const config = taskToolsServer(taskId, t.runtime.port, token, '127.0.0.1', false, false, runId)
+  const client = new Client({ name: 'bot-plugin-fixture', version: '1' })
+  cleanups.push(() => client.close())
+  await client.connect(
+    new StdioClientTransport({ command: config.command, args: config.args, env: config.envValues }),
+  )
+  const tool = (plugins?: object) =>
+    client.callTool({
+      name: 'studio_extensions',
+      arguments: { action: 'plugins', ...(plugins ? { plugins } : {}) },
+    })
+  const added = decode(
+    harnessPluginStateSchema,
+    await t.command({ action: 'add-marketplace', repository: 'team/tools' }),
+  )
+  const marketplaceId = added.marketplaces[0].id
+  expect((await tool()).isError).not.toBe(true)
+  expect(JSON.stringify(await tool({ action: 'list' }))).toContain(marketplaceId)
+  expect(JSON.stringify(await tool({ action: 'catalog', marketplaceId }))).toContain('formatter')
+  const install = {
+    action: 'install',
+    marketplaceId,
+    plugin: 'formatter',
+    revision: first,
+    harness: 'claude',
+    enabled: false,
+  }
+  expect(JSON.stringify(await tool({ ...install, action: 'preview' }))).toContain(first)
+  const cases = readFileSync(
+    new URL('../../../../../verification/bot-workflows-cases.jsonl', import.meta.url),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          kind: string
+          input: {
+            writable: boolean
+            activeBefore: boolean
+            activeAtInstall: boolean
+            activate: boolean
+            reviewedRevisionMatches: boolean
+            approved: boolean
+            currentRevisionMatches: boolean
+          }
+          needsApproval: boolean
+          installed: boolean
+        },
+    )
+    .filter((entry) => entry.kind === 'plugin')
+  expect(cases).toHaveLength(8)
+  const pause = (paused: boolean) =>
+    s.store.updateTask(taskId, (task) => ({
+      ...task,
+      bot: { ...task.bot!, state: paused ? 'paused' : 'active' },
+    }))
+  let revision = first
+  const decide = async (input: (typeof cases)[number]['input'], reviewed: string) => {
+    await vi.waitFor(() => expect(s.approvals.list()).toHaveLength(1))
+    const [approval] = s.approvals.list()
+    expect(approval).toMatchObject({ taskId, title: 'Install Claude Code plugin formatter' })
+    expect(JSON.parse(approval.detail)).toMatchObject({
+      repository: 'team/tools',
+      revision: reviewed,
+      activation: 'Off',
+    })
+    expect(s.harnessPlugins.state().plugins).toEqual([])
+    pause(!input.activeAtInstall)
+    if (!input.currentRevisionMatches) {
+      t.repo.advance()
+      await t.command({ action: 'refresh-marketplace', marketplaceId })
+      revision = second
+    }
+    expect((await t.request('/api/approvals', { id: approval.id, allow: input.approved })).ok).toBe(
+      true,
+    )
+  }
+  for (const { input, needsApproval, installed } of cases) {
+    const reviewed = revision
+    pause(!input.activeBefore)
+    const command = {
+      ...install,
+      enabled: input.activate,
+      revision: input.reviewedRevisionMatches ? reviewed : second,
+    }
+    const installing = t
+      .request(
+        '/api/agent/studio-extensions',
+        { taskId, parentRunId: runId, command: { action: 'plugins', plugins: command } },
+        { Authorization: `Bearer ${issue(!input.writable)}` },
+      )
+      .then((response) => response.ok)
+    if (needsApproval) await decide(input, reviewed)
+    expect({ input, installed: await installing }).toEqual({ input, installed })
+    expect(s.approvals.list()).toEqual([])
+    expect(s.harnessPlugins.state().plugins).toHaveLength(installed ? 1 : 0)
+  }
+  expect(s.harnessPlugins.state().plugins).toMatchObject([{ name: 'formatter', enabled: false }])
+  expect(s.harnessPlugins.claudePluginPaths({})).toEqual([])
 })
 
 const codexAvailable = spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0

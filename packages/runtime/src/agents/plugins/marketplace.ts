@@ -312,6 +312,7 @@ export async function writeSnapshot(
   snapshot: RepositorySnapshot,
   entry: HarnessPluginEntry,
   root: string,
+  authorize?: () => void,
 ) {
   if (!entry.path) throw new Error(entry.unsupported ?? 'This plugin cannot be installed')
   const { prefix, files } = pluginFiles(snapshot, entry.path)
@@ -349,6 +350,7 @@ export async function writeSnapshot(
       }),
       { mode: 0o600 },
     )
+    authorize?.()
     try {
       await rename(staging, destination)
     } catch (error) {
