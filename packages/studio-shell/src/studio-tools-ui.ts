@@ -102,7 +102,7 @@ export function executeStudioUI(document: Document, command: StudioUICommand) {
         new KeyboardEvent('keyup', { key: command.key, code: command.key, bubbles: true }),
       )
     }
-  } else {
+  } else if (command.action === 'click' || command.action === 'fill') {
     const matches = document.querySelectorAll(command.selector)
     if (matches.length !== 1)
       throw new Error(`Expected one control; found ${matches.length}. Take a new snapshot.`)
@@ -134,6 +134,6 @@ export function executeStudioUI(document: Document, command: StudioUICommand) {
       element.dispatchEvent(new Event('input', { bubbles: true }))
       element.dispatchEvent(new Event('change', { bubbles: true }))
     }
-  }
+  } else throw new Error('Unsupported Studio UI action')
   return { ok: true }
 }

@@ -398,7 +398,7 @@ try {
     'The dialog is portaled outside the card',
   )
   await denied('Send', { action: 'click' })
-  await denied('New thread prompt', { action: 'type', text: 'Agent text' })
+  await denied('New thread prompt', { action: 'fill', text: 'Agent text' })
   await gate.getByRole('button', { name: 'Send', exact: true }).focus()
   assert.deepEqual(await tool({ action: 'key', key: 'Enter' }), {
     error: 'This control requires human review',
@@ -412,7 +412,7 @@ try {
   await portal.waitFor()
   await denied('Start', { action: 'click' })
   await denied('Refresh review', { action: 'click' })
-  await denied('Automation run context', { action: 'type', text: 'Agent text' })
+  await denied('Automation run context', { action: 'fill', text: 'Agent text' })
   assert.equal(
     await gate.getByLabel('Automation run context', { exact: true }).inputValue(),
     'Agent suggested context',
