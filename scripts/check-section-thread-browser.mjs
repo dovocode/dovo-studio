@@ -33,7 +33,7 @@ export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],i
       const [defaults,setDefaults]=useState(null);
       window.configureDefaults=value=>setDefaults(value===null?null:decode(runtimeDefaultsSchema,value));
       window.defaultHarness=defaultTaskHarness('codex');
-      const repositories=[{id:'repo',name:'Project',path:'/project',gitIdentity:'github.com/team/project'}];const [spaces,setSpaces]=useState({mac:{repositories,tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''},{id:'mac-bot',draft:'',bot:{role:'Assistant'}}]},remote:{repositories,tasks:[{id:'remote-a',draft:''}]}});
+      const repositories=[{id:'repo',name:'Project',path:'/project',gitIdentity:'github.com/team/project'}];const [spaces,setSpaces]=useState({mac:{repositories,tasks:[{id:'mac-a',draft:'',messages:[]},{id:'mac-b',draft:'',messages:[]},{id:'mac-bot',draft:'',messages:[],bot:{role:'Assistant'}}]},remote:{repositories,tasks:[{id:'remote-a',draft:'',messages:[]}]}});
       const switchRuntime=async id=>{if(window.holdSwitch){window.holdSwitch=false;await new Promise(resolve=>window.finishSwitch=resolve)}setRuntimeId(id);window.finishedSwitchId=id};
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
