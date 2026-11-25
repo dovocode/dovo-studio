@@ -79,7 +79,11 @@ try {
     window.linearSources = [
       {
         profile: { id: 'a', name: 'Computer A', connection: { address: 'http://a', token: 'a' } },
-        snapshot: { linearIssuesSupported: true },
+        snapshot: {
+          linearIssuesSupported: true,
+          linearKeySource: 'saved',
+          workspace: { repositories: [] },
+        },
       },
     ]
     window.linearReads = []
