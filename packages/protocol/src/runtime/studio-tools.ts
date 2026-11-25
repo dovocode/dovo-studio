@@ -158,9 +158,18 @@ const mcpAutomationEvent = mutableStruct({
 export type McpAutomationEvent = typeof mcpAutomationEvent.Type
 export const studioAutomationsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list') }),
-  mutableStruct({ action: Schema.Literal('read'), id }),
-  mutableStruct({ action: Schema.Literal('definition'), id }),
-  mutableStruct({ action: Schema.Literal('readRun'), id }),
+  mutableStruct({
+    action: Schema.Literals([
+      'read',
+      'definition',
+      'readRun',
+      'runs',
+      'cancel',
+      'retry',
+      'eventStatus',
+    ]),
+    id,
+  }),
   mutableStruct({
     action: Schema.Literal('restore'),
     id,
@@ -188,8 +197,6 @@ export const studioAutomationsCommandSchema = Schema.Union([
     id,
     event: mcpAutomationEvent,
   }),
-  mutableStruct({ action: Schema.Literals(['runs', 'cancel', 'retry']), id }),
-  mutableStruct({ action: Schema.Literal('eventStatus'), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),
 ])
 const selector = maxValue(minValue(Schema.String, 1), 4096)

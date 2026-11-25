@@ -665,7 +665,7 @@ export async function studioTool(
       const run = s.jobs.detail(command.id)
       const current = workspace.automations.find((item) => item.id === run.automationId)
       if (!current) throw new HttpError(404, 'Automation no longer exists')
-      if (command.action === 'definition')
+      if (command.action !== 'restore')
         return { automation: restorableAutomation(run.flow, current), expected: current }
       if (!isDeepStrictEqual(current, command.expected))
         throw new HttpError(409, 'Automation changed. Keep your draft and compare again.')
