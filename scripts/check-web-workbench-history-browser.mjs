@@ -257,7 +257,7 @@ try {
   }
   await other.close()
 
-  // Let the production cache finish its periodic write before simulating an outage.
+  // A cached thread summary restores the title. The composer needs the saved conversation.
   const cachedSnapshot = await page.evaluate(async (runtimeId) => {
     const database = await new Promise((resolve, reject) => {
       const open = indexedDB.open('dovo-read-cache', 1)
@@ -276,7 +276,11 @@ try {
             if (!cursor) return
             if (String(cursor.key).endsWith('.snapshot')) {
               const entry = JSON.parse(cursor.value).value
-              if (entry?.snapshot?.runtimeId === runtimeId) value = entry
+              if (
+                entry?.snapshot?.runtimeId === runtimeId &&
+                entry.snapshot.detailTaskIds?.includes('same-thread-id')
+              )
+                value = entry
             }
             cursor.continue()
           }
@@ -286,7 +290,7 @@ try {
         if (cached) return cached
         await new Promise((resolve) => setTimeout(resolve, 100))
       } while (Date.now() < deadline)
-      throw new Error('The second computer snapshot was not cached')
+      throw new Error('The second computer conversation was not cached')
     } finally {
       database.close()
     }
@@ -300,13 +304,13 @@ try {
   await page.reload()
   try {
     await thread(page, second, 'Second computer')
+    assert.match(await composer.textContent(), /Draft on the second computer/)
   } catch (error) {
     throw new Error('Offline thread did not open: ' + (await page.locator('body').innerText()), {
       cause: error,
     })
   }
   assert.ok(offlineRequests > 0)
-  assert.match(await composer.textContent(), /Draft on the second computer/)
   assert.deepEqual(errors, [])
   console.log('Web workbench uses same-owner thread URLs for Back, Forward, reload, and a new tab.')
   const pullComputer = await start('PR computer', true)
