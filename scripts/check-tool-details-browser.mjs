@@ -1,13 +1,35 @@
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+
+const archiveFixture = `
+const date=second=>'2026-10-02T12:00:0'+second+'.000Z';
+const reasoning=(scope,label,second)=>({id:label,scope,time:date(second),kind:'reasoning',summary:'Reasoning',payload:JSON.stringify({turnId:'turn',toolId:label,status:'completed',reasoning:{text:label}})});
+window.activityReads=0;
+const readActivity=(_path,{scope})=>Effect.sync(()=>{
+  window.activityReads++;
+  const saved=reasoning(scope,'Saved conversation reasoning',1);
+  return {events:window.archiveStage==='fresh'?[saved,reasoning(scope,'Fresh conversation reasoning',3)]:[saved]};
+});
+function ArchiveFixture(){
+  const [stage,setStage]=useState('before');
+  window.setArchiveStage=stage=>{window.archiveStage=stage;setStage(stage)};
+  const task={id:stage==='archive'?'archive':'bot',status:stage==='fresh'?'running':'review',
+    bot:stage==='before'||stage==='archive'?undefined:{conversationArchivedAt:date(2)}};
+  return <ActivityScenario task={task} />;
+}
+`
 const built = await build({
   stdin: {
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
+import {Effect} from 'effect';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
+import {WorkspaceContext} from '../studio-core/src/workspace/context';
 import {updateAppPreferences} from '@dovo/studio-core';
-import {TaskActivity} from './src/chat/thread/task-activity.tsx';import {recentTools,compactActivityEvents} from '@dovo/protocol';
+import {TaskActivity,useTaskActivity} from './src/chat/thread/task-activity.tsx';import {recentTools,compactActivityEvents} from '@dovo/protocol';
+${archiveFixture}
+function ActivityScenario({task}){const {tools,error}=useTaskActivity(task.id,task.status==='running',task.bot?.conversationArchivedAt);return <TaskActivity tools={tools} error={error}/>;}
 const payload=JSON.stringify({event:{item:{type:'command_execution',command:'echo command-visible',aggregatedOutput:'OUTPUT-ONLY-WHEN-ENABLED'}}});
 const tools=[{id:'command',summary:'Command',status:'completed',time:'2026-10-02T12:00:00Z',payload}];
 const museTool=(id,tool,args,extra={})=>({id,summary:tool,status:'completed',time:'2026-10-02T12:00:00Z',payload:JSON.stringify({event:{item:{kind:'toolCall',tool,args:JSON.stringify(args),...extra}}})});
@@ -20,7 +42,11 @@ const museTools=[
 updateAppPreferences({toolActivity:'expanded',showToolDetails:false});
 window.setDetails=enabled=>updateAppPreferences({showToolDetails:enabled});
 window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[working,setWorking]=useState(false);window.workingCase=mode=>{updateAppPreferences({toolActivity:mode==='hidden'?'hidden':'collapsed',showToolDetails:false});setFailed(false);setSource(mode==='tool'||mode==='hidden'?tools.map(tool=>({...tool,status:'running'})):[]);setWorking(mode!=='done')};const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.renderPatch=item=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setSource([{id:'patch',summary:'Codex patch',status:'completed',time:'2026-10-02T12:00:00Z',payload:JSON.stringify({event:{item}})}])};window.museCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);setSource(museTools)};window.discoveryCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:true});setFailed(false);setSource(recentTools([{id:'search-start',time:'2026-10-02T12:00:00Z',kind:'tool',scope:'task',summary:'ToolSearch',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'running',event:{message:{content:[{type:'server_tool_use',id:'search',name:'ToolSearch',input:{query:'browser profiles'}}]}}})},{id:'search-result',time:'2026-10-02T12:00:01Z',kind:'tool',scope:'task',summary:'Tool result',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'completed',event:{message:{content:[{type:'tool_search_tool_result',tool_use_id:'search',content:{type:'tool_search_tool_search_result',tool_references:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}]}}]}}})}]))};window.interruptTool=()=>{updateAppPreferences({toolActivity:'hidden'});setFailed(false);setSource(tools.map(tool=>({...tool,status:'interrupted'})))};window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity working={working} tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
-`,
+const archiveRoot=createRoot(document.getElementById('archive'));
+window.renderArchiveActivity=()=>{
+  updateAppPreferences({toolActivity:'expanded',showToolDetails:true});
+  archiveRoot.render(<ApplicationStateProvider><WorkspaceContext.Provider value={{connected:true,connection:null,requestEffect:readActivity}}><ArchiveFixture/></WorkspaceContext.Provider></ApplicationStateProvider>);
+};`,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
   },
@@ -40,6 +66,7 @@ export const View=({children})=><div>{children}</div>;
 export const Text=({children})=><span>{children}</span>;
 export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button disabled={disabled} aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
 export const ActivityIndicator=()=>null,Icon=()=>null;
+export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
 export const useTheme=()=>({colors:{muted:'#777',text:'#222'},styles:{muted:{},error:{}}});
 `
 const mobileBuilt = await bundleBrowser(
@@ -48,7 +75,15 @@ const mobileBuilt = await bundleBrowser(
       resolveDir: root + 'apps/mobile',
       loader: 'tsx',
       contents: `
-import {createRoot} from 'react-dom/client';import {ToolActivityRow} from './src/tasks/conversation/components/tool-activity-row';import {recentTools} from '@dovo/protocol';
+import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
+import {ToolActivityRow} from './src/tasks/conversation/components/tool-activity-row';import {recentTools} from '@dovo/protocol';
+import {TaskActivity} from './src/tasks/conversation/components/activity';
+import {useToolActivity} from './src/tasks/conversation/state/use-tool-activity';
+${archiveFixture}
+window.readActivity=readActivity;
+function ActivityScenario({task}){const activity=useToolActivity(task.id,true,task.status==='running',task.bot?.conversationArchivedAt);return <TaskActivity task={task} {...activity}/>;}
+const archiveRoot=createRoot(document.getElementById('archive'));
+window.renderArchiveActivity=()=>archiveRoot.render(<ArchiveFixture/>);
 const root=createRoot(document.getElementById('app'));
 window.renderDiscovery=(failed=false)=>{
  const content=failed?{type:'tool_search_tool_result_error',error_code:'unavailable'}:{type:'tool_search_tool_search_result',tool_references:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}]};
@@ -90,13 +125,30 @@ window.renderDiscovery=(failed=false)=>{
       contents: controls,
     })),
     {
+      path: 'react-native',
+      importer: mobile + 'tasks/conversation/state/',
+      contents: controls,
+    },
+    {
+      path: '../../../runtime/connection/provider',
+      importer: mobile + 'tasks/conversation/state/',
+      contents:
+        'export const useRuntime=()=>({readEffect:window.readActivity,connected:true,connection:null});',
+    },
+    {
+      path: '../../../shell/navigation',
+      importer: mobile + 'tasks/conversation/state/',
+      contents: 'export const useNavigation=()=>({focused:true});',
+    },
+    {
       path: '../../../runtime/preferences/app-preferences',
-      importer: mobile + 'tasks/conversation/components/',
-      contents: 'export const useMobilePreferences=()=>({showToolDetails:true});',
+      importer: mobile + 'tasks/conversation/',
+      contents:
+        "export const useMobilePreferences=()=>({showToolDetails:true,toolActivity:'expanded'});",
     },
     {
       path: '../../../runtime/state/application-state',
-      importer: mobile + 'tasks/conversation/components/',
+      importer: mobile + 'tasks/conversation/',
       contents: "export {useState as useApplicationState} from 'react';",
     },
     {
@@ -130,12 +182,28 @@ const codexPatch = {
   ],
 }
 const browser = await chromium.launch({ headless: true })
+const markup = '<div id="app"></div><div id="archive"></div>'
+const checkArchive = async (page) => {
+  await page.evaluate(() => window.renderArchiveActivity())
+  const activity = page.locator('#archive')
+  const previous = activity.getByText('Saved conversation reasoning', { exact: true })
+  await previous.waitFor()
+  const reads = await page.evaluate(() => window.activityReads)
+  await page.evaluate(() => window.setArchiveStage('archived'))
+  await page.waitForFunction((count) => window.activityReads > count, reads)
+  await previous.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setArchiveStage('fresh'))
+  await activity.getByText('Fresh conversation reasoning', { exact: true }).waitFor()
+  if (await previous.count()) throw new Error('A stale activity read restored archived reasoning.')
+  await page.evaluate(() => window.setArchiveStage('archive'))
+  await previous.waitFor()
+}
 try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('https://dovo.test/**', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+    route.fulfill({ contentType: 'text/html', body: markup }),
   )
   await page.goto('https://dovo.test/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
@@ -212,12 +280,13 @@ try {
   await absent()
   await page.evaluate(() => window.workingCase('done'))
   await page.getByRole('status').waitFor({ state: 'detached' })
+  await checkArchive(page)
   if (errors.length) throw new Error(errors.join('\n'))
   const mobilePage = await browser.newPage()
   const mobileErrors = []
   mobilePage.setDefaultTimeout(5000)
   mobilePage.on('pageerror', (error) => mobileErrors.push(error.message))
-  await mobilePage.setContent('<div id="app"></div>')
+  await mobilePage.setContent(markup)
   await mobilePage.addScriptTag({ content: mobileBuilt.outputFiles[0].text })
   await mobilePage.getByRole('button', { name: 'Find tools browser profiles', exact: true }).click()
   await mobilePage.getByText('mcp__dovo_task__studio_browsers', { exact: true }).waitFor()
@@ -230,10 +299,9 @@ try {
   await mobilePage.getByRole('button', { name: 'Codex patch', exact: true }).click()
   for (const line of ['+added file', '+new line', '-removed file'])
     await mobilePage.getByText(line, { exact: true }).waitFor()
+  await checkArchive(mobilePage)
   if (mobileErrors.length) throw new Error(mobileErrors.join('\n'))
-  console.log(
-    'Tool details and discovery pass on desktop and mobile adapter, including typed errors and original queries.',
-  )
+  console.log('Tool details, discovery and Bot archive activity pass on desktop and mobile.')
 } finally {
   await browser.close()
 }

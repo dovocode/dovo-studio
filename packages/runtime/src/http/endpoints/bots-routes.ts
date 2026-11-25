@@ -242,12 +242,14 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
               historyRevision: (current.historyRevision ?? 0) + 1,
               bot: {
                 ...bot,
+                conversationArchivedAt: at,
                 contextResets: undefined,
                 compaction: undefined,
                 revision,
                 updatedAt: at,
               },
             }))
+            s.activity.archiveConversation(task.id, id)
             s.activity.add('task', task.id, 'Bot conversation archived', { archiveId: id })
           })
           return result(s, input.id)

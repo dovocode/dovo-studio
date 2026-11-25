@@ -7,7 +7,7 @@ const McpAppView = lazy(() =>
 const ArtifactCard = lazy(() =>
   import('../artifacts').then((module) => ({ default: module.ArtifactCard })),
 )
-import { runtimeSyncOnline, watchRuntimeActivity } from '@dovo/protocol'
+import { conversationActivityEvents, runtimeSyncOnline, watchRuntimeActivity } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
 import { memo, useEffect, useId, useMemo } from 'react'
@@ -45,7 +45,7 @@ import {
   taskActivityOutcome,
   type ActivityState,
 } from './task-activity-state'
-export function useTaskActivity(taskId: string, running = false) {
+export function useTaskActivity(taskId: string, running: boolean, archivedAt?: string) {
   const { requestEffect: request, connected, connection, activeRuntimeId } = useWorkspace()
   const projectTools = useMemo(createRecentTools, [])
   const { showToolDetails } = useAppPreferences()
@@ -54,6 +54,7 @@ export function useTaskActivity(taskId: string, running = false) {
     clientScopeKey(connection),
     taskId,
     showToolDetails,
+    archivedAt,
   ])
   const [snapshot, setSnapshot] = useApplicationState<{
     identity: string
@@ -79,7 +80,7 @@ export function useTaskActivity(taskId: string, running = false) {
                 identity,
                 events: retainActivityEvents(
                   previous.identity === identity ? previous.events : [],
-                  events,
+                  conversationActivityEvents(events, archivedAt),
                 ),
                 error: '',
               }))
@@ -95,16 +96,18 @@ export function useTaskActivity(taskId: string, running = false) {
         { scope: taskId, kind: 'task-activity', includeDetails: showToolDetails },
         activitySchema,
       )
-      if (!stopped && !runtimeSyncOnline(connection, taskId))
+      if (!stopped && !runtimeSyncOnline(connection, taskId)) {
+        const incoming = conversationActivityEvents(result.events, archivedAt)
         setSnapshot((previous) => {
           const events =
             previous.identity === identity
-              ? retainActivityEvents(previous.events, result.events)
-              : result.events
+              ? retainActivityEvents(previous.events, incoming)
+              : incoming
           return previous.identity === identity && !previous.error && events === previous.events
             ? previous
             : { identity, events, error: '' }
         })
+      }
     })
     const polling = startPolling(load, {
       interval: running ? 2000 : 10000,
@@ -122,7 +125,7 @@ export function useTaskActivity(taskId: string, running = false) {
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }
-  }, [request, connected, taskId, identity, running, showToolDetails])
+  }, [request, connected, taskId, identity, running, showToolDetails, archivedAt])
 
   return {
     tools: useMemo(

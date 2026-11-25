@@ -55,6 +55,10 @@ export function retainActivityEvents(previous: Event[], next: Event[]): Event[] 
   return previous.every((event, index) => sameActivityEvent(event, next[index]!)) ? previous : next
 }
 
+export function conversationActivityEvents(events: Event[], archivedAt: string | undefined) {
+  return archivedAt ? events.filter((event) => event.time > archivedAt) : events
+}
+
 type Tool = Event & {
   startedAt?: string
   status: string

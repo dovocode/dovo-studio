@@ -320,6 +320,7 @@ export function TaskConversation({
           ) : (
             <ArtifactOpenContext value={onArtifact}>
               <ChatThread
+                conversationArchivedAt={task.bot?.conversationArchivedAt}
                 emptyState={
                   welcome ? (
                     <TaskEmptyState

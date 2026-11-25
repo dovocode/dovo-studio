@@ -99,6 +99,7 @@ export function ChatThread({
   onManagePulls,
   onReadingHistory,
   active = true,
+  conversationArchivedAt,
   footer,
   emptyState,
 }: {
@@ -121,6 +122,7 @@ export function ChatThread({
   onRevealHandled?: () => void
   onManagePulls?: () => void
   onReadingHistory?: () => void
+  conversationArchivedAt?: string
   footer?: ReactNode
   emptyState?: ReactNode
   active?: boolean
@@ -296,7 +298,7 @@ export function ChatThread({
     () => task.messages.filter((message) => message.role === 'assistant' && message.bookmarked),
     [task.messages],
   )
-  const activity = useTaskActivity(task.id, task.status === 'running')
+  const activity = useTaskActivity(task.id, task.status === 'running', conversationArchivedAt)
   const turns = useMemo(() => conversationMessageTurns(task), [task.turns, task.messages])
   const retainActivityGroups = useMemo(() => {
     let previous = {

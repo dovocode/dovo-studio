@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
-import { retainActivityEvents, type activitySchema } from './activity'
+import { readFileSync } from 'node:fs'
+import { conversationActivityEvents, retainActivityEvents, type activitySchema } from './activity'
 import type { Schema } from 'effect'
 
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
@@ -31,4 +32,22 @@ it('publishes same-ID changes to every event field, and changes in ordering or l
   expect(retainActivityEvents(previous, [])).toEqual([])
   const added = [event, second]
   expect(retainActivityEvents(previous, added)).toBe(added)
+})
+
+it('matches Lean’s cutoff for activity from an archived conversation', () => {
+  const cases = readFileSync(
+    new URL('../../../../verification/bot-workflows-cases.jsonl', import.meta.url),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { kind: string; time: number; visible: boolean })
+    .filter((entry) => entry.kind === 'archive')
+  expect(cases).toHaveLength(9)
+  const date = (ms: number) => new Date(ms).toISOString()
+  for (const { time, visible } of cases) {
+    const events = [{ ...event, time: date(time) }]
+    expect(conversationActivityEvents(events, date(1))).toEqual(visible ? events : [])
+    expect(conversationActivityEvents(events, undefined)).toBe(events)
+  }
 })

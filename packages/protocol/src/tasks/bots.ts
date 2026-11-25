@@ -89,6 +89,8 @@ export const botSchema = mutableStruct({
   compaction: Schema.optional(mutableStruct({ sessionId: Schema.String, attempts: Schema.Number })),
   /** Excluded ranges stay in the saved transcript. Only future model context changes. */
   contextResets: Schema.optional(mutableArray(botContextResetSchema)),
+  /** Reject cached activity from before the last conversation archive. */
+  conversationArchivedAt: Schema.optional(isoDateTime(Schema.String)),
   role: botRoleSchema,
   responsibilities: botResponsibilitiesSchema,
   state: botStateSchema,

@@ -167,6 +167,7 @@ export function createServices(
     },
     { runtimeId },
   )
+  activity.recoverBotConversationActivity(store)
   artifacts = new Artifacts(db, store, activity, () => preferences.get())
   const forgeCli = new ForgeCliAccounts(() => commands.get())
   const forges = new ForgeConnections(

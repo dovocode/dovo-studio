@@ -242,7 +242,12 @@ export function ConversationProvider({
   useEffect(() => {
     if ((!visible || answeringQuestion || task.archivedAt) && dictating) finishDictation()
   }, [visible, answeringQuestion, task.archivedAt, dictating, finishDictation])
-  const activity = useToolActivity(task.id, visible && !temporary, task.status === 'running')
+  const activity = useToolActivity(
+    task.id,
+    visible && !temporary,
+    task.status === 'running',
+    task.bot?.conversationArchivedAt,
+  )
   const pendingMessages = useMemo(
     () => actions.pendingMessages.filter((pending) => pending.destination === 'thread'),
     [actions.pendingMessages],

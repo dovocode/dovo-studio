@@ -11,7 +11,7 @@ import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
 import type { ChatMessage, TaskSummary } from '@dovo/protocol'
-import type { WorkspaceChange } from './workspace.js'
+import type { WorkspaceChange, WorkspaceStore } from './workspace.js'
 import { RemoteMcpEvents } from './remote-mcp-events.js'
 export function redact(value: unknown): unknown {
   if (Array.isArray(value))
@@ -171,6 +171,58 @@ export class Activity {
       Schema.UndefinedOr(record),
       this.db.prepare('SELECT * FROM activity WHERE scope=? AND id=?').get(scope, id),
     )?.payload
+  }
+  /** Conversation rows move with the transcript. Artifact tiles follow their own lifecycle. */
+  archiveConversation(scope: string, archiveId: string, through?: string) {
+    const changes = this.db
+      .prepare(
+        `UPDATE activity SET scope=? WHERE scope=?
+          AND kind IN ('tool','reasoning','task-activity') AND id NOT GLOB 'artifact:*'
+          ${through === undefined ? '' : 'AND time <= ?'}`,
+      )
+      .run(archiveId, scope, ...(through === undefined ? [] : [through])).changes
+    if (!changes) return
+    this.changed(scope)
+    this.changed(archiveId)
+  }
+  /** Repair archives made before activity moved with the transcript. */
+  recoverBotConversationActivity(store: WorkspaceStore) {
+    const tasks = store.get().tasks
+    const archivesByBot = new Map<string, Map<string, string>>()
+    for (const task of tasks) {
+      if (!task.botConversation || !task.archivedAt) continue
+      const { botId } = task.botConversation
+      const archives = archivesByBot.get(botId) ?? new Map()
+      archives.set(task.id, task.archivedAt)
+      archivesByBot.set(botId, archives)
+    }
+    for (const { id, bot, historyRevision } of tasks) {
+      if (!bot || bot.conversationArchivedAt || !historyRevision) continue
+      const archives = archivesByBot.get(id) ?? new Map<string, string>()
+      // A deleted archive may still have activity under the Bot's ID.
+      const audit = this.db
+        .prepare(
+          `SELECT time, json_extract(payload,'$.archiveId') AS archiveId FROM activity
+           WHERE scope=? AND kind='task' AND summary='Bot conversation archived'
+             AND CASE WHEN json_valid(payload) THEN json_type(payload,'$.archiveId')='text' ELSE 0 END`,
+        )
+        .all(id)
+      for (const { archiveId, time } of decode(
+        mutableArray(mutableStruct({ archiveId: Schema.String, time: Schema.String })),
+        audit,
+      ))
+        if (archiveId !== id && !archives.has(archiveId)) archives.set(archiveId, time)
+      const ordered = [...archives].sort((a, b) => a[1].localeCompare(b[1]))
+      const latest = ordered.at(-1)?.[1]
+      if (!latest) continue
+      store.transaction(() => {
+        for (const [archiveId, through] of ordered) this.archiveConversation(id, archiveId, through)
+        store.updateTask(id, (task) => ({
+          ...task,
+          bot: { ...bot, conversationArchivedAt: latest },
+        }))
+      })
+    }
   }
   /** Read current records, including tools outside the first activity page. App-owned work is excluded. */
   finishProviderTools(

@@ -4,6 +4,7 @@ import { AppState } from 'react-native'
 import { Effect } from 'effect'
 import {
   activitySchema,
+  conversationActivityEvents,
   retainActivityEvents,
   runtimeSyncOnline,
   watchRuntimeActivity,
@@ -14,11 +15,16 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { useNavigation } from '../../../shell/navigation'
 import type { ToolEvents } from './tool-events'
 
-export function useToolActivity(taskId: string, visible: boolean, running = false) {
+export function useToolActivity(
+  taskId: string,
+  visible: boolean,
+  running: boolean,
+  archivedAt?: string,
+) {
   const { focused } = useNavigation()
   const { readEffect, connected, connection } = useRuntime()
   const { showToolDetails } = useMobilePreferences()
-  const identity = JSON.stringify([clientScopeKey(connection), taskId, showToolDetails])
+  const identity = JSON.stringify([clientScopeKey(connection), taskId, showToolDetails, archivedAt])
   const [state, setState] = useApplicationState<{
     identity: string
     events: ToolEvents
@@ -37,7 +43,7 @@ export function useToolActivity(taskId: string, visible: boolean, running = fals
                 identity,
                 events: retainActivityEvents(
                   previous.identity === identity ? previous.events : [],
-                  incoming,
+                  conversationActivityEvents(incoming, archivedAt),
                 ),
                 error: '',
               }))
@@ -54,7 +60,10 @@ export function useToolActivity(taskId: string, visible: boolean, running = fals
       )
       if (!stopped && !runtimeSyncOnline(connection, taskId))
         setState((previous) => {
-          const incoming = data.events.filter((event) => event.scope === taskId)
+          const incoming = conversationActivityEvents(
+            data.events.filter((event) => event.scope === taskId),
+            archivedAt,
+          )
           const events =
             previous.identity === identity
               ? retainActivityEvents(previous.events, incoming)
@@ -84,7 +93,17 @@ export function useToolActivity(taskId: string, visible: boolean, running = fals
       resume.remove()
       void polling.stop()
     }
-  }, [readEffect, connected, taskId, identity, visible, focused, running, showToolDetails])
+  }, [
+    readEffect,
+    connected,
+    taskId,
+    identity,
+    visible,
+    focused,
+    running,
+    showToolDetails,
+    archivedAt,
+  ])
   // Render never exposes a previous computer or task while the new request is pending.
   return state.identity === identity
     ? { events: state.events, error: state.error }

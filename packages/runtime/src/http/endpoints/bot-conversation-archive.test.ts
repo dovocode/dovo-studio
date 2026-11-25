@@ -1,6 +1,8 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import {
+  activitySchema,
   botResultSchema,
   conversationPageSchema,
   decode,
@@ -9,6 +11,14 @@ import {
 } from '@dovo/protocol'
 import { setupBotRuntime } from '../../testing/bots'
 import { waitForRuntime } from '../../testing/integration'
+
+const readActivity = async (f: Awaited<ReturnType<typeof setupBotRuntime>>, scope: string) =>
+  decode(
+    activitySchema,
+    await (
+      await f.request('/api/activity', { scope, kind: 'task-activity', includeDetails: true })
+    ).json(),
+  ).events
 
 it('atomically archives the complete conversation under the same Bot and starts a fresh provider session', async () => {
   const f = await setupBotRuntime()
@@ -50,6 +60,12 @@ it('atomically archives the complete conversation under the same Bot and starts 
     nativeTodos: [{ id: 'old', text: 'Old checklist', status: 'completed' }],
   }))
   const before = s.store.task(id)
+  const turnId = before.turns!.at(-1)!.id
+  s.activity.add('reasoning', id, 'Old reasoning', { turnId }, 'old-reasoning')
+  s.activity.add('tool', id, 'Old command', { turnId }, 'old-command')
+  s.activity.add('task-activity', id, 'Old unassigned activity', {}, 'old-unassigned')
+  s.activity.add('task', id, 'Bot settings audit', {}, 'bot-settings-audit')
+  s.activity.add('tool', id, 'Existing artifact tile', {}, 'artifact:existing:1')
   const routine = {
     id: 'saved-routine',
     name: 'Saved routine',
@@ -70,6 +86,15 @@ it('atomically archives the complete conversation under the same Bot and starts 
   const fresh = s.store.task(id)
   const archive = s.store.get().tasks.find((task) => task.botConversation?.botId === id)!
   const saved = s.store.task(archive.id)
+  expect((await readActivity(f, id)).map((event) => event.id)).toEqual(['artifact:existing:1'])
+  expect((await readActivity(f, saved.id)).map((event) => event.id).sort()).toEqual([
+    'old-command',
+    'old-reasoning',
+    'old-unassigned',
+  ])
+  expect(s.activity.list('', 'task', 0, id).events.map((event) => event.id)).toContain(
+    'bot-settings-audit',
+  )
   expect(saved.archivedAt).toBeTruthy()
   expect(saved.createdAt).toBe(saved.archivedAt)
   expect(saved.bot).toBeUndefined()
@@ -126,6 +151,8 @@ it('atomically archives the complete conversation under the same Bot and starts 
     ),
   ).toContain(saved.id)
   await f.restart()
+  expect(await readActivity(f, id)).toEqual([])
+  expect(await readActivity(f, saved.id)).toHaveLength(3)
   await send('Fresh conversation request')
   expect(f.inputs.at(-1)?.sessionId).toBeUndefined()
   expect(f.inputs.at(-1)?.prompt).toContain('Fresh conversation request')
@@ -197,6 +224,73 @@ it('rejects stale, empty and busy conversations without losing history', async (
   ).toBe(409)
   expect(s.store.task(created.id).messages).toEqual([{ id: 'old', role: 'user', text: 'Keep me' }])
   expect(s.store.get().tasks.filter((task) => task.botConversation)).toEqual([])
+})
+
+it('recovers old archives and matches Lean’s activity ownership and cutoff cases', async () => {
+  const f = await setupBotRuntime()
+  const { id } = decode(botResultSchema, await (await f.create()).response.json())
+  const s = f.runtime.services
+  const cases = readFileSync(
+    new URL('../../../../../verification/bot-workflows-cases.jsonl', import.meta.url),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          kind: string
+          activity: 'conversation' | 'audit' | 'artifact'
+          time: number
+          owner: 'bot' | 'archive'
+          visible: boolean
+        },
+    )
+    .filter((entry) => entry.kind === 'archive')
+  expect(cases).toHaveLength(9)
+  s.store.updateTaskHistory(id, (task) => ({
+    ...task,
+    messages: [{ id: 'old', role: 'user', text: 'Old conversation' }],
+  }))
+  expect(
+    (
+      await f.request('/api/bots/archive-conversation', {
+        id,
+        expectedRevision: s.store.task(id).bot!.revision,
+        expectedLastMessageId: 'old',
+      })
+    ).status,
+  ).toBe(200)
+  const archive = s.store.get().tasks.find((task) => task.botConversation?.botId === id)!
+  const cutoff = archive.archivedAt!
+  s.store.updateTask(id, (task) => ({
+    ...task,
+    bot: { ...task.bot!, conversationArchivedAt: undefined },
+  }))
+  for (const { activity, time } of cases) {
+    const eventId = `${activity}:${time}`
+    const kind = activity === 'conversation' ? 'reasoning' : activity === 'audit' ? 'task' : 'tool'
+    const stamp = new Date(Date.parse(cutoff) + time - 1).toISOString()
+    s.activity.add(kind, id, 'Recorded activity', {}, eventId)
+    s.db.prepare('UPDATE activity SET time=? WHERE id=?').run(stamp, eventId)
+  }
+  // All display rows are still owned by the Bot, as in a database from the older runtime.
+  await f.restart()
+  expect(f.runtime.services.store.task(id).bot?.conversationArchivedAt).toBe(cutoff)
+  const remaining = await readActivity(f, id)
+  const archived = await readActivity(f, archive.id)
+  expect(archived.map((event) => event.id).sort()).toEqual(['conversation:0', 'conversation:1'])
+  expect(remaining).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'conversation:2' })]),
+  )
+  for (const { activity, time, owner, visible } of cases) {
+    // Artifact tiles are regenerated from the artifact store on restart. The migration
+    // cannot move them. A newer conversation event also belongs to the still-live Bot.
+    if (activity === 'artifact') continue
+    const eventId = `${activity}:${time}`
+    const row = f.runtime.services.db.prepare('SELECT scope FROM activity WHERE id=?').get(eventId)
+    expect(row).toEqual({ scope: owner === 'archive' && !visible ? archive.id : id })
+  }
 })
 
 it('rolls back the archive when a conversation attachment cannot be copied', async () => {

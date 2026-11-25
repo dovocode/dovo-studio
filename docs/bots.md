@@ -64,6 +64,10 @@ The runtime stores a 128-pixel square WebP thumbnail without image metadata.
 Bots do not have Settle, Snooze, Archive or Delete thread controls. Use Pause/Resume and Delete Bot
 in Bot settings. The runtime also rejects settling, snoozing and archiving a Bot.
 
+Use **Archive and start new** in the Bot header to save the conversation in **Side threads**. The
+saved conversation keeps its reasoning summaries and command activity. The Bot starts a fresh
+conversation with the same settings, memory, routines, and unsent draft.
+
 ## Reset context
 
 Bot replies offer **Reset context to here** instead of Fork. Finish or stop current work and clear
