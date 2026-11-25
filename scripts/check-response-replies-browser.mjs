@@ -31,6 +31,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
               ['./turn-checkpoint', 'TurnCheckpoint'],
               ['../composer/message-attachments', 'MessageAttachments'],
               ['./message-copy', 'MessageCopy'],
+              ['./quote-selection', 'QuoteSelection'],
               ['../actions/run-in-terminal', 'RunInTerminal'],
               ['../actions/fork-turn', 'ForkTurn'],
               ['../actions/fork-message', 'ForkMessage'],
@@ -108,6 +109,16 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
               importer: folder,
               contents: `export const nativeReferenceMessagesAvailable=false;export const NativeReferenceMessage=()=>null;`,
             },
+            {
+              path: '../../composer/use-composer-dictation',
+              importer: folder,
+              contents: `export const useComposerDictation=({draft})=>({active:false,available:false,update:draft.update});`,
+            },
+            {
+              path: '../../../ui/controls/field',
+              importer: folder,
+              contents: `export const Field=({label,value,onChangeText})=><textarea aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
+            },
             { path: 'expo-router', contents: `export const router={};` },
             {
               path: '../../../shell/task-route',
@@ -154,6 +165,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
       await source.press('Home')
       for (let index = 0; index < 4; index++) await source.press('ArrowRight')
       for (let index = 0; index < 10; index++) await source.press('Shift+ArrowRight')
+      await page.getByRole('textbox', { name: 'Comment on selected text' }).fill('Check this part')
       await page.getByRole('button', { name: 'Add quote to draft' }).click()
       const quote = await page.getByRole('textbox', { name: 'Draft' }).inputValue()
       assert.ok(quote.startsWith('Keep this draft\n\n'))
@@ -165,6 +177,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
           .join('\n'),
         '> ' + expected,
       )
+      assert.ok(quote.includes('\n\nCheck this part'))
     }
     await page.evaluate(() => window.setUser(true))
     await page

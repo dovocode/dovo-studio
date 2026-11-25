@@ -33,14 +33,17 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 async function bundle(mobile) {
   const mocks = {
     ...(mobile
-      ? { './components/thread-actions': `export const ThreadActionCards=()=>null;` }
+      ? {
+          './components/thread-actions': `export const ThreadActionCards=()=>null;`,
+          '../../../resources/mcp-oauth': `export const McpOAuthSection=()=>null;`,
+        }
       : {}),
     'lucide-react-native': `export * from 'lucide-react';`,
     '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,
-    '@dovo/studio-core': `export {useTurnAnnouncements} from '../studio-core/src/use-turn-announcements';export {createTask} from '../studio-core/src/workspace/actions';export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useWorkspaceSelector=select=>select(useFixture());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',turnAnnouncements:'off',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
+    '@dovo/studio-core': `export {useTurnAnnouncements} from '../studio-core/src/use-turn-announcements';export {createTask} from '../studio-core/src/workspace/actions';export {composerRecoveryKey} from '../studio-core/src/workspace/composer-recovery';export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useWorkspaceSelector=select=>select(useFixture());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',turnAnnouncements:'off',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/studio-ui': ui,
     './use-conversation-history': `export const useConversationHistory=task=>({task,hasMore:false,busy:false,error:'',setBookmark:()=>{}});`,
@@ -95,6 +98,7 @@ export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFoo
   mocks['../state/provider'] =
     `import {useFixture} from 'fixture';export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>select(useFixture());export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
   for (const path of [
+    '../../../runtime/connection/provider',
     '../../../runtime/preferences/app-preferences',
     '../../../runtime/state/application-state',
     '../../../ui/content/text',

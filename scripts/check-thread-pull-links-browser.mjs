@@ -11,6 +11,7 @@ import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
 export {useTurnAnnouncements} from '${root}/packages/studio-core/src/use-turn-announcements.ts';
 export {createTask} from '${root}/packages/studio-core/src/workspace/actions.ts';
+export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>useContext(Context);
 export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',turnAnnouncements:'off',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
 export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=useWorkspace;export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
