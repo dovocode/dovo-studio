@@ -2,10 +2,10 @@
 
 Desktop dictation runs on your computer. Nemotron 3.5 ASR Streaming 0.6B (Q8) is the default on
 macOS, Windows and Linux. On supported Macs running macOS 26 or later, **Speech engine** also offers
-**Apple Speech**. Apple Speech uses on-device recognition and can download language assets when you
-first dictate. **Automatic** uses the Mac’s preferred language with Apple Speech. Choose a supported
-language if your preferred language is unavailable. You can switch engines at any time in **Settings
-→ General → Speech**.
+**Apple Speech**. The macOS installer includes both helpers. Apple Speech uses on-device
+recognition, and macOS downloads any missing language assets when you first dictate. **Automatic**
+uses the Mac’s preferred language with Apple Speech. Choose a supported language if your preferred
+language is unavailable. You can switch engines at any time in **Settings → General → Speech**.
 
 Open **Settings → General → Speech**, then click **Download & enable dictation**. This explicitly
 downloads the 751 MB model and enables the composer's microphone. The page shows download progress,
@@ -43,15 +43,16 @@ On macOS, Xcode with the macOS 26 SDK or later also builds the Apple Speech help
 archive is pinned and SHA-256 checked. Only the Parakeet model family (which includes Nemotron) is
 compiled, with a conservative x86 CPU baseline. Dovo's small `dovo-dictation` pipe helper uses the
 public streaming C API. Neither Python nor CUDA is needed. Build products and the test model live
-under ignored `work/dictation`. The build cache checks both upstream revision and helper source
-hash.
+under ignored `work/dictation`. Both macOS helpers use the same build cache. The cache key includes
+the compiler, SDK and helper sources. A restore verifies each executable against its stored hash.
 
-`package:desktop` builds and includes the native helper for the packaging host. macOS packaging
-includes the microphone usage string, audio-input entitlement and explicit helper signing. The
-Electron bridge accepts requests only from the trusted main application document; media permissions
-reject cameras and subframes. The helper and model paths cannot be supplied by the renderer. Audio
-feeding, finalization and cancellation are scoped to the owning window and operation, including
-pop-out windows. The host validates language selection, PCM bounds and transcript sizes.
+`package:desktop` includes the native helpers for the packaging host. macOS packaging includes the
+microphone usage string, audio-input entitlement and explicit signing for both helpers. The release
+workflow verifies both executables in the signed app. The Electron bridge accepts requests only from
+the trusted main application document; media permissions reject cameras and subframes. The helper
+and model paths cannot be supplied by the renderer. Audio feeding, finalization and cancellation are
+scoped to the owning window and operation, including pop-out windows. The host validates language
+selection, PCM bounds and transcript sizes.
 
 ## Licensing
 

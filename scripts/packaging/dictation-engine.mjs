@@ -6,8 +6,9 @@ import { join, resolve, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { archiveTool } from './archive-tool.mjs'
-import { prepareAppleSpeech } from './apple-speech.mjs'
 
+export const appleSpeechBinary = 'dovo-apple-speech'
+const appleSpeechSource = 'apps/desktop/native/apple-speech.swift'
 const revision = '692350def1edea35a616b652255a8be70a168d37'
 const archiveHash = '4854e9d73e49f36b4cf79f9ddecc78cd07ea2bb574b879c29e2e565bf4a72e3c'
 const licenses = [
@@ -44,6 +45,12 @@ function toolOutput(command, args) {
   }
 }
 
+const supportsAppleSpeech = (platform, sdk) => platform === 'darwin' && Number.parseInt(sdk) >= 26
+const fileHash = async (path) =>
+  createHash('sha256')
+    .update(await readFile(path))
+    .digest('hex')
+
 /** Identify the compilers CMake will select, so runner image updates rebuild the engine. */
 export function dictationToolchain(platform = process.platform) {
   const toolchain = { cmake: toolOutput('cmake', ['--version']).split('\n')[0] }
@@ -63,7 +70,11 @@ export function dictationToolchain(platform = process.platform) {
     toolchain.cc = toolOutput(process.env.CC || 'cc', ['--version'])
     toolchain.cxx = toolOutput(process.env.CXX || 'c++', ['--version'])
   }
-  if (platform === 'darwin') toolchain.sdk = toolOutput('xcrun', ['--show-sdk-version'])
+  if (platform === 'darwin') {
+    toolchain.sdk = toolOutput('xcrun', ['--sdk', 'macosx', '--show-sdk-version'])
+    if (supportsAppleSpeech(platform, toolchain.sdk))
+      toolchain.swift = toolOutput('xcrun', ['--sdk', 'macosx', 'swiftc', '--version'])
+  }
   if (platform === 'linux') toolchain.glibc = process.report.getReport().header.glibcVersionRuntime
   toolchain.environment = Object.fromEntries(
     toolchainEnvironment
@@ -108,26 +119,29 @@ export async function dictationFingerprint(
         archiveHash,
         platform,
         arch,
-        helper: createHash('sha256')
-          .update(await readFile(join(root, 'apps/desktop/native/dictation.cpp')))
-          .digest('hex'),
+        helper: await fileHash(join(root, 'apps/desktop/native/dictation.cpp')),
+        ...(supportsAppleSpeech(platform, toolchain.sdk)
+          ? { appleSpeech: await fileHash(join(root, appleSpeechSource)) }
+          : {}),
         notices: await noticesHash(join(root, 'apps/desktop/build/dictation')),
-        recipe: createHash('sha256')
-          .update(await readFile(fileURLToPath(import.meta.url)))
-          .digest('hex'),
+        recipe: await fileHash(fileURLToPath(import.meta.url)),
         toolchain,
       }),
     )
     .digest('hex')
 }
 
-async function cachedBundle(bundle, name, fingerprint) {
+async function cachedBundle(bundle, name, fingerprint, appleSpeech) {
   try {
     const manifest = JSON.parse(await readFile(join(bundle, 'build.json'), 'utf8'))
     // Valid JSON can still be null or a scalar; treat any malformed manifest as a miss.
     if (manifest?.fingerprint !== fingerprint) return false
-    const binary = await readFile(join(bundle, name))
-    if (manifest.sha256 !== createHash('sha256').update(binary).digest('hex')) return false
+    if (manifest.sha256 !== (await fileHash(join(bundle, name)))) return false
+    if (
+      appleSpeech &&
+      manifest.appleSpeechSha256 !== (await fileHash(join(bundle, appleSpeechBinary)))
+    )
+      return false
     // A cache restore must carry every upstream notice, not just the executable.
     for (const file of [...licenses.map(([, to]) => to), 'LICENSE.tinyblas'])
       await access(join(bundle, file))
@@ -144,8 +158,10 @@ export async function prepareDictationEngine(root) {
   const bundle = join(directory, 'bundle')
   const helper = join(root, 'apps/desktop/native/dictation.cpp')
   const name = process.platform === 'win32' ? 'dovo-dictation.exe' : 'dovo-dictation'
-  const fingerprint = await dictationFingerprint(root)
-  if (await cachedBundle(bundle, name, fingerprint)) {
+  const toolchain = dictationToolchain()
+  const appleSpeech = supportsAppleSpeech(process.platform, toolchain.sdk)
+  const fingerprint = await dictationFingerprint(root, { toolchain })
+  if (await cachedBundle(bundle, name, fingerprint, appleSpeech)) {
     await cp(join(root, 'apps/desktop/build/dictation'), bundle, { recursive: true })
     return bundle
   }
@@ -229,6 +245,27 @@ set_target_properties(dovo-dictation PROPERTIES CXX_STANDARD 17)
     join(bundle, name),
   )
   await chmod(join(bundle, name), 0o755)
+  if (appleSpeech) {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x86_64'
+    execFileSync(
+      'xcrun',
+      [
+        '--sdk',
+        'macosx',
+        'swiftc',
+        '-parse-as-library',
+        '-swift-version',
+        '5',
+        '-O',
+        '-target',
+        `${arch}-apple-macos26.0`,
+        join(root, appleSpeechSource),
+        '-o',
+        join(bundle, appleSpeechBinary),
+      ],
+      { stdio: 'inherit' },
+    )
+  }
   for (const [from, to] of licenses) await cp(join(source, from), join(bundle, to))
   await cp(join(root, 'apps/desktop/build/dictation'), bundle, { recursive: true })
   const tinyblas = await readFile(join(source, 'ggml/src/ggml-cpu/llamafile/sgemm.cpp'), 'utf8')
@@ -241,9 +278,10 @@ set_target_properties(dovo-dictation PROPERTIES CXX_STANDARD 17)
     JSON.stringify({
       revision,
       fingerprint,
-      sha256: createHash('sha256')
-        .update(await readFile(join(bundle, name)))
-        .digest('hex'),
+      sha256: await fileHash(join(bundle, name)),
+      ...(appleSpeech
+        ? { appleSpeechSha256: await fileHash(join(bundle, appleSpeechBinary)) }
+        : {}),
     }),
   )
   await rm(archive)
@@ -263,6 +301,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(0)
   }
   const bundle = await prepareDictationEngine(root)
-  prepareAppleSpeech(root, bundle)
   console.log(`Local dictation engine ready: ${bundle}`)
 }

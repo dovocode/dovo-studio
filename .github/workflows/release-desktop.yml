@@ -189,9 +189,15 @@ jobs:
         env:
           APP_NAME: ${{ needs.draft.outputs.app_name }}
         run: |
-          codesign --verify --deep --strict --verbose=2 "release/mac-arm64/$APP_NAME.app"
-          spctl --assess --type execute --verbose=2 "release/mac-arm64/$APP_NAME.app"
-          xcrun stapler validate "release/mac-arm64/$APP_NAME.app"
+          app="release/mac-arm64/$APP_NAME.app"
+          for helper in dovo-dictation dovo-apple-speech; do
+            executable="$app/Contents/Resources/dictation/$helper"
+            test -x "$executable"
+            codesign --verify --strict "$executable"
+          done
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
       - uses: actions/upload-artifact@v7
         with:
           compression-level: 0

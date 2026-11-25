@@ -1,5 +1,4 @@
-import { prepareDictationEngine } from './dictation-engine.mjs'
-import { prepareAppleSpeech } from './apple-speech.mjs'
+import { appleSpeechBinary, prepareDictationEngine } from './dictation-engine.mjs'
 import { verifyMacIconToolchain } from './mac-icon-toolchain.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
@@ -155,7 +154,6 @@ try {
   const dictationBundle = await timing.measure('Native dictation engine', () =>
     prepareDictationEngine(root),
   )
-  const appleSpeech = prepareAppleSpeech(root, dictationBundle)
   let endElectronPack, endArtifacts
   const endBuilder = timing.start('electron-builder total')
   await build({
@@ -249,7 +247,7 @@ try {
         entitlementsInherit: join(root, 'apps/desktop/build/entitlements.mac.plist'),
         binaries: [
           'Contents/Resources/dictation/dovo-dictation',
-          ...(appleSpeech ? ['Contents/Resources/dictation/dovo-apple-speech'] : []),
+          `Contents/Resources/dictation/${appleSpeechBinary}`,
         ],
         extendInfo: {
           NSMicrophoneUsageDescription:
