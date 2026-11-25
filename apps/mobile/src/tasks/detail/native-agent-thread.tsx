@@ -1,4 +1,4 @@
-import { useNativeThreadHistory } from '@dovo/studio-core'
+import { useNativeThreadHistory } from '@dovo/studio-core/native-thread-history'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Image, ScrollView, View } from 'react-native'
 import { subagentMetadata, type Subagent } from '@dovo/protocol'

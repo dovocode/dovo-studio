@@ -7,6 +7,8 @@
     "./mcp-app-sdk": "./mcp-apps/app-sdk.ts",
     ".": "./src/index.ts",
     "./resource-editors": "./src/resource-editors.ts",
+    "./automation-subject-runs": "./src/components/automation-subject-runs.tsx",
+    "./create-organization-dialog": "./src/create-organization-dialog.tsx",
     "./mcp-oauth": "./src/resources/mcp-oauth.tsx",
     "./tooltip": "./src/components/ui/tooltip.tsx",
     "./native-tooltip": "./src/native-tooltip.ts",

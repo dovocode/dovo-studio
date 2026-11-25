@@ -1,6 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PluginActivations } from './plugin-activations'
-import { CreateOrganizationDialog, Disclosure } from '@dovo/studio-ui'
+import { Disclosure } from '@dovo/studio-ui'
+import { CreateOrganizationDialog } from '@dovo/studio-ui/create-organization-dialog'
 import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
   resolveScopedSettings,

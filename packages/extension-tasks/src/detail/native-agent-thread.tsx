@@ -1,5 +1,6 @@
 import { subagentMetadata, type Subagent } from '@dovo/protocol'
-import { useNativeThreadHistory, useWorkspace } from '@dovo/studio-core'
+import { useWorkspace } from '@dovo/studio-core'
+import { useNativeThreadHistory } from '@dovo/studio-core/native-thread-history'
 import {
   Button,
   HeaderContent,

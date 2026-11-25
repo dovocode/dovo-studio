@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { View } from 'react-native'
-import { useRouter } from 'expo-router'
+import { router } from 'expo-router'
 import type { AutomationRunSubject } from '@dovo/protocol'
-import { useAutomationSubjectRuns } from '@dovo/studio-core'
+import { useAutomationSubjectRuns } from '@dovo/studio-core/automation-run'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
@@ -11,7 +11,6 @@ import { automationHref } from '../shell/source-route'
 
 export function AutomationSubjectRuns({ subject }: { subject: AutomationRunSubject }) {
   const uiText = useInterfaceText()
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const { activeId, call, connected, connection, snapshot } = useRuntime()
   const supported = snapshot?.automationRunSubjectSupported === true

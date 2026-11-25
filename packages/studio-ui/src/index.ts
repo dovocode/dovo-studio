@@ -24,7 +24,6 @@ export * from './components/ai-elements/controls'
 export * from './components/ai-elements/prompt-input'
 export * from './components/ai-elements/queue'
 export * from './components/ai-elements/tool'
-export * from './components/automation-subject-runs'
 export * from './use-compact-layout'
 
 export { LineCommentForm } from './line-comment-form'
@@ -46,7 +45,6 @@ export { ProjectIcon } from './project-icon'
 
 export { TaskDefaultSettings } from './task-default-settings'
 export { ProjectOrganizationSettings } from './project-organization'
-export { CreateOrganizationDialog } from './create-organization-dialog'
 export {
   SettingsPage,
   SettingsStorageInfo,

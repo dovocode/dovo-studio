@@ -1,7 +1,7 @@
 import { taskWorkflows, workflowStateLabel, type Subagent, type TaskMetadata } from '@dovo/protocol'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { ChevronRight, Workflow } from 'lucide-react'
-import { AutomationSubjectRuns } from '@dovo/studio-ui'
+import { AutomationSubjectRuns } from '@dovo/studio-ui/automation-subject-runs'
 
 export function TaskWorkflows({
   task,

@@ -30,5 +30,8 @@ run(
 )
 run('pnpm', 'exec', 'playwright', 'install', 'chromium')
 run('pnpm', 'test:command-palette:browser')
+run('node', 'scripts/check-browser-tabs-browser.mjs')
+run('node', 'scripts/check-desktop-source-readers-browser.mjs')
+run('node', 'scripts/check-mobile-integration-continuity-browser.mjs')
 run('node', 'scripts/check-web-workbench-history-browser.mjs')
 run('node', 'scripts/check-mobile-thread-files-browser.mjs')

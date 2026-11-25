@@ -8,7 +8,8 @@ import {
   type ForgeIssueDetail,
   type ForgeWorkOptions,
 } from '@dovo/studio-core'
-import { AutomationSubjectRuns, Button, MessageResponse } from '@dovo/studio-ui'
+import { Button, MessageResponse } from '@dovo/studio-ui'
+import { AutomationSubjectRuns } from '@dovo/studio-ui/automation-subject-runs'
 import { WorkTaskLinks } from './work-task-links'
 import { formatDate } from './format-date'
 

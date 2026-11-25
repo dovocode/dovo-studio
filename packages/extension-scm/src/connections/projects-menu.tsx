@@ -6,11 +6,8 @@ import {
   projectOrganization,
   projectOrganizationSections,
 } from '@dovo/protocol'
-import {
-  CreateOrganizationDialog,
-  ProjectOrganizationSettings,
-  TaskDefaultSettings,
-} from '@dovo/studio-ui'
+import { ProjectOrganizationSettings, TaskDefaultSettings } from '@dovo/studio-ui'
+import { CreateOrganizationDialog } from '@dovo/studio-ui/create-organization-dialog'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'

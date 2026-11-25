@@ -2,7 +2,7 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@dovo/studio-ui/tabs'
 import { PullReadinessPanel } from './readiness'
 import { PullLinkedThreads } from './linked-threads'
-import { AutomationSubjectRuns } from '@dovo/studio-ui'
+import { AutomationSubjectRuns } from '@dovo/studio-ui/automation-subject-runs'
 import { AuthorAvatar } from '../author-avatar'
 import {
   buildPullReviewObjective,
