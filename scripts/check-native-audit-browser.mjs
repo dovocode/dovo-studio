@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mobile = `${root}/apps/mobile/src`
+const runtimeProvider = `${mobile}/runtime/connection/provider`
 const theme = `export const useTheme=()=>({mode:'light',colors:{background:'#fff',text:'#17202a',muted:'#52606d',border:'#ccd2d8',accent:'#315ec6',success:'#22733d',error:'#b42332',elevated:'#edf1f4',surface:'#f3f5f7'},styles:{screen:{display:'flex',flexDirection:'column'},content:{padding:12},text:{color:'#17202a'},muted:{color:'#52606d'},error:{color:'#b42332'},row:{display:'flex',flexDirection:'row',gap:8},card:{padding:12},separator:{borderTop:'1px solid #ccd2d8'}}});`
 const controls = `
 import {useEffect,useImperativeHandle,useRef} from 'react';
@@ -48,8 +50,7 @@ const mocks = {
   'expo-crypto': `export const randomUUID=()=>'00000000-0000-4000-8000-000000000001';`,
   'react-native-safe-area-context': `export const useSafeAreaInsets=()=>({bottom:0});`,
   '../../runtime/connection/context': `export const useRuntime=()=>window.runtime;`,
-  '../../runtime/connection/provider': `export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>window.runtime;`,
-  '../../../runtime/connection/provider': `export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>window.runtime;`,
+  [runtimeProvider]: `export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>window.runtime;`,
   '../../shell/navigation': `export const useNavigation=()=>window.navigation;`,
   '../../../shell/navigation': `export const useNavigation=()=>window.navigation;`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
@@ -63,13 +64,8 @@ const mocks = {
   '../../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../ui/content/pull-request-icon': `export const PullRequestIcon=()=>null;`,
   '../../../ui/content/pull-request-icon': `export const PullRequestIcon=()=>null;`,
-  './text': `export {Text} from 'react-native';`,
-  '../content/text': `export {Text} from 'react-native';`,
-  '../../ui/content/text': `export {Text} from 'react-native';`,
-  '../../../ui/content/text': `export {Text} from 'react-native';`,
-  '../controls/action': action,
-  '../../ui/controls/action': action,
-  '../../../ui/controls/action': action,
+  [`${mobile}/ui/content/text`]: `export {Text} from 'react-native';`,
+  [`${mobile}/ui/controls/action`]: action,
   '../../ui/controls/field': field,
   '../../../ui/controls/field': field + searchField,
   '../../ui/controls/choice': `export const Choice=({label,value,onChange,items})=><select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(i=><option value={i.id} key={i.id}>{i.name}</option>)}</select>;`,
@@ -132,13 +128,13 @@ function App(){const[state,setState]=useState({page:'create',tab:undefined,fragm
     {
       name: 'native-audit-fixtures',
       setup(builder) {
-        builder.onResolve({ filter: /.*/ }, ({ path, importer }) =>
-          path === './pull-status' && importer.endsWith('/tasks/detail/task-project-sheet.tsx')
-            ? undefined
-            : mocks[path]
-              ? { path, namespace: 'native-fixture' }
-              : undefined,
-        )
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) => {
+          if (path === './pull-status' && importer.endsWith('/tasks/detail/task-project-sheet.tsx'))
+            return undefined
+          const absolute = path.startsWith('.') ? resolve(dirname(importer), path) : path
+          const target = mocks[absolute] ? absolute : path
+          return mocks[target] ? { path: target, namespace: 'native-fixture' } : undefined
+        })
         builder.onLoad({ filter: /.*/, namespace: 'native-fixture' }, ({ path }) => ({
           contents: mocks[path],
           loader: 'tsx',

@@ -15,7 +15,7 @@
     "./links": "./src/links/index.ts",
     "./harness-handoff": "./src/use-harness-handoff.ts",
     "./linked-thread": "./src/use-linked-thread.ts",
-    "./automation-run": "./src/use-automation-run.ts",
+    "./automation-subject-runs": "./src/use-automation-subject-runs.ts",
     "./native-thread-history": "./src/native-thread-history.ts",
     "./harness-instructions": "./src/use-harness-instructions.ts",
     "./state": "./src/runtime/application-state.ts",

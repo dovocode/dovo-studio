@@ -239,7 +239,9 @@ try {
       assert.equal(await page.getByText('1 selected', { exact: true }).count(), 0)
       assert.equal(await page.locator('[data-swipe="true"]').count(), 2)
     } else {
-      assert.deepEqual(await page.evaluate(() => window.orders.at(-1).sort()), ['parent', 'second'])
+      await page.waitForFunction(
+        () => window.orders.at(-1)?.toSorted().join(',') === 'parent,second',
+      )
       await page
         .getByRole('button')
         .filter({ has: page.getByText('Main thread', { exact: true }) })

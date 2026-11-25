@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { AutomationRunSubject } from '@dovo/protocol'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { useAutomationSubjectRuns } from '@dovo/studio-core/automation-run'
+import { useAutomationSubjectRuns } from '@dovo/studio-core/automation-subject-runs'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 
 export function AutomationSubjectRuns({ subject }: { subject: AutomationRunSubject }) {
