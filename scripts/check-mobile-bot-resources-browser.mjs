@@ -6,6 +6,7 @@ const mobile = root + 'apps/mobile/src/'
 const native = `
 import {useImperativeHandle} from 'react';
 export const Keyboard={dismiss(){}};export const Alert={alert(){}};export const Platform={OS:'web'};export const StyleSheet={flatten:style=>style};export const useWindowDimensions=()=>({fontScale:1,width:390,height:844});
+export const Linking={openURL(){throw Error('Unexpected sign-in browser')}};
 export const View=({children,testID})=><div data-testid={testID}>{children}</div>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const TextInput=({ref,accessibilityLabel,accessibilityHint,value,onChangeText,editable,multiline,testID})=>{useImperativeHandle(ref,()=>({focus(){}}));const props={'aria-label':accessibilityLabel,'aria-description':accessibilityHint,'data-testid':testID,value,disabled:editable===false,onChange:event=>onChangeText?.(event.target.value)};return multiline?<textarea {...props}/>:<input {...props}/>};
@@ -58,7 +59,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     {
       path: '../runtime/connection/provider',
       importer: mobile + 'resources/',
-      contents: `import {Effect} from 'effect';import {decode} from '@dovo/protocol';export const useRuntime=()=>({connected:true,callEffect:(path,_,schema)=>Effect.sync(()=>{if(path!=='/api/agents/mcp/test')throw Error('Unexpected runtime request: '+path);return decode(schema,{server:'Fixture MCP',tools:['details'],events:[{name:'incident.created',delivery:['poll','push']}]});})});`,
+      contents: `import {Effect} from 'effect';import {decode} from '@dovo/protocol';export const useRuntime=()=>({connected:true,overviews:[],callEffect:(path,_,schema)=>Effect.sync(()=>{if(path!=='/api/agents/mcp/test')throw Error('Unexpected runtime request: '+path);return decode(schema,{server:'Fixture MCP',tools:['details'],events:[{name:'incident.created',delivery:['poll','push']}]});})});`,
     },
     {
       path: '../ui/content/open-link',
@@ -96,6 +97,9 @@ try {
   assert.deepEqual(await page.evaluate(() => window.resources.disabledSkills), ['shared-skill'])
   await page.getByRole('button', { name: 'Restore inherited mcp shared-mcp', exact: true }).click()
   await page.getByRole('button', { name: 'Edit MCP event-source', exact: true }).click()
+  await page
+    .getByText('Update the runtime on this computer to sign in to MCP servers with OAuth.')
+    .waitFor()
   await page.getByRole('button', { name: 'Test connection', exact: true }).click()
   await page.getByText('MCP Events: incident.created (poll, push)', { exact: false }).waitFor()
   await page.getByRole('button', { name: 'Close resource editor', exact: true }).click()

@@ -19,7 +19,7 @@ const initial=decode(botResourcesSchema,{mcpServers:[{name:'existing',transport:
 function App(){const [value,setValue]=useState(initial);const [action,setAction]=useState(false);const [card,setCard]=useState(false);window.showCard=setCard;window.editAction=setAction;window.resources=value;
 const source={id:'source-bot',title:'Coordinator',repositoryId:'project',agentId:'',harness:decode(taskHarnessSchema,{provider:'codex',model:'source-model',permission:'workspace-write',instructions:'',endpoint:''}),execution:'main',bot:{resources:value}};
 const prepared={id:'prepared-action',key:'release',title:'Review release',prompt:'Check the release',runId:'turn',state:'prepared',createdAt:'2026-11-12T00:00:00Z',updatedAt:'2026-11-12T00:00:00Z'};
-window.cardStore={connected:true,activeRuntimeId:'owner',connection:{address:'http://owner.lan',token:'paired'},runtimeRegistry:{profiles:[]},snapshot:{runtimeId:'owner',threadActionsSupported:window.actionSupported===false?undefined:true,permissionPolicySupported:true},workspace:{agents:[],repositories:[{id:'project',name:'Project',path:'/project'},{id:'other-project',name:'Other project',path:'/other'},{id:'dovo:scratch',kind:'scratch',name:'No project',path:'/scratch'}]},refreshRuntimes:async()=>{},request:async(path,input)=>{
+window.cardStore={connected:true,activeRuntimeId:'owner',runtimes:[],connection:{address:'http://owner.lan',token:'paired'},runtimeRegistry:{profiles:[]},snapshot:{runtimeId:'owner',threadActionsSupported:window.actionSupported===false?undefined:true,permissionPolicySupported:true},workspace:{agents:[],repositories:[{id:'project',name:'Project',path:'/project'},{id:'other-project',name:'Other project',path:'/other'},{id:'dovo:scratch',kind:'scratch',name:'No project',path:'/scratch'}]},refreshRuntimes:async()=>{},request:async(path,input)=>{
  if(path==='/api/agents/mcp/test')return {server:'Fixture MCP',tools:['details'],events:[{name:'incident.created',delivery:['poll','push']}]};
  window.dispatchCalls.push({path,input:JSON.parse(JSON.stringify(input))});
  if(path.endsWith('/send')){decode(threadActionSendSchema,input);if(window.failDispatch){window.failDispatch=false;throw Error('Dispatch reply lost')}return {action:{...prepared,state:'sent',sent:{taskId:input.createTask.id,messageId:input.messageId,sentAt:'2026-11-12T00:00:00Z'}},revision:1,runtimeInstanceId:'owner'}}
@@ -82,6 +82,9 @@ try {
   await page.setContent('<main id="app"></main>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'Edit MCP event-source', exact: true }).click()
+  await page
+    .getByText('Update the runtime on this computer to sign in to MCP servers with OAuth.')
+    .waitFor()
   await page.getByRole('button', { name: 'Test connection', exact: true }).click()
   await page.getByText('MCP Events: incident.created (poll, push)', { exact: false }).waitFor()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()

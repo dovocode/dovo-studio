@@ -4,6 +4,9 @@ Link an AI app with custom remote MCP support to a computer you own in Dovo Conn
 uses Streamable HTTP, OAuth authorization code with S256 PKCE, dynamic registration for public
 clients, and rotating refresh tokens.
 
+To let agents sign in to another service's MCP server, see
+[Sign in to MCP servers with OAuth](mcp-oauth.md).
+
 ## Enable and link
 
 1. If you host Connect, set `DOVO_CONNECT_REMOTE_MCP=1` on the HTTPS Connect service and configure

@@ -197,6 +197,9 @@ function claudeOptions(
           mcpServers: {},
         }
       : {}),
+    ...(run.tools !== 'none' && run.claudePlugins?.length
+      ? { plugins: run.claudePlugins.map((path) => ({ type: 'local' as const, path })) }
+      : {}),
     // Coding sessions inherit Claude settings; text-only utilities stay isolated.
     settingSources: run.tools === 'none' || run.isolateSettings ? [] : ['user', 'project', 'local'],
     includePartialMessages: true,
@@ -554,7 +557,7 @@ export function createClaudeAdapter(): AgentAdapter {
   const runWarm = async (run: AgentRun, command: string) => {
     if (!run.taskId) throw new Error('Warm Claude turn needs a task')
     const config = JSON.stringify(
-      [run.agent, run.tools, run.linkedDirectories],
+      [run.agent, run.tools, run.linkedDirectories, run.claudePlugins],
       (key, value: unknown) => (key === 'DOVO_TASK_RUN_ID' ? undefined : value),
     )
     const mcpServers = claudeMcpServers(run.agent.resources?.mcpServers ?? [])

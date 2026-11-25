@@ -55,6 +55,7 @@ import type { RunPolicy } from '../auth/run-credentials.js'
 import { HttpError } from '../errors.js'
 import { mcpEventsCommand, McpEventSubscriptions } from '../mcp-events/subscriptions.js'
 import { McpEventsClient } from '../mcp-events/client.js'
+import { McpOAuth } from '../mcp-oauth/oauth.js'
 import {
   object,
   appUri,
@@ -118,6 +119,8 @@ export class McpApps {
     { taskId: string; input: string; promise: Promise<unknown>; controller: AbortController }
   >()
   private stopped = false
+  /** Outbound MCP OAuth connections owned by this computer. */
+  readonly oauth: McpOAuth
   private sendMessage?: (taskId: string, messageId: string, text: string) => Promise<unknown>
   setSendMessage(send: (taskId: string, messageId: string, text: string) => Promise<unknown>) {
     this.sendMessage = send
@@ -144,6 +147,7 @@ export class McpApps {
     )
     this.a2ui = new A2uiApps(db, store, activity, approvals)
     this.events = new McpEventSubscriptions(db)
+    this.oauth = new McpOAuth(db)
   }
   a2uiCommand(taskId: string, runId: string, input: unknown) {
     return this.a2ui.command(taskId, runId, input)
@@ -260,10 +264,15 @@ export class McpApps {
   /** Synchronously returns the key's reservation, evicting an unprotected idle session at capacity. */
   private reserve(scope: Scope): Reservation {
     if (this.stopped) throw new HttpError(503, 'MCP bridge is stopping')
-    const key = `${scope.taskId}:${fingerprint(scope.server)}:${scope.cwd}`
+    const connection = this.oauth.connectionId(scope.server)
+    const base = JSON.stringify([scope.taskId, fingerprint(scope.server), scope.cwd])
+    const key = connection ? `${base}:${connection}` : base
     const cached = this.sessions.get(key)
     if (cached) return cached
     const prerequisites: Promise<void>[] = []
+    if (connection)
+      for (const old of this.resolved.values())
+        if (old.key.startsWith(`${base}:`) && this.idle(old)) prerequisites.push(this.retire(old))
     const closing = this.closing.get(key)
     if (closing) prerequisites.push(closing)
     if (this.sessions.size >= this.capacity) {
@@ -318,7 +327,10 @@ export class McpApps {
             },
             cwd: scope.cwd,
           })
-        : new StreamableHTTPClientTransport(new URL(config.url), mcpHttpOptions(mcpHeaders(config)))
+        : new StreamableHTTPClientTransport(new URL(config.url), {
+            ...mcpHttpOptions(mcpHeaders(config)),
+            authProvider: this.oauth.provider(config),
+          })
     const timeout = AbortSignal.any([this.controller.signal, AbortSignal.timeout(30_000)])
     try {
       try {
@@ -332,7 +344,10 @@ export class McpApps {
           ![404, 405, 406].includes(error.code ?? 0)
         )
           throw error
-        transport = new SSEClientTransport(new URL(config.url), mcpHttpOptions(mcpHeaders(config)))
+        transport = new SSEClientTransport(new URL(config.url), {
+          ...mcpHttpOptions(mcpHeaders(config)),
+          authProvider: this.oauth.provider(config),
+        })
         await client.connect(transport, { signal: timeout })
       }
       const tools: Tool[] = []
@@ -1516,6 +1531,7 @@ export class McpApps {
   async dispose() {
     this.views.dispose()
     this.stopped = true
+    this.oauth.close()
     this.controller.abort()
     await this.polling?.stop()
     await this.events.dispose()

@@ -419,6 +419,8 @@ export function route(
       }
       if (agentDeviceAccess && path === '/api/agents/secrets/check')
         throw new HttpError(403, 'Secret reference checks require a paired human client.')
+      if (agentDeviceAccess && (path === '/api/agents/mcp/oauth' || path === '/api/agents/plugins'))
+        throw new HttpError(403, 'MCP sign-in and agent plugins require a paired human client.')
       if (agentDeviceAccess && path.startsWith('/api/agents/instructions/'))
         throw new HttpError(403, 'Harness instruction files require a paired human client.')
       if (

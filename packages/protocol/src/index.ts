@@ -351,6 +351,8 @@ export * from './runtime/studio-extensions.js'
 export * from './runtime/studio-source-policy.js'
 export * from './runtime/studio-extension-marketplace.js'
 export * from './runtime/studio-extension-views.js'
+export * from './runtime/harness-plugins.js'
+export * from './runtime/mcp-oauth.js'
 
 export * from './runtime/relay-message.js'
 export * from './scm/repositories/project-transfer.js'

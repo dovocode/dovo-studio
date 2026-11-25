@@ -131,6 +131,7 @@
     "test:mobile-device-hosts:browser": "node apps/mobile/scripts/check-device-hosts.mjs",
     "test:title-settings:browser": "node scripts/check-title-settings-browser.mjs",
     "test:unified-workspace:browser": "pnpm --filter @dovo/protocol build && node scripts/check-unified-workspace-browser.mjs",
+    "test:agent-plugins:browser": "node scripts/check-agent-plugins-browser.mjs",
     "test:dashboards:browser": "pnpm --filter @dovo/web... -r build && node scripts/check-dashboards-browser.mjs",
     "test:workspace-submit:browser": "pnpm --filter @dovo/protocol build && node scripts/check-workspace-submit-browser.mjs && node scripts/check-workspace-suggestions-browser.mjs",
     "test:remote-thread-sync:browser": "node scripts/check-remote-thread-sync-browser.mjs",

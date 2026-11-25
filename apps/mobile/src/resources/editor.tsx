@@ -2,6 +2,7 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { View } from 'react-native'
 import { useOpenAppLink } from '../ui/content/open-link'
 import { CredentialEditor } from './credential-editor'
+import { McpOAuthSection } from './mcp-oauth'
 import { credentialFields, credentialValues } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -208,6 +209,7 @@ export function ResourceEditor({
                   })
                 }
               />
+              <McpOAuthSection server={server} onChange={setServer} disabled={busy} />
               <Field
                 label={uiText('Bearer token environment variable')}
                 error={fieldError('bearerTokenEnv')}

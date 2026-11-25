@@ -1,6 +1,7 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { HookSettings } from '../resources/hook-settings'
+import { PluginActivations } from '../resources/plugin-activations'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
 import {
   resolveScopedSettings,
@@ -505,6 +506,13 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               </View>
             ))}
           </View>
+          <PluginActivations
+            resources={resources}
+            inherited={inherited}
+            scopeLabel={scope.label}
+            disabled={!connected || busy}
+            save={save}
+          />
           {scope.scope === 'organization' ? (
             <View style={styles.card}>
               <SettingsField

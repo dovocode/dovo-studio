@@ -5,6 +5,7 @@ import {
 import { openExtensionPage } from '../shell/extension-page-route'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ExtensionMarketplace } from './extension-marketplace'
+import { AgentPlugins } from './agent-plugins'
 import { ExtensionComponents, ExtensionSettingsConflicts } from './studio-extension-components'
 import { useState } from 'react'
 import { ExtensionAction } from './studio-extension-action'
@@ -61,6 +62,15 @@ export default function StudioExtensionsScreen() {
             />
             <RuntimeScope key={source.profile.id} runtimeId={source.profile.id}>
               <ExtensionsList />
+              {source.snapshot?.harnessPluginsSupported ? (
+                <AgentPlugins />
+              ) : (
+                <Text>
+                  {uiText(
+                    'Update the runtime on this computer to install Claude Code and Codex plugins.',
+                  )}
+                </Text>
+              )}
             </RuntimeScope>
           </>
         ) : (

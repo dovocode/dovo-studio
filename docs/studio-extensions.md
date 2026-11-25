@@ -9,6 +9,9 @@ open a view.
 
 On mobile, new labels for dashboards and extensions use English until translations are available.
 
+To install Claude Code or Codex plugins from a GitHub marketplace, use **Agent plugins** on the same
+page. See [Agent plugins](agent-plugins.md).
+
 ## What an extension can add
 
 - **Studio launchers** open Threads, Terminals, Browser, Dashboards, Automations, or Pull requests.

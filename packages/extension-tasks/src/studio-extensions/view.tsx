@@ -7,6 +7,7 @@ import {
   Disclosure,
 } from '@dovo/studio-ui'
 import { ExtensionMarketplace } from './marketplace'
+import { AgentPlugins } from './agent-plugins'
 import { ExtensionComponents, ExtensionSettingsConflicts } from './components'
 import { useState } from 'react'
 import { ExtensionAction } from './action'
@@ -66,6 +67,15 @@ export default function ExtensionsView({ entityId }: StudioViewProps) {
           </label>
           <WorkspaceScope key={clientScopeKey(source.profile.connection)} profile={source.profile}>
             <ExtensionList focus={entityId} />
+            {source.snapshot?.harnessPluginsSupported ? (
+              <div className="mt-4 max-w-4xl">
+                <AgentPlugins focus={entityId} />
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Update the runtime on this computer to install Claude Code and Codex plugins.
+              </p>
+            )}
           </WorkspaceScope>
         </>
       ) : (

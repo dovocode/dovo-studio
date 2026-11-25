@@ -1347,3 +1347,49 @@ it('closes a tool approval that Claude withdraws while the turn stays active', a
     await adapter.dispose?.()
   }
 })
+
+it('loads reviewed plugin folders with the SDK plugins option and omits them for text-only runs', async () => {
+  const observed: Options[] = []
+  mocks.query.mockImplementation(({ options }) => {
+    observed.push(options)
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: 'Done',
+          session_id: 'session',
+        }
+      },
+      close: vi.fn<() => void>(),
+    }
+  })
+  const run: AgentRun = {
+    agent: {
+      id: 'agent',
+      name: 'Claude',
+      provider: 'claude',
+      endpoint: '',
+      model: '',
+      instructions: '',
+      permission: 'ask',
+    },
+    cwd: '/tmp',
+    prompt: 'Format the file',
+    claudePlugins: ['/data/harness-plugins/dovo-0123456789ab/plugin'],
+    signal: new AbortController().signal,
+    onSession: () => {},
+    onActivity: () => {},
+    onText: () => {},
+    approve: async () => 'deny',
+    ask: async () => null,
+  }
+  await claudeAdapter.run(run)
+  await claudeAdapter.run({ ...run, tools: 'none' })
+  expect(observed[0]?.plugins).toEqual([
+    { type: 'local', path: '/data/harness-plugins/dovo-0123456789ab/plugin' },
+  ])
+  expect(observed[1]?.plugins).toBeUndefined()
+  mocks.query.mockReset()
+})

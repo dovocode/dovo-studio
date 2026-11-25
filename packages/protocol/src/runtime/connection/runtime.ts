@@ -424,6 +424,10 @@ export const snapshotSchema = mutableStruct({
   studioExtensionPinnedPages: Schema.optional(mutableArray(studioExtensionPageLinkSchema)),
   studioExtensionMarketplaceSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionsSupported: Schema.optional(Schema.Literal(true)),
+  /** `/api/agents/plugins`: GitHub plugin marketplaces for Claude Code and Codex. */
+  harnessPluginsSupported: Schema.optional(Schema.Literal(true)),
+  /** `/api/agents/mcp/oauth` and `McpServer.oauth` for outbound MCP sign-in. */
+  mcpOAuthSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionsRevision: Schema.optional(Schema.Number),
   botBackupSupported: Schema.optional(Schema.Literal(true)),
   /** `unattendedSpendLimitUsd` preference, `Task.spendPause` and `/api/tasks/spend-limit/continue`. */

@@ -124,7 +124,7 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
       const value = settingsAtScope(defaults, undefined, input.scope, id)
       const inherited = resolveScopedSettings(defaults, undefined, input.scope)
       if (!path.endsWith('/save')) return s.store.publicValue({ value, inherited })
-      const save = decode(scopedSettingsSaveSchema, raw)
+      const save = keepOmittedPlugins(decode(scopedSettingsSaveSchema, raw), value)
       if (save.includeAgents || Object.keys(save.after).some((key) => key !== 'resources'))
         throw new HttpError(
           400,
@@ -146,7 +146,10 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
       organizations.set(id, {
         ...organization,
         resources:
-          resources.mcpServers.length || resources.skills.length || resources.additionalInstructions
+          resources.mcpServers.length ||
+          resources.skills.length ||
+          resources.plugins?.length ||
+          resources.additionalInstructions
             ? resources
             : undefined,
       })
@@ -225,7 +228,7 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         : {}),
     }
     if (path.endsWith('/save')) {
-      const save = decode(scopedSettingsSaveSchema, raw)
+      const save = keepOmittedPlugins(decode(scopedSettingsSaveSchema, raw), value)
       if (input.scope === 'project' && save.projectKey !== sharedProjectKey(repository))
         throw new HttpError(409, 'The project remote changed. Reload settings before saving.')
       const visible = decode(scopedSettingsValueSchema, s.store.publicValue(value))
@@ -345,4 +348,23 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
       projectKey: sharedProjectKey(repository),
     })
   })
+}
+
+/**
+ * Clients that predate plugin activations drop the unknown `plugins` key when they decode and
+ * save resources. An omitted key keeps the saved activations; new clients always send the list.
+ */
+function keepOmittedPlugins<
+  S extends {
+    before: { resources?: { plugins?: unknown } }
+    after: { resources?: { plugins?: unknown } }
+  },
+>(save: S, current: { resources?: { plugins?: unknown } }): S {
+  const plugins = current.resources?.plugins
+  if (plugins === undefined) return save
+  const keep = <V extends { resources?: { plugins?: unknown } }>(value: V): V =>
+    value.resources && !Object.hasOwn(value.resources, 'plugins')
+      ? { ...value, resources: { ...value.resources, plugins } }
+      : value
+  return { ...save, before: keep(save.before), after: keep(save.after) }
 }

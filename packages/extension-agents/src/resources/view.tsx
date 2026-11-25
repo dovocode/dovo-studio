@@ -1,4 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { PluginActivations } from './plugin-activations'
 import { Disclosure } from '@dovo/studio-ui'
 import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
@@ -584,6 +585,13 @@ function ResourceScopeView({
               />
             ))}
           </ResourceSection>
+          <PluginActivations
+            settings={settings}
+            inherited={inherited}
+            scopeLabel={scope.label}
+            disabled={disabled}
+            change={change}
+          />
           {settingsScope === 'organization' ? (
             <div className="space-y-2">
               <FormField label={uiText('Additional AGENTS.md instructions')}>

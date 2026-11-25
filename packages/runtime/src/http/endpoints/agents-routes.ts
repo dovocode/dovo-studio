@@ -1,3 +1,4 @@
+import { harnessPluginCommandSchema, mcpOAuthCommandSchema } from '@dovo/protocol'
 import type { Agent } from '@dovo/protocol'
 import { agentSecretReferenceSchema } from '@dovo/protocol'
 import { spreadsheetPreview } from '../../scm/repositories/spreadsheet-preview.js'
@@ -417,7 +418,27 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         return yield* serviceResult(importSkill(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/agents/mcp/test')
         return yield* serviceResult(
-          testMcpServer(s.store.restoreSecrets(yield* serviceResult(body(request)))),
+          testMcpServer(
+            s.store.restoreSecrets(yield* serviceResult(body(request))),
+            s.mcpApps.oauth,
+          ),
+        )
+      if (method === 'POST' && path === '/api/agents/mcp/oauth') {
+        const command = decode(mcpOAuthCommandSchema, yield* serviceResult(body(request, 16_384)))
+        const oauth = s.mcpApps.oauth
+        if (command.action === 'status') return { statuses: oauth.status(command.servers) }
+        if (command.action === 'connect') return yield* serviceResult(oauth.connect(command.server))
+        if (command.action === 'flow') return oauth.flow(command.flowId)
+        if (command.action === 'cancel') return oauth.cancel(command.flowId)
+        if (command.action === 'complete')
+          return yield* serviceResult(oauth.complete(command.flowId, command.callbackUrl))
+        return yield* serviceResult(oauth.disconnect(command.server))
+      }
+      if (method === 'POST' && path === '/api/agents/plugins')
+        return yield* serviceResult(
+          s.harnessPlugins.command(
+            decode(harnessPluginCommandSchema, yield* serviceResult(body(request, 16_384))),
+          ),
         )
       if (method === 'POST' && path === '/api/agents/setup/read')
         return yield* serviceResult({

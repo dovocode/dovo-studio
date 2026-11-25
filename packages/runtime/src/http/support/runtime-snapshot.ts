@@ -369,6 +369,8 @@ export function runtimeSnapshot(
       studioExtensionPinnedPages: s.studioExtensions.pinnedPages(),
       studioExtensionMarketplaceSupported: true,
       studioExtensionsSupported: true,
+      harnessPluginsSupported: true,
+      mcpOAuthSupported: true,
       studioExtensionsRevision: s.studioExtensions.revision,
       botBackupSupported: true,
       unattendedSpendLimitSupported: true,

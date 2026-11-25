@@ -5,6 +5,9 @@ provider setup, and feature manual. The guides below focus on particular workflo
 
 ## Setup and operating guides
 
+- [Agent plugins](agent-plugins.md) for Claude Code and Codex plugin marketplaces and turning
+  plugins on for organizations and projects.
+- [Sign in to MCP servers with OAuth](mcp-oauth.md) for outbound MCP servers that need OAuth.
 - [Studio extensions](studio-extensions.md) for the extension marketplace, authoring SDK, tools,
   settings, and dashboard tiles.
 - [Dashboards](dashboards.md) for configurable tiles, data sources, terminal sessions, and the

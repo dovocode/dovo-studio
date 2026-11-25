@@ -1,6 +1,7 @@
 import { remoteMcpTool } from './studio/remote-mcp.js'
 import { studioDataDirectory } from './dashboards/data-sources.js'
 import { StudioExtensions } from './studio-extensions/extensions.js'
+import { HarnessPlugins } from './agents/plugins/harness-plugins.js'
 import { Dashboards } from './dashboards/dashboards.js'
 import { piSessionStorage, recoverPiSessionCopies } from './agents/providers/pi/session-copies.js'
 import { reconcileTransferOwnership } from './scm/repositories/project-transfer-fences.js'
@@ -629,6 +630,13 @@ export function createServices(
   }
   const backups = new RuntimeBackups(db.name)
   const dataDirectory = studioDataDirectory(store)
+  const harnessPlugins = new HarnessPlugins(
+    db,
+    db.name === ':memory:'
+      ? join(tmpdir(), `dovo-harness-plugins-${randomUUID()}`)
+      : join(dirname(resolve(db.name)), 'harness-plugins'),
+  )
+  tasks.setClaudePlugins((resources) => services.harnessPlugins.claudePluginPaths(resources))
   const services: Services = {
     dictation: new RuntimeDictation(db.name === ':memory:' ? tmpdir() : dirname(resolve(db.name))),
     policy,
@@ -657,6 +665,7 @@ export function createServices(
     peers: (peerConnections = new PeerConnections(db, devices, policy)),
     mcpApps,
     dashboards: new Dashboards(db, mcpApps, store, dataDirectory),
+    harnessPlugins,
     studioExtensions: new StudioExtensions(
       db,
       mcpApps,
@@ -791,6 +800,7 @@ export interface Services {
   mcpApps: McpApps
   dashboards: Dashboards
   studioExtensions: StudioExtensions
+  harnessPlugins: HarnessPlugins
   instanceId: string
   runtimeId: string
   runtimeAddresses: () => string[]

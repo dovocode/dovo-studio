@@ -374,6 +374,9 @@ export class Tasks {
     return this.taskTools
   }
   private taskTools?: { port: number; host: string }
+  setClaudePlugins(paths: NonNullable<TaskTurnRunner['claudePlugins']>) {
+    this.runner.claudePlugins = paths
+  }
   setTaskTools(port: number, token: string, host: string) {
     this.taskTools = { port, host }
     this.runner.setTaskTools(port, token, host)

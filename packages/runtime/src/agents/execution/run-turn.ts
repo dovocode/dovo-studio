@@ -2,6 +2,7 @@ import { nativeGoalSchema } from '@dovo/protocol'
 import { containerSandboxEnabled, type Agent, type ContainerSandbox } from '@dovo/protocol'
 import { threadContainerSandbox } from '../../sandbox/thread-terminal.js'
 import type { Sandboxes } from '../../sandbox/sandboxes.js'
+import type { ResourceSettings } from '@dovo/protocol'
 import { sandboxInstructions } from '../../sandbox/instructions.js'
 import { explainProviderFailure, ProviderFailure } from './provider-failure.js'
 import { botContextMessages, botInstructions, botRoutineContext } from '@dovo/protocol'
@@ -166,6 +167,8 @@ export class TaskTurnRunner {
     return value
   }
   private taskTools?: { port: number; host: string }
+  /** Claude Code plugin folders active for the thread's resolved resources. */
+  claudePlugins?: (resources: Pick<ResourceSettings, 'plugins'>) => string[]
   setTaskTools(port: number, _token: string, host: string) {
     this.taskTools = { port, host }
   }
@@ -370,6 +373,16 @@ export class TaskTurnRunner {
             controller.signal,
             configured,
           )
+        // OAuth tokens stay in the runtime's MCP client. A server that the bridge does not
+        // proxy, such as in a sandboxed thread, would reach the harness without credentials.
+        const unbridgedOAuth = resources.mcpServers.filter((server) => server.oauth)
+        if (unbridgedOAuth.length) {
+          resources.mcpServers = resources.mcpServers.filter((server) => !server.oauth)
+          this.activity?.add('agent', id, 'OAuth MCP servers are unavailable in this thread', {
+            servers: unbridgedOAuth.map((server) => server.name),
+            reason: 'Sandboxed threads connect to MCP servers directly, without Dovo sign-in.',
+          })
+        }
         // The app bridge resolves saved project/agent servers. Machine-owned Cua is
         // launched directly by the provider and follows its per-session lifecycle.
         if (cuaServer) resources.mcpServers.push(cuaServer)
@@ -1312,6 +1325,10 @@ export class TaskTurnRunner {
                   instructions: providerInstructions,
                 },
                 cwd,
+                // A container cannot read host plugin folders.
+                ...(agent.provider === 'claude' && !sandboxes && this.claudePlugins
+                  ? { claudePlugins: this.claudePlugins(resources) }
+                  : {}),
                 ...(linked.length
                   ? {
                       linkedDirectories: linked.map((item) => ({

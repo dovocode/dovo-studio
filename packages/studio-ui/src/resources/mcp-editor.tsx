@@ -1,6 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { CredentialEditor } from './credential-editor'
+import { McpOAuthPanel } from './mcp-oauth'
 import {
   credentialFields,
   credentialValues,
@@ -250,6 +251,7 @@ export function McpEditor({
                   />
                   Prefer MCP-over-ACP when supported (requires a native MCP 2026-07-28 server)
                 </label>
+                <McpOAuthPanel draft={draft} onChange={setDraft} disabled={!!busy} />
                 <FormField
                   label="Bearer token variable (optional)"
                   error={fieldError('bearerTokenEnv')}

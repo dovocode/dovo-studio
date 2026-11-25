@@ -52,6 +52,8 @@ export interface AgentRun {
   sandbox?: SandboxSession
   cwd: string
   linkedDirectories?: Array<{ id: string; path: string; access: 'read-only' | 'edit' }>
+  /** Reviewed Claude Code plugin folders installed on this computer, loaded with `--plugin-dir`. */
+  claudePlugins?: string[]
   attachments?: Array<import('@dovo/protocol').Attachment & { path: string; data: string }>
   prompt: string
   /** Request the provider's native compaction, without treating the command as a model prompt. */

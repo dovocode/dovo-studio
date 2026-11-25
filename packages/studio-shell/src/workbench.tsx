@@ -1544,6 +1544,16 @@ function WorkbenchContent({
                   title: `Open saved ${view.kind} view: ${view.name}`,
                   run: () => navigate({ viewId: view.kind, entityId: `saved-view:${view.id}` }),
                 })),
+                ...(snapshot?.harnessPluginsSupported
+                  ? [
+                      {
+                        id: 'agent-plugin-marketplaces',
+                        title: 'Browse agent plugin marketplaces',
+                        run: () =>
+                          navigate({ viewId: 'studio-extensions', entityId: 'agent-plugins' }),
+                      },
+                    ]
+                  : []),
                 ...(snapshot?.studioExtensionMarketplaceSupported
                   ? [
                       {

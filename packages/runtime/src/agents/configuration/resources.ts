@@ -15,6 +15,7 @@ import { managedSkillSchema, mcpServerSchema, mcpTestResultSchema } from '@dovo/
 import { processEnvironment } from '../../process.js'
 import { mcpHttpOptions } from '../../mcp-apps/http-transport.js'
 import { mcpServerEnvironment, mcpHeaders } from './mcp-settings.js'
+import type { McpOAuth } from '../../mcp-oauth/oauth.js'
 export async function importSkill(input: unknown) {
   const { path } = decode(
     mutableStruct({
@@ -69,7 +70,7 @@ export function parseSkillDocument(text: string) {
     content: text.slice(match[0].length),
   })
 }
-export async function testMcpServer(input: unknown) {
+export async function testMcpServer(input: unknown, oauth?: McpOAuth) {
   const server = decode(mcpServerSchema, input)
   if (server.acpTransport) return testNativeMcpServer(server)
   const client = new Client({
@@ -90,7 +91,10 @@ export async function testMcpServer(input: unknown) {
             ...mcpServerEnvironment(server),
           },
         })
-      : new StreamableHTTPClientTransport(new URL(server.url), mcpHttpOptions(mcpHeaders(server)))
+      : new StreamableHTTPClientTransport(new URL(server.url), {
+          ...mcpHttpOptions(mcpHeaders(server)),
+          authProvider: oauth?.provider(server),
+        })
   const signal = AbortSignal.timeout(15000)
   try {
     await client.connect(transport, {
