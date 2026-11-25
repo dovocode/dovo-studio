@@ -2,6 +2,7 @@ import {
   formatThreadAge,
   formatTurnDuration,
   threadStatusTimestamp,
+  threadWorkingSince,
   taskIsWorking,
   isSnoozed,
   hasUnviewedTaskCompletion,
@@ -9,8 +10,8 @@ import {
 } from '@dovo/protocol'
 
 export function workingThreadAge(task: Task, state: string, now: number) {
-  if (state !== 'Working' || task.status !== 'running') return ''
-  const date = threadStatusTimestamp(task, task.turns?.at(-1))
+  if (state !== 'Working') return ''
+  const date = threadWorkingSince(task, task.turns?.at(-1))
   return formatTurnDuration(now - Date.parse(date ?? ''))
 }
 

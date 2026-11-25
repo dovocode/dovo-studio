@@ -992,8 +992,31 @@ try {
   await page.getByTestId('Task parent').getByLabel('Needs input', { exact: true }).waitFor()
   assert.equal(await subthreadCount.innerText(), '5')
   assert.equal(await page.getByText('Remote child', { exact: true }).count(), 0)
-  await page.evaluate(() => window.publish({ parent: { threadWatches: [] } }))
-  await page.getByTestId('Task parent').getByLabel('Working', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    const now = Date.now()
+    window.publish({
+      parent: {
+        threadWatches: [],
+        lastViewedTurnId: 'parent-turn',
+        turns: [
+          {
+            id: 'parent-turn',
+            assistantId: 'parent-reply',
+            agentId: 'agent',
+            provider: 'codex',
+            model: 'fixture',
+            status: 'completed',
+            startedAt: new Date(now - 30_000).toISOString(),
+            finishedAt: new Date(now - 10_000).toISOString(),
+          },
+        ],
+      },
+    })
+  })
+  const workingTimer = parentRow.getByLabel(/^Working · \d+s$/)
+  const firstTick = await workingTimer.getAttribute('aria-label')
+  await parentRow.getByLabel(firstTick, { exact: true }).waitFor({ state: 'detached' })
+  await workingTimer.waitFor()
   assert.equal(await subthreadCount.innerText(), '1')
   await page.evaluate(() => {
     const parent = window.snapshot.workspace.tasks.find((task) => task.id === 'parent')
@@ -1009,7 +1032,7 @@ try {
     })
   })
   const parentStatus = page.getByTestId('Task parent').getByTestId('Thread status')
-  await parentStatus.getByText(/^\d+m$/).waitFor()
+  await parentStatus.getByText('now', { exact: true }).waitFor()
   assert.equal(await parentStatus.locator('svg').count(), 0)
   await page.getByTestId('Task task-2').dispatchEvent('contextmenu')
   await page.getByTestId('Task task-3').click()

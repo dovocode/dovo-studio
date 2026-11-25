@@ -238,8 +238,16 @@ it('presents finished watched threads as Waiting while preserving input priority
 })
 
 it('keeps an idle parent Working until its native child finishes, with input taking priority', () => {
+  const completed = task('review')
   const parent = {
-    ...task('review'),
+    ...completed,
+    turns: [
+      {
+        ...completed.turns![0]!,
+        startedAt: '2026-09-20T12:09:30Z',
+        finishedAt: '2026-09-20T12:09:45Z',
+      },
+    ],
     waitingForFeedback: true,
     subagents: [
       {
@@ -248,13 +256,14 @@ it('keeps an idle parent Working until its native child finishes, with input tak
         provider: 'codex',
         status: 'working' as const,
         sessionLive: true,
-        startedAt: '2026-09-20T10:00:00Z',
-        updatedAt: '2026-09-20T10:00:00Z',
+        startedAt: '2026-09-20T12:09:40Z',
+        updatedAt: '2026-09-20T12:09:40Z',
       },
     ],
   }
-  expect(taskPresentation(parent, false, now).state).toBe('Working')
-  expect(taskPresentation(parent, true, now).state).toBe('Needs input')
+  expect(taskPresentation(parent, false, now).label).toBe('Working · 30s')
+  expect(taskPresentation(parent, false, now + 1000).label).toBe('Working · 31s')
+  expect(taskPresentation(parent, true, now).label).toBe('Needs input')
   parent.subagents = [{ ...parent.subagents[0]!, sessionLive: false }]
   expect(taskPresentation(parent, false, now).state).toBe('Waiting')
 })

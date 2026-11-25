@@ -112,6 +112,9 @@ older messages, whitespace-only file filtering, proactive review panels, startin
 provider-version checks and desktop quit-shortcut controls. `$` still finds skills when slash-menu
 skills are disabled. The composer stores and sends plain Markdown.
 
+The thread list's Working timer measures from the parent turn start and continues while its
+subagents are active. A request for human input takes priority in the row.
+
 Reduced background activity slows overview refreshes to two minutes. Balanced keeps the existing
 30-second visible-window cadence; input preview retains its faster refresh. On iOS, Face ID, Control
 Center, the app switcher and permission prompts make the app inactive. The live connection, outbox

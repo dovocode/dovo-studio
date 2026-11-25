@@ -42,6 +42,12 @@ export function threadStatusTimestamp(
   )
 }
 
+/** Keep the parent turn's clock while the thread is still working through its children. */
+export function threadWorkingSince(task: TaskMetadata, turn?: Pick<TaskTurn, 'startedAt'>) {
+  const running = task.status === 'running' ? task.runPhase !== 'finalizing' : taskIsWorking(task)
+  return running ? turn?.startedAt : undefined
+}
+
 /** Provider-owned shell jobs can outlive an agent turn without keeping the thread Working. */
 export function taskBackgroundTerminalCount(task: Pick<TaskMetadata, 'subagents'>) {
   return (

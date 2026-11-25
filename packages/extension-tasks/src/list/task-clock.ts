@@ -1,4 +1,4 @@
-import { formatThreadAge } from '@dovo/protocol'
+import { formatThreadAge, threadWorkingSince } from '@dovo/protocol'
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type { Task } from '@dovo/studio-core'
 import { subscribeClock } from '@dovo/studio-core/clock'
@@ -7,11 +7,9 @@ import { taskPresentation } from './task-presentation'
 /** Refresh a Working timer each second while other row labels use a minute cadence. */
 export function taskClockInterval(task: Task, now: number, needsInput = false, online = true) {
   const latest = task.turns?.at(-1)
-  const started = Date.parse(latest?.startedAt ?? '')
+  const started = Date.parse(threadWorkingSince(task, latest) ?? '')
   if (
     online &&
-    task.status === 'running' &&
-    task.runPhase !== 'finalizing' &&
     Number.isFinite(started) &&
     (now - started < 60000 || taskPresentation(task, needsInput, now).state === 'Working')
   )

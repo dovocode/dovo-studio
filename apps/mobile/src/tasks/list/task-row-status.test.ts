@@ -194,7 +194,8 @@ it('keeps an idle parent Working until its native child finishes, with input tak
       },
     ],
   }
-  expect(taskRowStatus(parent, false, true, now)).toBe('Working')
+  expect(taskRowStatus(parent, false, true, now)).toBe('Working · 8m')
+  expect(taskRowStatus(parent, false, true, now + 60_000)).toBe('Working · 9m')
   expect(taskRowStatus(parent, true, true, now)).toBe('Needs input')
   parent.subagents = [{ ...parent.subagents[0]!, sessionLive: false }]
   expect(taskRowStatus(parent, false, true, now)).toBe('Waiting · 4m')
