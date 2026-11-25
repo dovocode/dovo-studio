@@ -45,3 +45,20 @@ it('waits for the latest exhausted window and separates snoozing from resuming',
     quotaContinuation('Quota exhausted', [limit], { quotaSnooze: true }, 'turn', now)?.resume,
   ).toBe(false)
 })
+
+it('uses an explicit reset from the provider failure when no usage window was reported', () => {
+  const resetAt = now + 282000
+  expect(
+    quotaContinuation(
+      'Provider reported a usage limit',
+      [],
+      { quotaResume: true },
+      'turn',
+      now,
+      resetAt,
+    ),
+  ).toEqual({ turnId: 'turn', at: new Date(resetAt).toISOString(), resume: true })
+  expect(
+    quotaContinuation('Provider reported a usage limit', [], {}, 'turn', now, resetAt),
+  ).toBeUndefined()
+})

@@ -4,36 +4,13 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { selectedPatchCode } from './selected-code'
 import { reviewPatch } from './review-patch'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
 import { forgeLabels, pullFilePatch, type ForgeProvider } from '@dovo/studio-core'
-
-/** A selected line range, kept with the PR revision and patch it was written against. */
-export type PullLineSelection = {
-  start: number
-  end: number
-  side: 'additions' | 'deletions'
-  file: PullDetail['files'][number]
-  headSha: string
-  expectedDestination?: string
-}
-/** Comment state owned by the file list, so it outlives a file leaving the render window. */
-export type PullLineDraft = {
-  selection: PullLineSelection | null
-  destination: 'github' | 'agent'
-  body: string
-  suggesting: boolean
-  replacement: string
-}
-export const emptyPullLineDraft: PullLineDraft = {
-  selection: null,
-  destination: 'agent',
-  body: '',
-  suggesting: false,
-  replacement: '',
-}
+import type { PullCommentStatus } from '@dovo/protocol'
+import { emptyPullLineDraft, type PullLineDraft, type PullLineSelection } from './line-drafts'
 
 export function PullPatch({
   file,
@@ -47,10 +24,12 @@ export function PullPatch({
   allowInlineComment = true,
   allowInlineRange = true,
   headSha = '',
+  baseSha = '',
   expectedDestination,
   draft = emptyPullLineDraft,
   onDraft,
   commentDisabled = false,
+  readSubmission,
 }: {
   file: PullDetail['files'][number]
   split: boolean
@@ -66,6 +45,7 @@ export function PullPatch({
     destination: 'github' | 'agent',
     baseline: {
       headSha: string
+      baseSha: string
       path: string
       patch: string
       expectedDestination?: string
@@ -82,10 +62,12 @@ export function PullPatch({
   allowInlineComment?: boolean
   allowInlineRange?: boolean
   headSha?: string
+  baseSha?: string
   expectedDestination?: string
   draft?: PullLineDraft
   onDraft?: (update: (draft: PullLineDraft) => PullLineDraft) => void
   commentDisabled?: boolean
+  readSubmission?: (id: string) => Promise<PullCommentStatus>
 }) {
   const uiText = useInterfaceText()
   const keyboardPicker = useRef<HTMLDetailsElement>(null)
@@ -98,21 +80,55 @@ export function PullPatch({
   }, [])
   const [lineError, setLineError] = useApplicationState(false)
   const { selection } = draft
+  const selectionStale =
+    !!selection &&
+    (selection.headSha !== headSha ||
+      selection.baseSha !== baseSha ||
+      selection.expectedDestination !== expectedDestination)
+  const [posted, setPosted] = useState<{
+    id: string
+    attempt: number
+    status: PullCommentStatus['status'] | 'unavailable'
+  }>()
+  const [check, setCheck] = useState(0)
+  const posting = useRef(false)
+  const submissionId = draft.submissionId
+  const submissionStatus =
+    posted?.id === submissionId && posted?.attempt === check ? posted?.status : undefined
+  const confirmPending = !!submissionId && submissionStatus !== 'rejected'
+  useEffect(() => {
+    if (!submissionId || !readSubmission || commentDisabled || posting.current) return
+    let current = true
+    void readSubmission(submissionId).then(
+      ({ status }) => {
+        if (current) setPosted({ id: submissionId, attempt: check, status })
+      },
+      () => {
+        if (current) setPosted({ id: submissionId, attempt: check, status: 'unavailable' })
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [check, commentDisabled, readSubmission, submissionId])
   const destination = allowAgent ? draft.destination : 'github'
-  const setSelection = (next: PullLineSelection | null) =>
+  const setSelection = (next: PullLineSelection | null) => {
+    if (next && (confirmPending || posting.current)) return
     onDraft?.((current) =>
       next
         ? {
             ...current,
             selection: next,
-            replacement: current.selection
-              ? current.replacement
-              : next.side === 'additions' && parsed.diff
-                ? (selectedPatchCode(parsed.diff, next.start, next.end) ?? '')
-                : '',
+            replacement:
+              current.selection || current.suggesting
+                ? current.replacement
+                : next.side === 'additions' && parsed.diff
+                  ? (selectedPatchCode(parsed.diff, next.start, next.end) ?? '')
+                  : '',
           }
         : { ...emptyPullLineDraft, destination: current.destination },
     )
+  }
   const setDestination = (next: PullLineDraft['destination']) =>
     onDraft?.((current) => ({ ...current, destination: next }))
   const closeComment = () => {
@@ -132,7 +148,38 @@ export function PullPatch({
     return () => cancelAnimationFrame(frame)
   }, [])
   // Keep the original diff and range mounted while a push refreshes the live PR.
-  const draftFile = selection?.file ?? file
+  const draftFile = selection?.file.patch || selectionStale ? (selection?.file ?? file) : file
+  const recoveredDraft = !selection && (draft.body || draft.suggesting)
+  const recovery = submissionId && confirmPending && (
+    <div className="border-b px-3 py-2 text-xs">
+      <p role="status">
+        {submissionStatus === 'posted'
+          ? 'This comment was already posted.'
+          : commentDisabled
+            ? 'Reconnect to check whether this comment was posted.'
+            : submissionStatus === 'unavailable' ||
+                submissionStatus === 'unknown' ||
+                submissionStatus === 'uncertain'
+              ? 'Could not confirm whether this comment posted. Check the pull request before posting it again.'
+              : 'Checking whether this comment was posted…'}
+      </p>
+      {submissionStatus !== 'posted' && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={commentDisabled}
+          onClick={() => setCheck((value) => value + 1)}
+        >
+          Check post status
+        </Button>
+      )}
+    </div>
+  )
+  const chooseLines = () => {
+    onDraft?.((current) => ({ ...current, selection: null, submissionId: undefined }))
+    if (keyboardPicker.current) keyboardPicker.current.open = true
+  }
   const binary = !!file.attributes?.binary && !selection
   const parsed = useMemo(() => {
     if (binary) return { diff: undefined, error: '' }
@@ -195,19 +242,44 @@ export function PullPatch({
       stopped = true
     }
   }, [draftFile.path, draftFile.previousPath, highlightAttempt, binary])
+  const recoveredText = (recoveredDraft || (selectionStale && !draftFile.patch)) && (
+    <div className="space-y-2 border-b px-3 py-2 text-xs">
+      <p role="status">Saved line comment. Select lines in the current diff to continue.</p>
+      <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">{draft.body}</pre>
+      {draft.suggesting && (
+        <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">{draft.replacement}</pre>
+      )}
+      {selection && !confirmPending && (
+        <Button type="button" size="sm" variant="outline" onClick={chooseLines}>
+          Choose new lines
+        </Button>
+      )}
+      <Button type="button" size="sm" variant="ghost" onClick={closeComment}>
+        Discard draft
+      </Button>
+    </div>
+  )
   if (binary)
     return (
-      <p className="p-4 text-xs text-muted-foreground">
-        Text diff disabled by .gitattributes (binary or -diff).
-      </p>
+      <>
+        {recovery}
+        {recoveredText}
+        <p className="p-4 text-xs text-muted-foreground">
+          Text diff disabled by .gitattributes (binary or -diff).
+        </p>
+      </>
     )
   if (!draftFile.patch)
     return (
-      <p className="p-4 text-xs text-muted-foreground">
-        {forgeLabels[provider]} has no text patch for this file (binary, large, or rename-only).
-        Open the PR on
-        {forgeLabels[provider]} for the full file.
-      </p>
+      <>
+        {recovery}
+        {recoveredText}
+        <p className="p-4 text-xs text-muted-foreground">
+          {forgeLabels[provider]} has no text patch for this file (binary, large, or rename-only).
+          Open the PR on
+          {forgeLabels[provider]} for the full file.
+        </p>
+      </>
     )
   if (error || parsed.error || !parsed.diff)
     return (
@@ -246,11 +318,20 @@ export function PullPatch({
           Review excerpt · original line numbers; surrounding changes may be omitted.
         </p>
       )}
-      {selection && selection.headSha !== headSha && (
-        <p role="status" className="py-2 text-xs text-muted-foreground">
-          This draft refers to an earlier PR revision. Your text is preserved; select lines on the
-          current revision before posting to the PR, or send this feedback to an agent.
-        </p>
+      {recovery}
+      {recoveredText}
+      {selectionStale && (
+        <div className="px-3 py-2 text-xs text-muted-foreground">
+          <p role="status">
+            This draft refers to an earlier PR revision. Select lines on the current revision before
+            posting.
+          </p>
+          {!confirmPending && (
+            <Button type="button" size="sm" variant="outline" onClick={chooseLines}>
+              Choose new lines
+            </Button>
+          )}
+        </div>
       )}
       {ready && onComment && !commentDisabled && !focusedLine && onDraft && (
         <details ref={keyboardPicker} className="border-b px-3 py-2 text-xs">
@@ -282,6 +363,7 @@ export function PullPatch({
                 side,
                 file: draftFile,
                 headSha: selection?.headSha ?? headSha,
+                baseSha: selection?.baseSha ?? baseSha,
                 expectedDestination: selection?.expectedDestination ?? expectedDestination,
               })
             }}
@@ -353,6 +435,7 @@ export function PullPatch({
                   draft={draft}
                   onDraft={(value) => onDraft?.((current) => ({ ...current, ...value }))}
                   disabled={commentDisabled || !onComment}
+                  submitDisabled={confirmPending}
                   submitLabel={
                     destination === 'github'
                       ? `Post to ${forgeLabels[provider]}`
@@ -360,7 +443,7 @@ export function PullPatch({
                   }
                   onCancel={closeComment}
                   onSubmit={async (body) => {
-                    if (!onComment || commentDisabled) return
+                    if (!onComment || commentDisabled || confirmPending) return
                     if (
                       destination === 'github' &&
                       !allowInlineRange &&
@@ -369,22 +452,33 @@ export function PullPatch({
                       throw new Error(
                         'This provider accepts one line per comment. Select a single line or send the range to an agent thread.',
                       )
-                    await onComment(
-                      body,
-                      { start: selection.start, end: selection.end, side: selection.side },
-                      destination,
-                      {
-                        headSha: selection.headSha,
-                        expectedDestination: selection.expectedDestination,
-                        path: selection.file.path,
-                        patch: selection.file.patch ?? '',
-                        code:
-                          selection.side === 'additions'
-                            ? selectedPatchCode(parsed.diff, selection.start, selection.end)
-                            : undefined,
-                      },
+                    posting.current = true
+                    try {
+                      await onComment(
+                        body,
+                        { start: selection.start, end: selection.end, side: selection.side },
+                        destination,
+                        {
+                          headSha: selection.headSha,
+                          baseSha: selection.baseSha,
+                          expectedDestination: selection.expectedDestination,
+                          path: selection.file.path,
+                          patch: selection.file.patch ?? '',
+                          code:
+                            selection.side === 'additions'
+                              ? selectedPatchCode(parsed.diff, selection.start, selection.end)
+                              : undefined,
+                        },
+                      )
+                    } finally {
+                      posting.current = false
+                      setCheck((value) => value + 1)
+                    }
+                    if (
+                      (destination === 'github' && !readSubmission) ||
+                      (destination === 'agent' && agentAction?.clears)
                     )
-                    if (destination === 'github' || agentAction?.clears) closeComment()
+                      closeComment()
                   }}
                 >
                   <ChoicePicker
@@ -424,6 +518,7 @@ export function PullPatch({
                   side: range.side ?? 'additions',
                   file: draftFile,
                   headSha: selection?.headSha ?? headSha,
+                  baseSha: selection?.baseSha ?? baseSha,
                   expectedDestination: selection?.expectedDestination ?? expectedDestination,
                 })
             },
@@ -435,6 +530,7 @@ export function PullPatch({
                   side: range.side ?? 'additions',
                   file: draftFile,
                   headSha: selection?.headSha ?? headSha,
+                  baseSha: selection?.baseSha ?? baseSha,
                   expectedDestination: selection?.expectedDestination ?? expectedDestination,
                 })
             },

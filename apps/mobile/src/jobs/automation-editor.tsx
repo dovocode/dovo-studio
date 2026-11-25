@@ -96,7 +96,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
     ;[next[index], next[index + offset]] = [next[index + offset], next[index]]
     updateNodes(next)
   }
-  const add = (kind: 'task' | 'review') => {
+  const add = (kind: 'task' | 'review' | 'pipeline-wait') => {
     if (!ordered) return
     const node = newAutomationNode(randomUUID(), kind, {
       repositoryId: workspace.repositories[0]?.id ?? '',
@@ -472,16 +472,18 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                       {node.data.label || uiText('Untitled step')}
                     </Text>
                     <Text style={styles.muted}>
-                      {node.data.kind === 'review'
-                        ? uiText('Approval gate')
-                        : node.data.botId
-                          ? uiText('Bot job · {value0}', {
-                              value0:
-                                snapshot?.workspace.tasks.find(
-                                  (task) => task.id === node.data.botId && task.bot,
-                                )?.title || 'Unavailable Bot',
-                            })
-                          : uiText('Agent task')}
+                      {node.data.pipelineWait
+                        ? uiText('Wait for CI')
+                        : node.data.kind === 'review'
+                          ? uiText('Approval gate')
+                          : node.data.botId
+                            ? uiText('Bot job · {value0}', {
+                                value0:
+                                  snapshot?.workspace.tasks.find(
+                                    (task) => task.id === node.data.botId && task.bot,
+                                  )?.title || 'Unavailable Bot',
+                              })
+                            : uiText('Agent task')}
                     </Text>
                   </View>
                   <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
@@ -545,6 +547,14 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               disabled={busy}
               onPress={() => add('review')}
             />
+            {snapshot?.automationPipelineWaitSupported && (
+              <Action
+                secondary
+                label={uiText('Wait for CI')}
+                disabled={busy}
+                onPress={() => add('pipeline-wait')}
+              />
+            )}
           </View>
           <Text style={styles.muted}>
             {baseline?.enabled

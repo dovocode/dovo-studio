@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Alert, Linking, View } from 'react-native'
 import {
   linearIssuesSchema,
+  linearIssueSources,
   runtimeComputerName,
   type RuntimeOverview,
   type linearIssueQuerySchema,
@@ -41,7 +42,7 @@ export function LinearIssuesSheet({
         />
       )}
       {source ? (
-        <LinearList key={id} source={source} />
+        <LinearSources key={id} source={source} />
       ) : (
         <Text>{uiText('Linear is unavailable.')}</Text>
       )}
@@ -49,17 +50,53 @@ export function LinearIssuesSheet({
   )
 }
 
-function LinearList({ source }: { source: RuntimeOverview }) {
+function LinearSources({ source }: { source: RuntimeOverview }) {
+  const uiText = useInterfaceText()
+  const options = linearIssueSources(
+    source.snapshot?.linearConnections,
+    source.snapshot?.workspace.repositories ?? [],
+    source.snapshot?.linearKeySource !== 'none',
+  )
+  const [id, setId] = useState(options[0]?.id ?? '')
+  const selected = options.find((item) => item.id === id)
+  return (
+    <>
+      {(options.length > 1 || !selected) && (
+        <Choice
+          label={uiText('Linear source')}
+          value={selected ? id : ''}
+          onChange={setId}
+          items={options.map(({ id, name }) => ({ id, name: uiText(name) }))}
+        />
+      )}
+      {selected && <LinearList key={id} source={source} selection={selected.input} />}
+    </>
+  )
+}
+
+function LinearList({
+  source,
+  selection,
+}: {
+  source: RuntimeOverview
+  selection: Pick<typeof linearIssueQuerySchema.Type, 'connectionId' | 'repositoryId'>
+}) {
   const uiText = useInterfaceText()
   const { styles, colors } = useTheme()
   const { readRuntime } = useRuntime()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string>()
   const [notice, setNotice] = useState('')
+  const { connectionId, repositoryId } = selection
   const read = useCallback(
     (input: typeof linearIssueQuerySchema.Type) =>
-      readRuntime(source.profile, '/api/scm/linear/issues/read', input, linearIssuesSchema),
-    [readRuntime, source.profile],
+      readRuntime(
+        source.profile,
+        '/api/scm/linear/issues/read',
+        { ...input, connectionId, repositoryId },
+        linearIssuesSchema,
+      ),
+    [readRuntime, source.profile, connectionId, repositoryId],
   )
   const issues = useLinearIssues(read)
   const submit = () => {

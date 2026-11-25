@@ -15,6 +15,8 @@ export const runLabels = {
   failed: 'Failed',
   cancelled: 'Cancelled',
 } satisfies Record<JobRun['status'], string>
+export const runLabel = (run: JobRun) =>
+  run.pipelineWait ? 'Waiting for CI' : run.retryAt ? 'Waiting for provider' : runLabels[run.status]
 export function runSteps(run: JobRun, flow: Automation): RunStep[] {
   // New runs carry their own step snapshot, so editing the graph cannot rewrite run history.
   if (run.steps) return run.steps
@@ -22,6 +24,7 @@ export function runSteps(run: JobRun, flow: Automation): RunStep[] {
     nodeId: node.id,
     label: node.data.label,
     kind: node.data.kind,
+    waitsForCi: node.data.pipelineWait ? true : undefined,
     attempt: 1,
     status: run.completedNodes.includes(node.id)
       ? 'completed'

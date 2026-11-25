@@ -38,6 +38,7 @@ import { router } from 'expo-router'
 import { modelCatalogSchema, resolveTaskAgent } from '@dovo/protocol'
 import { taskHref } from '../../../shell/task-route'
 import { QuoteSelection } from './quote-selection'
+import { SuggestRoutine } from './suggest-routine'
 import { requestMessageReveal } from '../message-reveal'
 
 type Feedback = '' | 'message' | 'code'
@@ -449,6 +450,7 @@ export function MessageActions({
           <Icon name="newChat" size={14} color={colors.muted} />
         </Pressable>
       )}
+      {user && message && !pending && <SuggestRoutine taskId={task.id} message={message} />}
       {!!turn && !task.bot && turn.status !== 'running' && (
         <Pressable
           testID={snapshotTree ? 'Fork with files from this turn' : 'Fork from this reply'}

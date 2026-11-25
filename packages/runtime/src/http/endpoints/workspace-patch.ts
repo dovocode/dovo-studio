@@ -112,6 +112,14 @@ function apply(s: Services, requested: WorkspacePatch): WorkspacePatchResult {
         })
         const schemaIssue = automationResultSchemaIssues(definition)[0]
         if (schemaIssue) throw new HttpError(400, schemaIssue)
+        if (
+          current?.nodes.some(
+            (node) =>
+              node.data.pipelineWait &&
+              definition.nodes.some((next) => next.id === node.id && !next.data.pipelineWait),
+          )
+        )
+          throw new HttpError(409, 'Update this client before editing the CI gate.')
         if (current && (definition.enabled || current.enabled))
           validateAutomation(definition, s.store.get())
       }

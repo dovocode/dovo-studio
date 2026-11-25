@@ -11,6 +11,7 @@ import {
   routineCitedQuoteValid,
   routineOwnerWords,
   routineSourceQuote,
+  routineSuggestionWords,
   ROUTINE_CHANGE_RETENTION,
   ROUTINE_CITED_QUOTE_MINIMUM,
   type Automation,
@@ -46,22 +47,12 @@ export function createRoutineChangeTable(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS routine_changes_automation ON routine_changes(automation_id, at)`)
 }
 
-/** Runtime-written messages that older runtimes saved without a source. */
-const RUNTIME_MESSAGE_PREFIXES = ['pr-watch:', 'pipeline-watch:']
-
 /** Only a message that the runtime marked as the person's own counts. Agent replies, child
  * results, automation, webhook, watcher, thread-to-thread, imported and button messages carry
  * another source or role. Undo, redo, handoff and diff comment notes and older watcher messages
  * have no source, so they never count. */
 export function isOwnerMessage(message: ChatMessage | undefined): message is ChatMessage {
-  return (
-    !!message &&
-    message.role === 'user' &&
-    messageSourceFor(message)?.kind === 'user' &&
-    !RUNTIME_MESSAGE_PREFIXES.some((prefix) => message.id.startsWith(prefix)) &&
-    !message.subagentResultId &&
-    !!routineOwnerWords(message.text)
-  )
+  return !!routineSuggestionWords(message)
 }
 
 /** Resolve and validate the source before any change is written. */

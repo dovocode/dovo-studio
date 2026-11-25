@@ -41,6 +41,11 @@ The Bot tools panel has separate Settings, MCP servers, Skills, Memory and Routi
 servers includes MCP Registry. Skills includes skills.sh. Imports apply to this Bot only; review the
 definition before saving it. Mobile exposes the same entries in the conversation menu.
 
+Choose **Copy Bot template** in Settings to copy the saved name, role and responsibilities. On
+another computer, open **New Bot → Use a Bot template**, paste the text and select **Fill empty
+fields**. Review the draft and choose the destination computer before creating the Bot. The template
+contains only those three fields.
+
 In Settings, choose an avatar image or describe one and select **Generate avatar**. A temporary chat
 uses the Bot's harness by default. Choose another harness, saved agent or installed ACP agent with
 **Avatar generation harness**. This choice does not change the Bot's saved harness. The temporary

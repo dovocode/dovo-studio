@@ -52,6 +52,7 @@ export class AccountInternet {
   private provisioning?: Promise<void>
   private mcpWork?: Promise<void>
   private mcp?: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>
+  private mcpAutomationEvents = () => false
   private mcpEnabled: boolean
   private mcpGeneration = 0
   private polling = new Set<Promise<void>>()
@@ -333,8 +334,12 @@ export class AccountInternet {
     this.polling.add(pending)
     return pending
   }
-  registerRemoteMcp(handler: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>) {
+  registerRemoteMcp(
+    handler: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>,
+    automationEvents = () => false,
+  ) {
     this.mcp = handler
+    this.mcpAutomationEvents = automationEvents
   }
   setRemoteMcp(enabled: boolean) {
     if (enabled) {
@@ -376,7 +381,8 @@ export class AccountInternet {
         inboxSchema,
         await this.request(
           remoteMcp
-            ? '/v1/internet/host?remoteMcp=1&mcpEvents=1&mcpRequiredSkills=1'
+            ? '/v1/internet/host?remoteMcp=1&mcpEvents=1&mcpRequiredSkills=1' +
+                (this.mcpAutomationEvents() ? '&mcpAutomationEvents=1' : '')
             : '/v1/internet/host',
           state.grant,
         ),

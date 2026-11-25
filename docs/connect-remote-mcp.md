@@ -80,6 +80,14 @@ IDs and status only. It returns `truncated: true` when a cursor no longer covers
 history, as can happen after a restore or a long disconnect. Read the thread's current state if you
 need to reconcile missed updates. Older runtimes continue to offer their existing MCP tools.
 
+## Poll for automation events
+
+An updated computer with Automations enabled in Studio Tools offers `automation.run_finished` and
+`automation.needs_review`. Narrow a poll with `automationIds`, `runIds`, or both. The finished event
+names the run attempt and outcome. The review event also names the review step and step attempt. Use
+`dovo_automations` with `action: "readRun"` and the run ID to reconcile after a retention gap. Open
+the run in Studio to review the step. Remote MCP apps can read review events under their grant.
+
 ## Verify
 
 ```sh

@@ -31,9 +31,10 @@ window.changes=[
  file('src/zeta.ts',lines(400),lines(400).replaceAll(' = ',' = 1').replace('value200 = 1200','value200 = 2000')),
  {path:'assets/logo.png',before:'',after:'',viewed:false,preview:{kind:'binary'}},
 ];
-window.calls=[];window.failNext=false;window.hold=null;
+window.calls=[];window.failNext=false;window.hold=null;window.revision='first';
 window.store={connected:true,request:async(path,input)=>{
  window.calls.push({path,input});
+ if(input.revisionOnly)return {revision:window.revision};
  if(window.hold)await new Promise(resolve=>{window.release=resolve});
  if(window.failNext){window.failNext=false;throw new Error('Checkout read failed')}
  if(input.path){
@@ -407,6 +408,35 @@ try {
   await list.locator(`[data-path="${long}"]`).click()
   await rendered('export const root = 2')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.path), long)
+
+  // Re-read the visible diff once after a terminal changes HEAD or the index.
+  await page.clock.install()
+  await page.evaluate(() => {
+    window.calls.length = 0
+    window.store.snapshot = { checkoutChangesRevisionSupported: true }
+    window.setTerminal((current) => ({ ...current, id: 'watched' }))
+  })
+  await rendered('export const deep = 2')
+  await page.evaluate(() => {
+    window.revision = 'staged'
+    window.changes = window.changes.map((file) =>
+      file.path.startsWith('deep/') ? { ...file, after: 'export const deep = 3\n' } : file,
+    )
+  })
+  await page.clock.runFor(4050)
+  await rendered('export const deep = 3')
+  await page.clock.runFor(4050)
+  assert.deepEqual(
+    await page.evaluate(() => window.calls.map(({ input }) => !!input.revisionOnly)),
+    [true, false, true, false, true],
+  )
+  await tabs.getByRole('tab', { name: 'Browser', exact: true }).click()
+  await pane.getByText('Other tool', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.revision = 'committed'
+  })
+  await page.clock.runFor(8000)
+  assert.equal(await page.evaluate(() => window.calls.length), 5, 'The hidden pane does not read')
   assert.deepEqual(errors, [])
 } finally {
   await browser.close()

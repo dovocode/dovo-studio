@@ -509,6 +509,21 @@ it('reads GitHub dependencies at the run commit and preserves detail when source
   expect(unavailable.jobs).toHaveLength(1)
 })
 
+it('reads the exact GitHub attempt and does not accept a newer attempt', async () => {
+  const json = vi.fn<WorkHttp['json']>().mockResolvedValue({
+    ...gitRun,
+    run_attempt: 2,
+    status: 'completed',
+    conclusion: 'success',
+  })
+  const provider = new GitForgeWork({ json }, 'github', 'me/app')
+  await expect(provider.githubAttempt('42', 2)).resolves.toBe('success')
+  expect(json.mock.calls[0]?.[0]).toBe('repos/me/app/actions/runs/42/attempts/2')
+  await expect(provider.githubAttempt('42', 1)).rejects.toThrow('requested run attempt')
+  json.mockResolvedValue({ ...gitRun, run_attempt: 2, status: 'in_progress', conclusion: null })
+  await expect(provider.githubAttempt('42', 2)).resolves.toBeUndefined()
+})
+
 it('loads overview, attempt-pinned jobs and commit-pinned dependencies independently', async () => {
   const json = vi.fn<WorkHttp['json']>().mockImplementation(async (path) => {
     if (path.includes('/contents/'))

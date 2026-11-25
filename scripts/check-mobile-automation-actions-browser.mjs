@@ -173,6 +173,8 @@ import {automationHref} from './apps/mobile/src/shell/source-route';
 const run=(id,automationId,createdAt)=>({id,automationId,status:'completed',completedNodes:[],taskIds:[],createdAt});
 const flow={id:'nightly',name:'Nightly review',nodes:[],edges:[]};
 window.state={snapshot:{runs:[run('job-first','nightly','2026-11-12T00:03:00Z'),run('job-later','nightly','2026-11-13T00:00:00Z'),run('job-other','other-flow','2026-11-13T00:00:00Z')],workspace:{automations:[flow]}}};
+window.runLookups=[];
+window.readRun=async(path,input)=>{window.runLookups.push({path,input});return run('job-retained','nightly','2026-11-01T00:00:00Z')};
 function App(){const[href,setHref]=useState(null);window.open=(...args)=>setHref({...automationHref(...args),at:Date.now()});window.setFlows=flows=>{window.state.snapshot={...window.state.snapshot,workspace:{automations:flows}};setHref(value=>({...value,at:Date.now()}))};
 window.params=href?.params;return href?<AutomationRouteScreen key={href.at}/>:null}
 createRoot(document.getElementById('app')).render(<App/>);
@@ -195,7 +197,11 @@ createRoot(document.getElementById('app')).render(<App/>);
     },
     {
       path: '@dovo/protocol',
-      contents: `export {resolveInterfaceLanguage} from '${root}packages/protocol/src/interface-language.ts';export const runtimeComputerName=({profile})=>profile.id;`,
+      contents: `export {resolveInterfaceLanguage} from '${root}packages/protocol/src/interface-language.ts';export {jobRunSchema} from '${root}packages/protocol/src/runtime/connection/runtime.ts';export const runtimeComputerName=({profile})=>profile.id;`,
+    },
+    {
+      path: '@dovo/studio-core',
+      contents: `export {useAutomationRun} from '${root}packages/studio-core/src/use-automation-run.ts';`,
     },
     {
       path: '../runtime/state/application-state',
@@ -206,7 +212,7 @@ createRoot(document.getElementById('app')).render(<App/>);
       path: '../runtime/connection/provider',
       importer: mobile + 'jobs/',
       contents:
-        "export const useRuntime=()=>({snapshot:window.state.snapshot,profile:{id:'owner-a'}});",
+        "const profile={id:'owner-a',connection:{address:'http://owner-a.lan',token:'fixture'}};export const useRuntime=()=>({snapshot:window.state.snapshot,profile,connected:true,read:window.readRun});",
     },
     {
       path: '../shell/runtime-route',
@@ -218,6 +224,12 @@ createRoot(document.getElementById('app')).render(<App/>);
       path: '../ui/controls/icon-button',
       importer: mobile + 'jobs/',
       contents: 'export const IconButton=()=>null;',
+    },
+    {
+      path: '../ui/controls/action',
+      importer: mobile + 'jobs/',
+      contents:
+        'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
     },
     {
       path: '../ui/layout/screen-header',
@@ -477,6 +489,17 @@ try {
   await routePage.getByText('Automation run', { exact: true }).waitFor()
   await routePage.getByText(/may have been removed/).waitFor()
   assert.deepEqual(await runs(), ['job-first'], 'A retained run stays visible after flow deletion')
+  await routePage.evaluate(() => {
+    window.state.snapshot.automationRunLookupSupported = true
+    window.open('owner-a', 'nightly', 'job-retained')
+  })
+  await routePage.getByText('Run job-retained', { exact: true }).waitFor()
+  assert.deepEqual(await routePage.evaluate(() => window.runLookups), [
+    {
+      path: '/api/jobs/detail',
+      input: { id: 'job-retained', automationId: 'nightly' },
+    },
+  ])
   await routePage.evaluate(() => window.open('owner-a', 'nightly'))
   await routePage.getByText('Automation unavailable', { exact: true }).waitFor()
   assert.equal(await routePage.getByText('Requested run', { exact: true }).count(), 0)

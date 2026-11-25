@@ -1,5 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { explainAutomationDraftSchema, randomUUID } from '@dovo/protocol'
 import { RestoreDefinition } from './restore-definition'
 import { RunAudit } from './run-audit'
 import { RunRoutineSource, type RoutineProvenanceState } from './routine-provenance'
@@ -14,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import {
+  clientScopeKey,
   useStudioHost,
   useWorkspace,
   type Automation,
@@ -25,7 +27,7 @@ import {
   elapsed,
   liveRun,
   pendingTaskInput,
-  runLabels,
+  runLabel,
   runSteps,
   stepLabels,
   type RunStep,
@@ -43,7 +45,8 @@ export function StepStatus({
   step,
   needsInput = false,
 }: {
-  step: Pick<RunStep, 'status'> & Partial<Pick<RunStep, 'kind' | 'queuedAt' | 'workStartedAt'>>
+  step: Pick<RunStep, 'status'> &
+    Partial<Pick<RunStep, 'kind' | 'queuedAt' | 'workStartedAt' | 'waitsForCi'>>
   needsInput?: boolean
 }) {
   const Icon = needsInput ? Clock3 : stepIcons[step.status]
@@ -70,7 +73,9 @@ export function StepStatus({
           ? 'Waiting for worker'
           : step.status === 'waiting' && step.kind === 'task'
             ? 'Waiting for provider'
-            : stepLabels[step.status]}
+            : step.status === 'waiting' && step.waitsForCi
+              ? 'Waiting for CI'
+              : stepLabels[step.status]}
     </span>
   )
 }
@@ -91,9 +96,22 @@ export function RunDetails({
   actions: JobActions
   onStep: (id: string) => void
 }) {
-  const { workspace, connected, syncError, snapshot, activeRuntimeId } = useWorkspace()
+  const { workspace, connected, connection, syncError, snapshot, activeRuntimeId, request } =
+    useWorkspace()
   const host = useStudioHost()
   const [now, setNow] = useApplicationState(Date.now)
+  const [explaining, setExplaining] = useState(false)
+  const [explainError, setExplainError] = useState('')
+  const attemptRequests = useRef(new Map<string, string>())
+  const pairing = clientScopeKey(connection)
+  const explainScope = useRef(0)
+  useEffect(() => {
+    setExplainError('')
+    setExplaining(false)
+    return () => {
+      explainScope.current++
+    }
+  }, [pairing, run?.id])
   const active = !!run && liveRun(run)
   useEffect(() => {
     if (!active) return
@@ -137,6 +155,28 @@ export function RunDetails({
       viewId: workspace.tasks.find((task) => task.id === id)?.bot ? 'bots' : 'tasks',
       entityId: id,
     })
+  const explain = async (attempt: number) => {
+    const key = JSON.stringify([pairing, run.id, attempt])
+    const taskId = attemptRequests.current.get(key) ?? randomUUID()
+    attemptRequests.current.set(key, taskId)
+    const current = host.taskNavigationGuard?.()
+    const scope = explainScope.current
+    setExplainError('')
+    setExplaining(true)
+    try {
+      const result = await request(
+        '/api/jobs/explain',
+        { id: run.id, attempt, taskId },
+        explainAutomationDraftSchema,
+      )
+      if (scope === explainScope.current && (!current || current())) openTask(result.taskId)
+    } catch (cause) {
+      if (scope === explainScope.current)
+        setExplainError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (scope === explainScope.current) setExplaining(false)
+    }
+  }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <RestoreDefinition key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
@@ -171,8 +211,7 @@ export function RunDetails({
         >
           {runs.map((item) => (
             <option key={item.id} value={item.id}>
-              {formatDateTime(item.createdAt)} ·{' '}
-              {item.retryAt ? 'Waiting for provider' : runLabels[item.status]}
+              {formatDateTime(item.createdAt)} · {runLabel(item)}
             </option>
           ))}
         </ChoicePicker>
@@ -184,11 +223,7 @@ export function RunDetails({
               run.status === 'waiting' && 'text-status-warning',
             )}
           >
-            {run.retryAt
-              ? 'Waiting for provider'
-              : inputStep
-                ? 'Needs input'
-                : runLabels[run.status]}
+            {inputStep ? 'Needs input' : runLabel(run)}
           </strong>
           <span className="text-muted-foreground">
             {completed}/{steps.length} steps
@@ -250,7 +285,16 @@ export function RunDetails({
             input was accepted. Cancel stops this retry.
           </p>
         )}
-        {run.status === 'waiting' && !run.retryAt && (
+        {run.pipelineWait && (
+          <p className="text-xs">
+            Waiting until {formatDateTime(run.pipelineWait.until)} for the{' '}
+            <a className="underline" href={run.pipelineWait.url} target="_blank" rel="noreferrer">
+              selected GitHub Actions attempt
+            </a>
+            .
+          </p>
+        )}
+        {run.status === 'waiting' && !run.retryAt && !run.pipelineWait && (
           <div className="rounded-lg border border-status-warning/25 bg-status-warning/5 p-3">
             <p className="text-xs font-medium">{waiting?.label ?? 'Review needed'}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -305,6 +349,27 @@ export function RunDetails({
               ? 'Wait for the current run to finish before retrying.'
               : 'Continues this run. Completed threads will not run again.'}
           </p>
+        )}
+        {!!run.failures?.length && snapshot?.automationExplainSupported && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium">Failed attempts</p>
+            {run.failures.map(({ attempt, failedAt }) => (
+              <Button
+                key={attempt}
+                size="sm"
+                variant="outline"
+                disabled={disabled || explaining}
+                onClick={() => void explain(attempt)}
+              >
+                Explain attempt {attempt} · {formatDateTime(failedAt)}
+              </Button>
+            ))}
+            {explainError && (
+              <p role="alert" className="text-xs text-destructive">
+                {explainError}
+              </p>
+            )}
+          </div>
         )}
       </div>
       <ol aria-label="Run steps" className="space-y-1 p-3">

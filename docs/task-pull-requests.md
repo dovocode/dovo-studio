@@ -139,6 +139,12 @@ Refreshes keep the selected file. While a new revision's files load, the previou
 visible and read-only for the same verified PR and account. Comments and viewed changes wait for the
 current revision; a different PR or account never inherits the old diff.
 
+Unsent inline comments in **Changes** survive a desktop or web reload on the same pairing. Dovo
+keeps the original range and the draft text. If the base or head changes, use **Choose new lines**
+to move the draft to the current diff. When a computer supports post receipts, **Check post status**
+reconciles a lost reply before another post. You can discard a saved draft from the original file or
+from the saved comments above the file list.
+
 ## Stacked pull requests
 
 Desktop and mobile show a stack icon and position when an open PR targets the head branch of a

@@ -5,6 +5,9 @@ import {
   botResultSchema,
   decode,
   defaultTaskHarness,
+  routineSuggestionFields,
+  questionPromptSchema,
+  snapshotSchema,
   type Automation,
   type AutomationData,
 } from '@dovo/protocol'
@@ -105,6 +108,121 @@ async function configure(
 }
 const terminal = async (b: Awaited<ReturnType<typeof bot>>, id: string, status = 'completed') =>
   waitForRuntime(() => expect(b.s().jobs.detail(id).status).toBe(status))
+
+it('routes simultaneous Bot and routine questions to their own turns for paired clients', async () => {
+  const b = await bot()
+  const phone = 'paired-bot-question-phone-test-token'
+  const tablet = 'paired-bot-question-tablet-test-token'
+  b.s().devices.add('Phone', phone)
+  b.s().devices.add('Tablet', tablet)
+  b.s().preferences.save({ maxConcurrentWorkers: 3 })
+  const answers = new Map<string, string | undefined>()
+  b.f.runtime.run.mockImplementation(async (input) => {
+    const title = input.prompt.includes('ROUTINE-QUESTION')
+      ? 'Routine approval'
+      : 'Conversation choice'
+    input.onSession(title)
+    const answer = await input.ask(
+      decode(questionPromptSchema, {
+        title,
+        questions: [
+          { id: 'choice', header: 'Choice', question: 'Which result?', custom: true, options: [] },
+        ],
+      }),
+    )
+    answers.set(title, answer?.choice[0])
+    input.onText('Answered ' + title)
+  })
+  const read = async (token: string) =>
+    decode(
+      snapshotSchema,
+      await (
+        await b.f.request('/api/snapshot?scope=overview', undefined, 'GET', undefined, token)
+      ).json(),
+    ).questions
+  const answer = (token: string, taskId: string, id: string, value: string) =>
+    b.f.request(
+      '/api/notifications/answer',
+      { taskId, id, fieldId: 'choice', value },
+      'POST',
+      undefined,
+      token,
+    )
+  await b.send('CONVERSATION-QUESTION')
+  await waitForRuntime(async () => expect(await read(phone)).toHaveLength(1))
+  const [conversation] = await read(phone)
+  await configure(b, 'ROUTINE-QUESTION')
+  const run = b.s().jobs.start('routine-a')
+  await waitForRuntime(async () => expect(await read(tablet)).toHaveLength(2))
+  const questions = await read(tablet)
+  const worker = questions.find((question) => question.taskId === step(b, run)?.taskId)!
+  expect(conversation.taskId).toBe(b.id)
+  expect(worker.prompt.title).toBe('Routine approval')
+  expect(questions).toContainEqual(conversation)
+  expect((await answer(phone, conversation.taskId, worker.id, 'wrong-thread')).status).toBe(409)
+  expect((await answer(tablet, worker.taskId, worker.id, 'ship')).status).toBe(200)
+  await terminal(b, run)
+  expect(await read(phone)).toEqual([conversation])
+  expect((await answer(phone, conversation.taskId, conversation.id, 'hold')).status).toBe(200)
+  await waitForRuntime(() =>
+    expect([...answers.entries()]).toEqual([
+      ['Routine approval', 'ship'],
+      ['Conversation choice', 'hold'],
+    ]),
+  )
+})
+
+it('saves one paused routine from a verified owner message without starting a run', async () => {
+  const b = await bot()
+  const words = 'Summarize open PRs every Friday at 09:00'
+  const messageId = randomUUID()
+  expect(
+    (await b.f.request('/api/tasks/message', { id: b.id, messageId, text: words })).status,
+  ).toBe(200)
+  await waitForRuntime(() => expect(b.s().store.task(b.id).status).toBe('review'))
+  const assistantId = b
+    .s()
+    .store.task(b.id)
+    .messages.find((message) => message.role === 'assistant')!.id
+  const input = {
+    id: randomUUID(),
+    taskId: b.id,
+    messageId,
+    draft: routineSuggestionFields(words, 'UTC'),
+  }
+  expect(
+    (await b.f.request('/api/jobs/from-message', { ...input, messageId: assistantId })).status,
+  ).toBe(400)
+  expect(b.s().store.get().automations).toHaveLength(0)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await b.f.request('/api/jobs/from-message', input)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ id: input.id })
+  }
+  expect(b.s().store.get().automations).toMatchObject([
+    {
+      id: input.id,
+      enabled: false,
+      nodes: [
+        { data: { schedule: '0 9 * * 5', timezone: 'UTC' } },
+        { data: { botId: b.id, objective: words } },
+      ],
+    },
+  ])
+  const history = await b.f.request('/api/jobs/provenance', { id: input.id })
+  expect(await history.json()).toMatchObject({
+    changes: [{ source: { kind: 'owner', messageId, quote: words, cited: true } }],
+  })
+  expect(b.s().jobs.list()).toHaveLength(0)
+  expect(
+    (
+      await b.f.request('/api/jobs/from-message', {
+        ...input,
+        draft: { ...input.draft, name: 'An edit' },
+      })
+    ).status,
+  ).toBe(409)
+})
 
 it('queues scheduled roots per computer while direct conversation stays available', async () => {
   const b = await bot()

@@ -432,6 +432,12 @@ export class GitForgeWork implements ForgeWorkProvider {
       next: raw.length === 30 ? String(page + 1) : undefined,
     }
   }
+  async githubAttempt(runId: string, attempt: number) {
+    const current = decode(run, await this.get(`actions/runs/${runId}/attempts/${attempt}`))
+    if (String(current.id) !== runId || current.run_attempt !== attempt)
+      throw new HttpError(409, 'GitHub did not return the requested run attempt.')
+    return current.status === 'completed' && current.conclusion ? current.conclusion : undefined
+  }
   async pipeline(
     id: string,
     cursor?: string,

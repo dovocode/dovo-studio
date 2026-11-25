@@ -1,12 +1,13 @@
 import type { PlanLimit, TaskBehavior, Task } from '@dovo/protocol'
 
-/** A quota error and a fresh, exhausted provider window must both confirm the stop. */
+/** Use a provider-confirmed reset for this failure or a fresh exhausted provider window. */
 export function quotaContinuation(
   error: string,
   limits: readonly PlanLimit[],
   policy: TaskBehavior | undefined,
   turnId: string,
   now = Date.now(),
+  providerResetAt?: number,
 ): Task['quotaContinuation'] {
   if (!policy?.quotaResume && !policy?.quotaSnooze) return undefined
   if (
@@ -16,14 +17,12 @@ export function quotaContinuation(
   )
     return undefined
   const exhausted = limits.filter((limit) => limit.usedPercent >= 100)
-  // Every exhausted window must report a future reset; wait for the latest one.
-  if (
-    !exhausted.length ||
-    exhausted.some((limit) => !limit.resetsAt || limit.resetsAt * 1000 <= now)
+  if (exhausted.some((limit) => !limit.resetsAt || limit.resetsAt * 1000 <= now)) return undefined
+  const latest = Math.max(
+    providerResetAt ?? 0,
+    ...exhausted.map((limit) => (limit.resetsAt ?? 0) * 1000),
   )
-    return undefined
-  const at = new Date(
-    Math.max(...exhausted.map((limit) => (limit.resetsAt ?? 0) * 1000)),
-  ).toISOString()
+  if (!Number.isFinite(latest) || latest <= now) return undefined
+  const at = new Date(latest).toISOString()
   return { turnId, at, resume: policy.quotaResume === true }
 }

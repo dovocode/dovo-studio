@@ -38,6 +38,7 @@ export function internetApi(
               current,
               url.searchParams.get('mcpEvents') === '1',
               url.searchParams.get('mcpRequiredSkills') === '1',
+              url.searchParams.get('mcpAutomationEvents') === '1',
             )
           : undefined
       return json(res, 200, {

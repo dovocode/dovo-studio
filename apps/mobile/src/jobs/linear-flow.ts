@@ -1,4 +1,9 @@
-import { defaultTaskHarness, automationScheduleChoices, githubEventChoices } from '@dovo/protocol'
+import {
+  defaultPipelineWait,
+  defaultTaskHarness,
+  automationScheduleChoices,
+  githubEventChoices,
+} from '@dovo/protocol'
 import type { Automation, AutomationData, AutomationNode } from '@dovo/protocol'
 
 /** Mobile edits a single ordered path; never flatten a canvas with branches or missing nodes. */
@@ -44,7 +49,7 @@ export function withLinearNodes(flow: Automation, nodes: AutomationNode[]): Auto
 
 export function newAutomationNode(
   id: string,
-  kind: AutomationData['kind'],
+  kind: AutomationData['kind'] | 'pipeline-wait',
   defaults: { repositoryId: string; agentId: string; timezone: string },
 ): AutomationNode {
   return {
@@ -52,13 +57,15 @@ export function newAutomationNode(
     type: 'automation',
     position: { x: 60, y: 170 },
     data: {
-      kind,
+      kind: kind === 'pipeline-wait' ? 'review' : kind,
       label:
         kind === 'trigger'
           ? 'Start'
           : kind === 'review'
             ? 'Review before continuing'
-            : 'Agent task',
+            : kind === 'pipeline-wait'
+              ? 'Wait for CI'
+              : 'Agent task',
       trigger: 'manual',
       schedule: '0 9 * * 1-5',
       timezone: defaults.timezone,
@@ -66,6 +73,7 @@ export function newAutomationNode(
       repositoryId: defaults.repositoryId,
       agentId: '',
       ...(kind === 'task' ? { harness: defaultTaskHarness('codex') } : {}),
+      ...(kind === 'pipeline-wait' ? { pipelineWait: defaultPipelineWait } : {}),
       execution: 'worktree',
     },
   }

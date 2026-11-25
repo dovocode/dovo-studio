@@ -8,11 +8,16 @@ import {
   automationDryRunRequest,
   automationDryRunSchema,
   automationDryRunStatusText,
+  dryRunScenario,
+  dryRunScenarioFields,
+  randomUUID,
   type Automation,
   type AutomationDryRun,
   type AutomationDryRunStepStatus,
+  type AutomationDryRunRequest,
+  type DryRunScenario,
 } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
+import { useDryRunScenarios, useWorkspace } from '@dovo/studio-core'
 import { Button, ChoicePicker, cn, FormField, Input, Textarea } from '@dovo/studio-ui'
 
 const statusIcons = { ran: Check, simulated: FlaskConical, 'not-reached': Circle }
@@ -24,17 +29,29 @@ const statusTone: Record<AutomationDryRunStepStatus, string> = {
 
 /** Test a flow with sample data. The runtime runs no external step and saves nothing. */
 export function DryRunPanel({ flow }: { flow: Automation }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected, snapshot } = useWorkspace()
   const [fields, setFields] = useState(() => automationDryRunFields(flow))
   const [result, setResult] = useState<AutomationDryRun>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [lastInput, setLastInput] = useState<AutomationDryRunRequest>()
+  const [scenarioName, setScenarioName] = useState('')
+  const [editing, setEditing] = useState<DryRunScenario>()
+  const scenarioId = useRef<string | undefined>(undefined)
+  const canSaveScenarios =
+    !!snapshot?.automationDryRunScenariosSupported &&
+    snapshot.workspace.automations.some((item) => item.id === flow.id)
+  const scenarios = useDryRunScenarios(flow, request, connection, canSaveScenarios && connected)
   const generation = useRef(0)
   useEffect(() => {
     generation.current++
     setResult(undefined)
     setError('')
     setBusy(false)
+    setLastInput(undefined)
+    setScenarioName('')
+    setEditing(undefined)
+    scenarioId.current = undefined
   }, [connection, flow.id])
   useEffect(
     () => () => {
@@ -50,7 +67,10 @@ export function DryRunPanel({ flow }: { flow: Automation }) {
       const body = automationDryRunRequest(flow, fields)
       setBusy(true)
       const next = await request('/api/jobs/dry-run', body, automationDryRunSchema)
-      if (version === generation.current) setResult(next)
+      if (version === generation.current) {
+        setLastInput(body)
+        setResult(next)
+      }
     } catch (cause) {
       if (version === generation.current)
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -113,6 +133,23 @@ export function DryRunPanel({ flow }: { flow: Automation }) {
           </FormField>
         </>
       )}
+      {snapshot?.automationDryRunScenariosSupported && use.results.length > 0 && (
+        <FormField label="Sample step results (JSON)">
+          <Textarea
+            aria-label="Sample step results (JSON)"
+            className="min-h-24 font-mono text-xs"
+            maxLength={16384}
+            value={fields.stepResults}
+            onChange={(event) =>
+              setFields((value) => ({ ...value, stepResults: event.target.value }))
+            }
+          />
+          <p className="text-muted-foreground">
+            Use the step ID as the JSON key.{' '}
+            {use.results.map(({ id, label }) => `${label} (${id})`).join(', ')}
+          </p>
+        </FormField>
+      )}
       {use.stops.length > 0 && (
         <FormField label="Simulated outcome">
           <ChoicePicker
@@ -152,6 +189,105 @@ export function DryRunPanel({ flow }: { flow: Automation }) {
         </p>
       )}
       {result && <DryRunResult result={result} />}
+      {canSaveScenarios && (
+        <section className="grid gap-2 border-t pt-3" aria-label="Saved Dry run scenarios">
+          {scenarios.cases.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={scenarios.busy || busy || !connected}
+              onClick={() => void scenarios.run()}
+            >
+              Run saved scenarios
+            </Button>
+          )}
+          {scenarios.cases.map((scenario) => {
+            const check = scenarios.checks?.find((item) => item.id === scenario.id)
+            return (
+              <div key={scenario.id} className="grid gap-1 rounded border p-2">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || scenarios.busy}
+                    onClick={() => {
+                      setFields(dryRunScenarioFields(scenario))
+                      setScenarioName(scenario.name)
+                      setEditing(scenario)
+                      setResult(undefined)
+                      setLastInput(undefined)
+                    }}
+                  >
+                    {scenario.name}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={scenarios.busy || !connected}
+                    aria-label={`Delete scenario ${scenario.name}`}
+                    onClick={() => void scenarios.remove(scenario)}
+                  >
+                    Delete
+                  </Button>
+                  {check && <span role="status">{check.issues.length ? 'Changed' : 'Passed'}</span>}
+                </div>
+                {check?.issues.map((issue) => (
+                  <p key={issue}>{issue}</p>
+                ))}
+              </div>
+            )
+          })}
+          {result && lastInput && (
+            <div className="flex flex-wrap gap-2">
+              <Input
+                aria-label="Scenario name"
+                placeholder="Scenario name"
+                maxLength={100}
+                value={scenarioName}
+                onChange={(event) => setScenarioName(event.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={scenarios.busy || busy || !connected || !scenarioName.trim()}
+                onClick={async () => {
+                  if (
+                    await scenarios.save(
+                      dryRunScenario(
+                        editing?.id ?? (scenarioId.current ??= randomUUID()),
+                        scenarioName,
+                        lastInput,
+                        result,
+                      ),
+                      editing,
+                    )
+                  ) {
+                    setScenarioName('')
+                    setEditing(undefined)
+                    scenarioId.current = undefined
+                  }
+                }}
+              >
+                {editing ? 'Update scenario' : 'Save as scenario'}
+              </Button>
+              {editing && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEditing(undefined)
+                    setScenarioName('')
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </div>
+          )}
+          {scenarios.error && <p role="alert">{scenarios.error}</p>}
+        </section>
+      )}
     </section>
   )
 }

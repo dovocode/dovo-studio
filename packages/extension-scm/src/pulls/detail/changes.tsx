@@ -1,4 +1,4 @@
-import { pullDetailSchema } from '@dovo/protocol'
+import { pullCommentStatusResponse, pullDetailSchema, randomUUID } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   buildPullReviewObjective,
@@ -14,7 +14,7 @@ import {
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { ChangeSummary, OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -24,11 +24,12 @@ import {
   readAppPreferences,
 } from '@dovo/studio-core'
 import { Button, Checkbox } from '@dovo/studio-ui'
-import { PullPatch, emptyPullLineDraft, type PullLineDraft } from './patch'
+import { PullPatch } from './patch'
+import { emptyPullLineDraft, usePullLineDrafts } from './line-drafts'
+import { pullReviewDraftScope } from '@dovo/studio-core/pull-code-review'
 import { DeferredPullFile } from './deferred-file'
 import { PullComments } from './comments'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
-const lineDraftCache = createPullStateCache<ReadonlyMap<string, PullLineDraft>>(30)
 const selectedFileCache = createPullStateCache<string>(30)
 export function PullChanges({
   detail,
@@ -126,7 +127,12 @@ export function PullChanges({
       }),
     [files, fileState, fingerprints],
   )
-  const { request, connected, snapshot } = useWorkspace()
+  const { request, connected, snapshot, connection } = useWorkspace()
+  const readSubmission = useCallback(
+    (submissionId: string) =>
+      request('/api/scm/pulls/comment-status', { submissionId }, pullCommentStatusResponse),
+    [request],
+  )
   const commentsByPath = useMemo(
     () => pullCommentsByFile(detail.files, detail.comments),
     [detail.files, detail.comments],
@@ -144,21 +150,11 @@ export function PullChanges({
     detail.pull.url,
   )
   const [selected, setSelected] = useRetainedPullState(selectedFileCache, draftKey, '')
-  // Full drafts outlive disconnects, detail navigation, and the render window.
-  const [drafts, setDrafts] = useRetainedPullState(lineDraftCache, draftKey, new Map())
-  const updateDraft = (path: string, update: (draft: PullLineDraft) => PullLineDraft) =>
-    setDrafts((current) => {
-      const next = new Map(current)
-      const draft = update(current.get(path) ?? emptyPullLineDraft)
-      next.delete(path)
-      if (draft.selection) next.set(path, draft)
-      while (next.size > 20) {
-        const oldest = next.keys().next().value
-        if (oldest === undefined) break
-        next.delete(oldest)
-      }
-      return next
-    })
+  const {
+    drafts,
+    update: updateDraft,
+    error: draftError,
+  } = usePullLineDrafts(draftKey, pullReviewDraftScope(connection ?? null))
   const selectFile = (path: string) => {
     setSelected(path)
     cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
@@ -196,10 +192,40 @@ export function PullChanges({
     files.find((file) => file.path === selected) ??
     (selected ? files.find((file) => file.previousPath === selected) : undefined) ??
     files[0]
-  if (!detail.files.length)
+  if (!detail.files.length && !drafts.size)
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
   return (
     <section aria-label="Code changes" className="min-w-0">
+      {draftError && (
+        <p role="alert" className="p-2 text-xs text-destructive">
+          {draftError}
+        </p>
+      )}
+      {[...drafts]
+        .filter(
+          ([path, draft]) =>
+            (draft.body || draft.suggesting || draft.submissionId) &&
+            !files.some((file) => file.path === path),
+        )
+        .map(([path, draft]) => (
+          <details key={path} className="border-b p-2 text-xs">
+            <summary>Saved comment on {path}</summary>
+            <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">{draft.body}</pre>
+            {draft.suggesting && (
+              <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                {draft.replacement}
+              </pre>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => updateDraft(path, () => emptyPullLineDraft)}
+            >
+              Discard draft
+            </Button>
+          </details>
+        ))}
       <ChangeSummary
         title={`${files.length} ${files.length === 1 ? 'file' : 'files'} · ${fileList.filter((file) => file.viewed).length} viewed`}
         files={visibleFiles}
@@ -396,6 +422,10 @@ export function PullChanges({
                     onDraft={(update) => updateDraft(file.path, update)}
                     commentDisabled={!connected || !!detail.stale || !active}
                     headSha={detail.pull.headSha}
+                    baseSha={detail.pull.baseSha}
+                    readSubmission={
+                      snapshot?.pullCommentReceiptsSupported ? readSubmission : undefined
+                    }
                     expectedDestination={detail.destination ?? detail.pull.destination}
                     split={split}
                     provider={detail.pull.provider}
@@ -418,10 +448,22 @@ export function PullChanges({
                     onComment={
                       connected && !detail.stale && active
                         ? async (body, range, destination, baseline) => {
+                            const stale =
+                              baseline.headSha !== detail.pull.headSha ||
+                              baseline.baseSha !== detail.pull.baseSha
                             if (destination === 'github') {
-                              if (baseline.headSha !== detail.pull.headSha)
+                              if (stale)
                                 throw new Error(
-                                  'The PR changed while you were writing. Your draft is preserved. Copy it, cancel, and select lines on the current revision before posting.',
+                                  'The PR changed while you were writing. Choose new lines before posting.',
+                                )
+                              const submissionId = snapshot?.pullCommentReceiptsSupported
+                                ? randomUUID()
+                                : undefined
+                              if (submissionId)
+                                updateDraft(
+                                  file.path,
+                                  (draft) => ({ ...draft, submissionId }),
+                                  true,
                                 )
                               await request(
                                 '/api/scm/pulls/comment',
@@ -429,17 +471,23 @@ export function PullChanges({
                                   repositoryId,
                                   number: detail.pull.number,
                                   headSha: baseline.headSha,
+                                  baseSha: baseline.baseSha,
                                   expectedDestination: baseline.expectedDestination,
                                   connectionId: detail.pull.connectionId,
                                   path: baseline.path,
                                   body,
                                   ...range,
+                                  ...(submissionId ? { submissionId } : {}),
                                 },
                                 pullLineCommentResponse,
                               )
+                              if (submissionId)
+                                updateDraft(file.path, (draft) =>
+                                  draft.submissionId === submissionId ? emptyPullLineDraft : draft,
+                                )
                               onPosted()
                             } else if (thread) {
-                              if (baseline.headSha !== detail.pull.headSha)
+                              if (stale)
                                 throw new Error(
                                   'The PR changed while you were writing. Your draft is preserved. Select lines on the current revision before asking the thread.',
                                 )
@@ -452,7 +500,7 @@ export function PullChanges({
                                 }),
                               )
                             } else if (onAskAgent) {
-                              if (baseline.headSha !== detail.pull.headSha)
+                              if (stale)
                                 throw new Error(
                                   'The PR changed while you were writing. Your draft is preserved. Select lines on the current revision before asking an agent.',
                                 )

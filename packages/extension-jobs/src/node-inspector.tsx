@@ -3,8 +3,10 @@ import { useState } from 'react'
 import {
   defaultGithubTrigger,
   defaultMcpEventTrigger,
+  defaultPipelineWait,
   githubEventChoices,
   automationScheduleChoices,
+  projectDisplayName,
 } from '@dovo/protocol'
 import {
   resolveScopedAgents,
@@ -48,9 +50,15 @@ export function NodeInspector({
     workspace.agents,
   )
   const field = (patch: Partial<AutomationData>) => onChange({ ...data, ...patch })
+  const wait = data.pipelineWait ?? defaultPipelineWait
+  const sources = data.pipelineWait
+    ? automationInputSources(flow, node.id).filter(({ data }) => data.resultSchema !== undefined)
+    : []
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 text-xs">
-      <h2 className="font-medium">Configure {data.kind}</h2>
+      <h2 className="font-medium">
+        {data.pipelineWait ? 'Configure CI wait' : `Configure ${data.kind}`}
+      </h2>
       <FormField label={uiText('Name')}>
         <Input value={data.label} onChange={(event) => field({ label: event.target.value })} />
       </FormField>
@@ -432,11 +440,87 @@ export function NodeInspector({
           </fieldset>
         </>
       )}
-      {data.kind === 'review' && (
+      {data.kind === 'review' && !data.pipelineWait && (
         <p className="text-muted-foreground">
           This step represents a human approval before downstream work may execute.
         </p>
       )}
+      {data.pipelineWait &&
+        (snapshot?.automationPipelineWaitSupported ? (
+          <>
+            <FormField label="GitHub project">
+              <ChoicePicker
+                aria-label="GitHub project"
+                value={data.repositoryId}
+                onValueChange={(repositoryId) => field({ repositoryId })}
+              >
+                <option value="">Select a project</option>
+                {workspace.repositories
+                  .filter((repo) => !repo.kind)
+                  .map((repo) => (
+                    <option key={repo.id} value={repo.id}>
+                      {projectDisplayName(repo)}
+                    </option>
+                  ))}
+              </ChoicePicker>
+            </FormField>
+            {(sources.length > 0 || wait.resultStepId) && (
+              <FormField label="Attempt source">
+                <ChoicePicker
+                  aria-label="Attempt source"
+                  value={wait.resultStepId ?? ''}
+                  onValueChange={(resultStepId) =>
+                    field({
+                      pipelineWait: {
+                        ...wait,
+                        resultStepId: resultStepId || undefined,
+                        url: resultStepId ? '' : wait.url,
+                      },
+                    })
+                  }
+                >
+                  <option value="">Enter a URL</option>
+                  {sources.map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.data.label}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </FormField>
+            )}
+            {wait.resultStepId ? (
+              <p className="text-muted-foreground">
+                The upstream task must return the attempt URL as a JSON string.
+              </p>
+            ) : (
+              <FormField label="GitHub Actions attempt URL">
+                <Input
+                  aria-label="GitHub Actions attempt URL"
+                  maxLength={512}
+                  value={wait.url}
+                  placeholder="https://github.com/owner/repo/actions/runs/123/attempts/1"
+                  onChange={(event) =>
+                    field({ pipelineWait: { ...wait, url: event.target.value } })
+                  }
+                />
+              </FormField>
+            )}
+            <FormField label="Timeout (minutes)">
+              <Input
+                aria-label="Timeout (minutes)"
+                type="number"
+                min={1}
+                max={1440}
+                value={wait.timeoutMinutes || ''}
+                onChange={(event) =>
+                  field({ pipelineWait: { ...wait, timeoutMinutes: Number(event.target.value) } })
+                }
+              />
+            </FormField>
+          </>
+        ) : (
+          <p className="text-muted-foreground">Update this runtime to wait for CI.</p>
+        ))}
       <Button variant="outline" size="sm" onClick={onDelete}>
         Delete node
       </Button>

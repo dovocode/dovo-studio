@@ -121,6 +121,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
             cursor: Schema.optional(maxValue(Schema.String, 100)),
             path: Schema.optional(maxValue(minValue(Schema.String, 1), 4000)),
             metadataOnly: Schema.optional(Schema.Boolean),
+            revisionOnly: Schema.optional(Schema.Boolean),
             full: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request, 16384)),
@@ -140,6 +141,8 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         s.devices.authenticate(token)
         if (path.endsWith('/changes')) {
           if (repo.kind) throw new HttpError(400, 'This checkout does not use Git')
+          if (input.revisionOnly)
+            return { revision: yield* serviceResult(s.git.checkoutChangesRevision(root)) }
           if (input.path)
             return yield* serviceResult(
               s.git.workingFilePreview(root, input.path, undefined, input.full),

@@ -1,4 +1,5 @@
 import { routineMonitorUrl } from './routine-policy.js'
+import { githubPipelineAttempt } from './pipeline-wait.js'
 import { mcpEventArguments, mcpEventBotId } from './triggers.js'
 import { CronDate, CronExpressionParser } from 'cron-parser'
 import { resolveTaskAgent } from '../workspace.js'
@@ -135,6 +136,33 @@ export function automationIssues(
         errors.push(`Choose connected preceding tasks as inputs for ${data.label}.`)
     }
     if (!data.label.trim()) errors.push('Give every node a name.')
+    if (data.pipelineWait) {
+      const wait = data.pipelineWait
+      if (data.kind !== 'review') errors.push(`Use a separate CI gate for ${data.label}.`)
+      if (!workspace.repositories.some((repo) => repo.id === data.repositoryId && !repo.kind))
+        errors.push(`Choose a GitHub project for ${data.label}.`)
+      if (wait.resultStepId) {
+        if (
+          wait.url.trim() ||
+          !automationInputSources(flow, node.id).some(
+            (source) => source.id === wait.resultStepId && source.data.resultSchema !== undefined,
+          )
+        )
+          errors.push(`Choose one preceding task with a result schema for ${data.label}.`)
+      } else {
+        try {
+          githubPipelineAttempt(wait.url)
+        } catch (error) {
+          errors.push((error as Error).message)
+        }
+      }
+      if (
+        !Number.isInteger(wait.timeoutMinutes) ||
+        wait.timeoutMinutes < 1 ||
+        wait.timeoutMinutes > 1440
+      )
+        errors.push(`Enter a wait between 1 and 1440 minutes for ${data.label}.`)
+    }
     if (data.kind === 'trigger' && data.trigger === 'once') {
       try {
         automationOnceTime(data.runAt, data.timezone)

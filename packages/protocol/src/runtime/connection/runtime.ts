@@ -1,4 +1,4 @@
-import { linearKeySourceSchema } from '../../scm/forges/linear.js'
+import { linearConnectionsSchema, linearKeySourceSchema } from '../../scm/forges/linear.js'
 import { managedPolicySummarySchema } from './managed-policy.js'
 import {
   projectDirectorySchema,
@@ -223,6 +223,7 @@ export const jobRunStepSchema = mutableStruct({
   nodeId: Schema.String,
   label: Schema.String,
   kind: Schema.Literals(['trigger', 'task', 'review']),
+  waitsForCi: Schema.optional(Schema.Literal(true)),
   status: Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']),
   taskId: Schema.optional(Schema.String),
   /** The isolated worker turn whose result the step recorded. */
@@ -242,6 +243,16 @@ export const jobRunStepSchema = mutableStruct({
   finishedAt: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String),
 })
+export const jobRunFailureSchema = mutableStruct({
+  attempt: Schema.Int.check(Schema.isGreaterThan(0)),
+  failedAt: Schema.String,
+  nodeId: Schema.optional(Schema.String),
+  stepAttempt: Schema.optional(Schema.Int),
+  taskId: Schema.optional(Schema.String),
+  turnId: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+})
+export type JobRunFailure = typeof jobRunFailureSchema.Type
 export const jobRunSchema = mutableStruct({
   mcpEvent: Schema.optional(
     mutableStruct({
@@ -252,6 +263,12 @@ export const jobRunSchema = mutableStruct({
     }),
   ),
   retryAt: Schema.optional(Schema.String),
+  pipelineWait: Schema.optional(
+    mutableStruct({
+      url: Schema.String.check(Schema.isPattern(/^https:\/\//i)),
+      until: Schema.String,
+    }),
+  ),
   startupRetryCount: Schema.optional(Schema.Number),
   scheduledFor: Schema.optional(Schema.String),
   scheduleTimezone: Schema.optional(Schema.String),
@@ -277,6 +294,7 @@ export const jobRunSchema = mutableStruct({
       .pipe(Schema.check(Schema.isGreaterThan(0))),
   ),
   interrupted: Schema.optional(Schema.Boolean),
+  failures: Schema.optional(maxValue(mutableArray(jobRunFailureSchema), 20)),
   error: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
@@ -348,6 +366,7 @@ export const snapshotSchema = mutableStruct({
   databaseSpaceRecoverySupported: Schema.optional(Schema.Literal(true)),
   selectedWorkingChangeSupported: Schema.optional(Schema.Literal(true)),
   selectedCheckoutDiffSupported: Schema.optional(Schema.Literal(true)),
+  checkoutChangesRevisionSupported: Schema.optional(Schema.Literal(true)),
   secretReferenceCheckSupported: Schema.optional(Schema.Literal(true)),
   workspaceReconciliationSupported: Schema.optional(Schema.Boolean),
   taskListUndoSupported: Schema.optional(Schema.Literal(true)),
@@ -422,6 +441,11 @@ export const snapshotSchema = mutableStruct({
   mcpEventTriggersSupported: Schema.optional(Schema.Literal(true)),
   freezeProfilesSupported: Schema.optional(Schema.Literal(true)),
   runAuditSupported: Schema.optional(Schema.Literal(true)),
+  automationRunLookupSupported: Schema.optional(Schema.Literal(true)),
+  automationExplainSupported: Schema.optional(Schema.Literal(true)),
+  routineSuggestionsSupported: Schema.optional(Schema.Literal(true)),
+  automationDryRunScenariosSupported: Schema.optional(Schema.Literal(true)),
+  automationPipelineWaitSupported: Schema.optional(Schema.Literal(true)),
   attachmentDraftCompareSupported: Schema.optional(Schema.Boolean),
   automationRestoreSupported: Schema.optional(Schema.Literal(true)),
   automationStepInputsSupported: Schema.optional(Schema.Literal(true)),
@@ -431,6 +455,7 @@ export const snapshotSchema = mutableStruct({
   browserCertificatesSupported: Schema.optional(Schema.Literal(true)),
   localBrowserPreviewSupported: Schema.optional(Schema.Literal(true)),
   linearKeySource: Schema.optional(linearKeySourceSchema),
+  linearConnections: Schema.optional(linearConnectionsSchema),
   linearIssuesSupported: Schema.optional(Schema.Literal(true)),
   sparseWorktreesSupported: Schema.optional(Schema.Literal(true)),
   githubEventStreamsSupported: Schema.optional(Schema.Literal(true)),

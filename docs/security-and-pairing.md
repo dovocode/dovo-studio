@@ -21,6 +21,9 @@ Cancellation revokes the candidate and removes its pending record without replac
 connection. If the request has already expired, the staged device token can revoke only itself. The
 owner credential cannot use self-revocation.
 
+On the host, open **Activity** and search for **Device paired** to see when a named device confirmed
+pairing. Repeated confirmations share one entry. The entry records the device name and time.
+
 New pairing uses pairing protocol version 2. Update both clients and the runtime before creating new
 pairings; older clients receive an update-required error before consuming an invitation. Existing
 confirmed device credentials continue to work. A paired device grants full runtime access, including

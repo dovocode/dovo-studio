@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import {
   linearIssuesSchema,
+  linearIssueSources,
   runtimeComputerName,
   type RuntimeOverview,
   type linearIssueQuerySchema,
@@ -46,7 +47,7 @@ export function LinearIssuesDialog({
           </label>
         )}
         {source ? (
-          <LinearList key={id} source={source} />
+          <LinearSources key={id} source={source} />
         ) : (
           <p>{uiText('Linear is unavailable.')}</p>
         )}
@@ -55,15 +56,60 @@ export function LinearIssuesDialog({
   )
 }
 
-function LinearList({ source }: { source: RuntimeOverview }) {
+function LinearSources({ source }: { source: RuntimeOverview }) {
+  const uiText = useInterfaceText()
+  const options = linearIssueSources(
+    source.snapshot?.linearConnections,
+    source.snapshot?.workspace.repositories ?? [],
+    source.snapshot?.linearKeySource !== 'none',
+  )
+  const [id, setId] = useState(options[0]?.id ?? '')
+  const selected = options.find((item) => item.id === id)
+  return (
+    <>
+      {(options.length > 1 || !selected) && (
+        <label className="grid gap-1 text-sm">
+          {uiText('Linear source')}
+          <select
+            value={selected ? id : ''}
+            onChange={(event) => setId(event.target.value)}
+            className="rounded border p-2"
+          >
+            {!selected && <option value="">{uiText('Select a Linear source')}</option>}
+            {options.map((item) => (
+              <option key={item.id} value={item.id}>
+                {uiText(item.name)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {selected && <LinearList key={id} source={source} selection={selected.input} />}
+    </>
+  )
+}
+
+function LinearList({
+  source,
+  selection,
+}: {
+  source: RuntimeOverview
+  selection: Pick<typeof linearIssueQuerySchema.Type, 'connectionId' | 'repositoryId'>
+}) {
   const uiText = useInterfaceText()
   const { readRuntime } = useWorkspace()
   const [search, setSearch] = useState('')
   const [notice, setNotice] = useState('')
+  const { connectionId, repositoryId } = selection
   const read = useCallback(
     (input: typeof linearIssueQuerySchema.Type) =>
-      readRuntime(source.profile, '/api/scm/linear/issues/read', input, linearIssuesSchema),
-    [readRuntime, source.profile],
+      readRuntime(
+        source.profile,
+        '/api/scm/linear/issues/read',
+        { ...input, connectionId, repositoryId },
+        linearIssuesSchema,
+      ),
+    [readRuntime, source.profile, connectionId, repositoryId],
   )
   const issues = useLinearIssues(read)
   return (

@@ -28,7 +28,8 @@ notes and live download progress, including transferred bytes and speed. After d
 silently and relaunches the app without the installer wizard. Installation checks the local runtime.
 If work is running, choose **Restart and resume** to interrupt it and resume supported tasks, or
 **Later** to keep working. The download stays ready. Choosing Later does not install unexpectedly on
-quit. Remote updates require an explicit recovery choice before they interrupt active work. The
+quit. If the installer disappeared, Studio downloads it again before preparing the runtime for
+restart. Remote updates require an explicit recovery choice before they interrupt active work. The
 updater checks active work, closes windows with the existing draft guards, then acquires a runtime
 restart lease before stopping the local runtime. The lease blocks new work from paired clients
 during shutdown. Cancelling a close prompt does not reserve a restart. An installation failure

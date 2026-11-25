@@ -5,6 +5,8 @@ import { decode, fetchRuntimeReleases, nativeAgentWorking } from '@dovo/protocol
 import { fetchGitHubRelease } from '@dovo/protocol/github-release-auth'
 import { app, dialog, Menu, BrowserWindow, shell, type MenuItemConstructorOptions } from 'electron'
 import updater from 'electron-updater'
+import { constants } from 'node:fs'
+import { access } from 'node:fs/promises'
 import { snapshotSchema, type DesktopUpdateChannel, type DesktopUpdateState } from '@dovo/protocol'
 import { startLocalRuntime } from './local-runtime.js'
 const { autoUpdater } = updater
@@ -42,6 +44,12 @@ export function registerUpdates(
   autoUpdater.autoDownload = false
   let busy = false
   let state: DesktopUpdateState = { status: 'idle', channel }
+  let downloadedFiles: string[] = []
+  const downloadAvailable = () =>
+    Promise.all(downloadedFiles.map((file) => access(file, constants.R_OK))).then(
+      () => downloadedFiles.length > 0,
+      () => false,
+    )
   let checking: Promise<boolean> | undefined
   const publish = (next: DesktopUpdateState) => {
     state = { ...next, channel }
@@ -195,6 +203,8 @@ export function registerUpdates(
         (state.status !== 'downloaded' || state.version !== remote.version)
       )
         throw new Error('Download this desktop update before restarting')
+      if (state.status === 'downloaded' && !(await downloadAvailable()))
+        publish({ status: 'available', version: state.version, notes: state.notes })
       if (
         remote?.action !== 'restart' &&
         (!direct || remote?.action === 'download' || state.status !== 'downloaded')
@@ -250,7 +260,11 @@ export function registerUpdates(
         }
         autoUpdater.on('download-progress', progress)
         try {
-          await autoUpdater.downloadUpdate()
+          downloadedFiles = await autoUpdater.downloadUpdate()
+          if (!(await downloadAvailable())) {
+            publish({ status: 'available', version: state.version, notes: state.notes })
+            throw new Error('The downloaded desktop update is missing. Download it again.')
+          }
           publish({ ...state, status: 'downloaded', progress: 100 })
         } finally {
           autoUpdater.removeListener('download-progress', progress)
@@ -362,7 +376,12 @@ export function registerUpdates(
       }
       publish({
         ...state,
-        status: state.progress === 100 ? 'downloaded' : 'error',
+        status:
+          state.progress === 100
+            ? 'downloaded'
+            : state.status === 'available'
+              ? 'available'
+              : 'error',
         error: message,
       })
       if (remote) throw new Error(message)

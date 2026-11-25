@@ -12,6 +12,7 @@ import {
   threadWatchCountsSchema,
 } from './tasks/thread-watches.js'
 import { githubTriggerSchema, mcpEventTriggerSchema } from './automation/triggers.js'
+import { pipelineWaitSchema } from './automation/pipeline-wait.js'
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct, strictStruct } from './shared/schema.js'
@@ -1162,6 +1163,8 @@ export const nodeDataSchema = mutableStruct({
   /** A JSON Schema document for the final reply of this task step. */
   resultSchema: Schema.optional(maxValue(Schema.String, 32000)),
   kind: Schema.Literals(['trigger', 'task', 'review']),
+  /** A review gate can advance automatically when its pinned CI attempt succeeds. */
+  pipelineWait: Schema.optional(pipelineWaitSchema),
   label: Schema.String,
   trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github', 'mcp-event']),
   /** Local date/time (YYYY-MM-DDTHH:mm), interpreted in timezone. */

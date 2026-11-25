@@ -257,6 +257,7 @@ export function LineComment({
           const input = decode(pullLineCommentSchema, {
             number: detail.pull.number,
             headSha,
+            baseSha: detail.pull.baseSha,
             path,
             side,
             start: Number(line),

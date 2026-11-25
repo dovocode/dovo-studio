@@ -10,6 +10,7 @@ import {
 } from '../shared/schema.js'
 
 import { githubTriggerSchema, mcpEventTriggerSchema } from '../automation/triggers.js'
+import { pipelineWaitSchema } from '../automation/pipeline-wait.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 const actionText = maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000)
@@ -183,6 +184,7 @@ export const automationReviewWorkflowSchema = mutableStruct({
         position: mutableStruct({ x: Schema.Number, y: Schema.Number }),
         data: mutableStruct({
           kind: Schema.Literals(['trigger', 'task', 'review']),
+          pipelineWait: Schema.optional(pipelineWaitSchema),
           label: Schema.String,
           trigger: Schema.Literals([
             'manual',

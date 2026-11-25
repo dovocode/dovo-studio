@@ -152,6 +152,9 @@ export function runtimeSnapshot(
             ...s.secureInputs.list().map((request) => request.taskId),
           ])
     const linearKeySource = s.linearSettings.source()
+    const linearConnections = s.linearSettings.connections(
+      new Set(localWorkspace.repositories.map((project) => project.id)),
+    )
     const storedWorkspace = page?.workspace ?? localWorkspace
     const forgeConnections = new Map(
       storedWorkspace.repositories.some((repository) => repository.forge)
@@ -322,6 +325,7 @@ export function runtimeSnapshot(
       databaseSpaceRecoverySupported: true,
       selectedWorkingChangeSupported: true,
       selectedCheckoutDiffSupported: true,
+      checkoutChangesRevisionSupported: true,
       workspaceReconciliationSupported: true,
       taskListUndoSupported: true,
       checkedDraftMoveSupported: true,
@@ -378,6 +382,11 @@ export function runtimeSnapshot(
       mcpEventTriggersSupported: true,
       freezeProfilesSupported: true,
       runAuditSupported: true,
+      automationRunLookupSupported: true,
+      automationExplainSupported: true,
+      routineSuggestionsSupported: true,
+      automationDryRunScenariosSupported: true,
+      automationPipelineWaitSupported: true,
       automationRestoreSupported: true,
       automationStepInputsSupported: true,
       automationStepResultsSupported: true,
@@ -386,7 +395,9 @@ export function runtimeSnapshot(
       browserCertificatesSupported: true,
       localBrowserPreviewSupported: true,
       linearKeySource,
-      linearIssuesSupported: linearKeySource !== 'none' ? true : undefined,
+      linearConnections,
+      linearIssuesSupported:
+        linearKeySource !== 'none' || linearConnections.connections.length > 0 ? true : undefined,
       sparseWorktreesSupported: true,
       githubEventStreamsSupported: true,
       pullFileLoadingSupported: true,

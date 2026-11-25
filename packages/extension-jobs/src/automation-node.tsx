@@ -1,6 +1,6 @@
 import { githubEventChoices } from '@dovo/protocol'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Bot, CircleCheck, Zap } from 'lucide-react'
+import { Bot, CircleCheck, Workflow, Zap } from 'lucide-react'
 import { useWorkspace, type AutomationData } from '@dovo/studio-core'
 import { cn } from '@dovo/studio-ui'
 import { pendingTaskInput, type RunStep } from './run-progress'
@@ -12,7 +12,14 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
     data.kind === 'task' && data.botId
       ? snapshot?.workspace.tasks.find((task) => task.id === data.botId && task.bot)
       : undefined
-  const Icon = data.kind === 'trigger' ? Zap : data.kind === 'task' ? Bot : CircleCheck
+  const Icon =
+    data.kind === 'trigger'
+      ? Zap
+      : data.kind === 'task'
+        ? Bot
+        : data.pipelineWait
+          ? Workflow
+          : CircleCheck
   return (
     <div
       className={cn(
@@ -23,7 +30,13 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
       {data.kind !== 'trigger' && <Handle type="target" position={Position.Left} />}
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <Icon size={14} />
-        {data.kind === 'task' ? (data.botId ? 'Bot job' : 'thread') : data.kind}
+        {data.kind === 'task'
+          ? data.botId
+            ? 'Bot job'
+            : 'thread'
+          : data.pipelineWait
+            ? 'CI'
+            : data.kind}
       </div>
       <div className="break-all text-sm font-medium">{data.label}</div>
       {data.kind === 'task' && data.botId && (
@@ -45,7 +58,9 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
                   : data.trigger
           : data.kind === 'task'
             ? data.objective || 'Configure thread instructions'
-            : 'Pause for your review'}
+            : data.pipelineWait
+              ? 'Continue after the selected attempt succeeds'
+              : 'Pause for your review'}
       </p>
       {data.runStep && (
         <div className="mt-3 border-t pt-2">

@@ -25,7 +25,10 @@ const needsSkillCheck = (input: RemoteMcpCommand) =>
 
 /** Content lives in memory through one MCP request. Installations claim only their own work. */
 export class RemoteMcpMailbox {
-  private seen = new Map<string, { expires: number; events: boolean; requiredSkills: boolean }>()
+  private seen = new Map<
+    string,
+    { expires: number; events: boolean; requiredSkills: boolean; automationEvents: boolean }
+  >()
   private jobs = new Map<string, Job>()
 
   constructor(
@@ -41,14 +44,32 @@ export class RemoteMcpMailbox {
     return this.enabled(installation) && this.seen.get(installation)?.events === true
   }
 
-  offer(host: Host, events = false, requiredSkills = false) {
+  automationEventsEnabled(installation: string) {
+    return (
+      this.eventsEnabled(installation) && this.seen.get(installation)?.automationEvents === true
+    )
+  }
+
+  private supportsEvent(installation: string, name: string) {
+    return name.startsWith('automation.')
+      ? this.automationEventsEnabled(installation)
+      : this.eventsEnabled(installation)
+  }
+
+  offer(host: Host, events = false, requiredSkills = false, automationEvents = false) {
     const now = this.now()
     for (const [key, { expires }] of this.seen) if (expires <= now) this.seen.delete(key)
-    this.seen.set(host.installation, { expires: now + leaseMs, events, requiredSkills })
+    this.seen.set(host.installation, {
+      expires: now + leaseMs,
+      events,
+      requiredSkills,
+      automationEvents,
+    })
     for (const job of this.jobs.values()) {
       if (
         job.installation === host.installation &&
-        (job.input.input.part !== 'events' || events) &&
+        (job.input.input.part !== 'events' ||
+          this.supportsEvent(host.installation, job.input.input.command.name)) &&
         (!needsSkillCheck(job.input.input) || requiredSkills) &&
         !job.claimed &&
         this.store.grant(job.input.grantId)
@@ -71,7 +92,7 @@ export class RemoteMcpMailbox {
         boundInstallation: grant?.installation === host.installation,
         hostEnabled:
           job.input.input.part === 'events'
-            ? this.eventsEnabled(host.installation)
+            ? this.supportsEvent(host.installation, job.input.input.command.name)
             : this.enabled(host.installation),
         allowsWrite: grant?.access === 'run',
         writes: remoteMcpWrites(job.input.input),
@@ -102,7 +123,7 @@ export class RemoteMcpMailbox {
   async call(grant: RemoteMcpGrant, input: RemoteMcpCommand, signal: AbortSignal) {
     if (!this.enabled(grant.installation))
       throw new RequestError(503, 'This computer is offline or its remote MCP access is disabled.')
-    if (input.part === 'events' && !this.eventsEnabled(grant.installation))
+    if (input.part === 'events' && !this.supportsEvent(grant.installation, input.command.name))
       throw new RequestError(503, 'This computer does not currently offer MCP events.')
     if (remoteMcpWrites(input) && grant.access !== 'run')
       throw new RequestError(403, 'This app has read-only access.')

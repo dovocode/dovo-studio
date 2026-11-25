@@ -2,6 +2,8 @@ import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { routineChangeSchema } from './routine-provenance.js'
 
+export const explainAutomationDraftSchema = mutableStruct({ taskId: Schema.String })
+
 export const runAuditSchema = mutableStruct({
   runId: Schema.String,
   automationId: Schema.String,

@@ -524,6 +524,24 @@ describe('authenticated runtime', () => {
     const snapshot = decode(snapshotSchema, await result.json())
     expect(snapshot.owner).toBe(false)
     expect((await call('/api/pair/code', {}, claimed.token)).status).toBe(403)
+    const pairingActivity = async () => {
+      const response = await call('/api/activity', { kind: 'pairing', includeDetails: true }, token)
+      expect(response.status).toBe(200)
+      return decode(activitySchema, await response.json()).events
+    }
+    expect(await pairingActivity()).toEqual([])
+    expect((await call('/api/pair/confirm', pending)).status).toBe(200)
+    expect((await call('/api/pair/confirm', pending)).status).toBe(200)
+    const paired = await pairingActivity()
+    expect(paired).toHaveLength(1)
+    expect(paired[0]).toMatchObject({
+      kind: 'pairing',
+      scope: snapshot.devices[0].id,
+      summary: 'Device paired · Test phone',
+    })
+    const evidence = JSON.stringify(paired)
+    for (const secret of [code.code, pending.secret, claimed.token!])
+      expect(evidence).not.toContain(secret)
     await call(
       '/api/devices/revoke',
       {

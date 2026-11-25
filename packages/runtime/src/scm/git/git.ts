@@ -61,7 +61,7 @@ import {
   utimes,
   realpath,
 } from 'node:fs/promises'
-import { join, dirname, basename, resolve } from 'node:path'
+import { join, dirname, basename, resolve, isAbsolute } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { Schema } from 'effect'
 import { commandsSchema, REPOSITORY_CLONE_TIMEOUT_MS, type CommandSettings } from '@dovo/protocol'
@@ -2418,6 +2418,31 @@ export class GitService {
     const { path: root } = await this.inspect(path)
     await this.command(root, ['commit', '-m', message])
     return (await this.command(root, ['rev-parse', 'HEAD'])).trim()
+  }
+  async checkoutChangesRevision(cwd: string) {
+    const output = await this.readCommand(
+      cwd,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'index', '--revs-only', 'HEAD'],
+      { maxBuffer: 16384 },
+    )
+    const [index, head] = output.trimEnd().split(/\r?\n/)
+    if (!index || !isAbsolute(index))
+      throw new HttpError(409, 'Could not resolve the checkout index.')
+    const current = await stat(index, { bigint: true }).catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    })
+    return createHash('sha256')
+      .update(
+        JSON.stringify([
+          index,
+          head,
+          current?.ino.toString(),
+          current?.size.toString(),
+          current?.mtimeNs.toString(),
+        ]),
+      )
+      .digest('hex')
   }
   async fetchPull(
     cwd: string,

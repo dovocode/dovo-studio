@@ -58,7 +58,7 @@ async function checkPendingRetest(page, scope) {
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
-    const shared = `export {useLinearKeySettings} from '${root}/packages/studio-core/src/scm/use-linear-issues';export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';export * from '@dovo/protocol';export {cliProfileOptions} from '${root}/packages/client-runtime/src/extensions/cli-profile-options.ts';export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';import {Effect} from 'effect';export {clientTaskScope} from '${root}/packages/client-runtime/src/index.ts';export const runClientEffect=Effect.runPromise;export const useWorkspace=()=>window.runtime;`
+    const shared = `export {useLinearConnections} from '${root}/packages/studio-core/src/scm/use-linear-connections.ts';export {useLinearKeySettings} from '${root}/packages/studio-core/src/scm/use-linear-issues';export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';export * from '@dovo/protocol';export {cliProfileOptions} from '${root}/packages/client-runtime/src/extensions/cli-profile-options.ts';export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';import {Effect} from 'effect';export {clientTaskScope} from '${root}/packages/client-runtime/src/index.ts';export const runClientEffect=Effect.runPromise;export const useWorkspace=()=>window.runtime;`
     const native = `export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=><div>{children}</div>;`
     const mocks = {
       '../../screens/remote-desktop': 'export const MobileRemoteDesktop=()=>null;',

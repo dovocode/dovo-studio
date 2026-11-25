@@ -80,10 +80,10 @@ an edited settings page asks before discarding unsaved changes.
 
 ## Lifecycle
 
-- Quota resume and snooze are opt-in. A failed turn must report a quota error and exhausted usage
-  windows with future reset times. Dovo waits for the latest exhausted window's reset. It never
-  guesses a date or retries an unrelated failure. The task displays its continuation and offers
-  Cancel on desktop and mobile. Manual wake, settle, archive and a new run cancel it.
+- Quota resume and snooze are opt-in. A failed turn must report a quota error with a confirmed reset
+  time or exhausted usage windows with future reset times. Dovo waits for the latest reported reset.
+  The task displays its continuation and offers Cancel on desktop and mobile. Manual wake, settle,
+  archive and a new run cancel it.
 - At the reset, Dovo checks the current policy and failed turn again. New queued input, delegated
   tasks and automation-owned tasks cannot be resumed by this scheduler. Admission is attempted once;
   failure is recorded in Activity and requires manual continuation.

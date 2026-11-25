@@ -325,9 +325,36 @@ it('links an OAuth app to Connect, starts one agent on retry, polls events, and 
   expect(catalog?.map(({ name, delivery }) => ({ name, delivery }))).toEqual([
     { name: 'thread.turn_finished', delivery: ['poll'] },
     { name: 'thread.needs_input', delivery: ['poll'] },
+    { name: 'automation.run_finished', delivery: ['poll'] },
+    { name: 'automation.needs_review', delivery: ['poll'] },
   ])
-  const [turnFinished, needsInput] = catalog ?? []
-  if (!turnFinished || !needsInput) throw new Error('Connect did not advertise both event types')
+  const [turnFinished, needsInput, automationFinished] = catalog ?? []
+  if (!turnFinished || !needsInput || !automationFinished)
+    throw new Error('Connect did not advertise the event types')
+  const automated = await eventSource.poll(
+    automationFinished,
+    { name: automationFinished.name, cursor: null },
+    signal(),
+  )
+  expect(automated.events).toEqual([])
+  s.preferences.save({ enableStudioAutomations: false })
+  await vi.waitFor(
+    async () => {
+      expect((await eventSource.list(signal()))?.map(({ name }) => name)).toEqual([
+        'thread.turn_finished',
+        'thread.needs_input',
+      ])
+    },
+    { timeout: 8000, interval: 200 },
+  )
+  await expect(
+    eventSource.poll(
+      automationFinished,
+      { name: automationFinished.name, cursor: automated.cursor },
+      signal(),
+    ),
+  ).rejects.toThrow('This computer does not currently offer MCP events.')
+  s.preferences.save({ enableStudioAutomations: true })
   const [turnsAtStart, inputAtStart] = await Promise.all([
     eventSource.poll(turnFinished, { name: turnFinished.name, cursor: null }, signal()),
     eventSource.poll(needsInput, { name: needsInput.name, cursor: null }, signal()),

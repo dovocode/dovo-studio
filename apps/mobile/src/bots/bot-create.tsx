@@ -7,6 +7,8 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Schema } from 'effect'
 import {
   botCreateSchema,
+  botTemplateTextLimit,
+  fillFromBotTemplate,
   botResultSchema,
   decode,
   mutableStruct,
@@ -214,6 +216,9 @@ export function CreateBot({
   const { busy, error, act } = useAction()
   const [choosing, setChoosing] = useState(false)
   const [discarding, setDiscarding] = useState(false)
+  const [usingTemplate, setUsingTemplate] = useState(false)
+  const [template, setTemplate] = useState('')
+  const [templateError, setTemplateError] = useState('')
   const mounted = useRef(true)
   const overviews = useRef(runtime.overviews)
   overviews.current = runtime.overviews
@@ -450,6 +455,49 @@ export function CreateBot({
               if (!draft[field].trim() && text[field]) setField(field, text[field])
           }}
         />
+        <Action
+          label={uiText('Use a Bot template')}
+          secondary
+          disabled={busy || !!pending}
+          onPress={() => setUsingTemplate((shown) => !shown)}
+        />
+        {usingTemplate && (
+          <View style={{ gap: 8 }}>
+            <Field
+              label={uiText('Bot template')}
+              multiline
+              maxLength={botTemplateTextLimit}
+              value={template}
+              editable={!busy && !pending}
+              onChangeText={(text) => {
+                setTemplate(text)
+                setTemplateError('')
+              }}
+            />
+            <Action
+              label={uiText('Fill empty fields')}
+              secondary
+              disabled={busy || !!pending || !template.trim()}
+              onPress={() => {
+                try {
+                  const result = fillFromBotTemplate(template, draft)
+                  for (const key of textFields)
+                    if (result[key] !== draft[key]) setField(key, result[key])
+                  setTemplate('')
+                  setTemplateError('')
+                  setUsingTemplate(false)
+                } catch {
+                  setTemplateError(uiText('Paste a valid Dovo Bot template.'))
+                }
+              }}
+            />
+            {templateError && (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {templateError}
+              </Text>
+            )}
+          </View>
+        )}
         <View style={[styles.card, { padding: 16, gap: 0 }]}>
           <BotFields
             {...draft}

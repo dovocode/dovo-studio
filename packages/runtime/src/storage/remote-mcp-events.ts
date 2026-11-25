@@ -7,6 +7,7 @@ import {
   type RemoteMcpEventPage,
   type RemoteMcpEventPoll,
   type TaskSummary,
+  type JobRun,
 } from '@dovo/protocol'
 
 const retainedEvents = 1000
@@ -70,6 +71,48 @@ export class RemoteMcpEvents {
     })
   }
 
+  automationChanged(run: JobRun, previous?: JobRun) {
+    const common = { runId: run.id, automationId: run.automationId, attempt: run.attempt ?? 1 }
+    if (run.status === 'waiting' && run.waitingNodeId) {
+      const review = run.steps?.find(
+        (step) => step.nodeId === run.waitingNodeId && step.kind === 'review' && !step.waitsForCi,
+      )
+      if (!review) return
+      const older = previous?.steps?.find((step) => step.nodeId === review.nodeId)
+      if (
+        previous?.status === 'waiting' &&
+        previous.waitingNodeId === review.nodeId &&
+        previous.attempt === run.attempt &&
+        older?.attempt === review.attempt
+      )
+        return
+      const name = 'automation.needs_review'
+      this.record({
+        name,
+        eventId: this.id(
+          name,
+          run.id,
+          String(common.attempt),
+          review.nodeId,
+          String(review.attempt),
+        ),
+        timestamp: run.updatedAt ?? run.createdAt,
+        data: { ...common, stepId: review.nodeId, stepAttempt: review.attempt || 1 },
+      })
+    } else if (
+      (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') &&
+      (previous?.status !== run.status || previous.attempt !== run.attempt)
+    ) {
+      const name = 'automation.run_finished'
+      this.record({
+        name,
+        eventId: this.id(name, run.id, String(common.attempt), run.status),
+        timestamp: run.finishedAt ?? run.updatedAt ?? run.createdAt,
+        data: { ...common, outcome: run.status },
+      })
+    }
+  }
+
   poll(request: RemoteMcpEventPoll): RemoteMcpEventPage {
     const { first, last } = this.db
       .prepare<[], { first: number; last: number }>(
@@ -99,10 +142,17 @@ export class RemoteMcpEvents {
       .all(from, request.name)
     for (const row of rows) {
       const event = decode(remoteMcpEventSchema, JSON.parse(row.value))
-      const { threadId, projectId } = event.data
-      if (
-        (filter?.threadIds && !filter.threadIds.includes(threadId)) ||
-        (filter?.projectIds && (projectId === null || !filter.projectIds.includes(projectId)))
+      const data = event.data
+      if ('threadId' in data) {
+        if (
+          (filter?.threadIds && !filter.threadIds.includes(data.threadId)) ||
+          (filter?.projectIds &&
+            (data.projectId === null || !filter.projectIds.includes(data.projectId)))
+        )
+          continue
+      } else if (
+        (filter?.automationIds && !filter.automationIds.includes(data.automationId)) ||
+        (filter?.runIds && !filter.runIds.includes(data.runId))
       )
         continue
       if (Date.parse(event.timestamp) < earliest) {

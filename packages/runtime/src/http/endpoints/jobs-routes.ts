@@ -9,10 +9,24 @@ import { body } from '../support/body.js'
 import { newSecret, hashSecret } from '../../auth/devices.js'
 import { dryRunAutomation } from '../../jobs/dry-run.js'
 import { isDeepStrictEqual } from 'node:util'
+import { createHash } from 'node:crypto'
 import { automationSchema, restorableAutomation } from '@dovo/protocol'
+import {
+  botPaused,
+  botPausedMessage,
+  routineSourceQuote,
+  routineSuggestionAutomation,
+  routineSuggestionSaveSchema,
+} from '@dovo/protocol'
+import { dryRunScenariosCommandSchema } from '@dovo/protocol'
+import { defaultTaskHarness, SCRATCH_PROJECT_ID, type Task } from '@dovo/protocol'
 import { runtimeAutomationIssues } from '../../jobs/validation.js'
 import { recordRoutineChange } from '../../jobs/routine-provenance.js'
-import { routineChangeSource, type RoutineActor } from '../../jobs/routine-provenance.js'
+import {
+  isOwnerMessage,
+  routineChangeSource,
+  type RoutineActor,
+} from '../../jobs/routine-provenance.js'
 import { routineChanges } from '../../jobs/routine-provenance.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 /** A flow plus a sample payload as large as a webhook body. */
@@ -27,6 +41,108 @@ export function jobsRoute(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/jobs/explain') {
+        if (actor.kind !== 'person')
+          throw new HttpError(403, 'Open diagnosis drafts from a paired client.')
+        const { id, attempt, taskId } = decode(
+          mutableStruct({
+            id: idSchema,
+            attempt: Schema.Int.check(Schema.isGreaterThan(0)),
+            taskId: idSchema,
+          }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        const origin = `explain-automation:${JSON.stringify([id, attempt])}`
+        return s.store.transaction(() => {
+          const previous = s.store.get().tasks.find((task) => task.id === taskId)
+          if (previous?.origin === origin) return { taskId }
+          if (previous || s.store.wasTaskDeleted(taskId))
+            throw new HttpError(409, 'This thread ID is no longer available.')
+          const { title, text } = s.jobs.explain(id, attempt)
+          const defaults = s.store.taskDefaults(SCRATCH_PROJECT_ID)
+          const task: Task = {
+            id: taskId,
+            origin,
+            title,
+            repositoryId: SCRATCH_PROJECT_ID,
+            agentId: '',
+            harness: {
+              ...(defaults.harness ?? defaultTaskHarness('codex')),
+              permission: 'read-only',
+            },
+            execution: 'main',
+            status: 'draft',
+            createdAt: new Date().toISOString(),
+            draft: text,
+            messages: [],
+            files: [],
+            example: false,
+          }
+          s.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, task] }))
+          return { taskId }
+        })
+      }
+      if (method === 'POST' && path === '/api/jobs/scenarios') {
+        if (actor.kind !== 'person')
+          throw new HttpError(403, 'Manage Dry run scenarios from a paired client.')
+        const command = decode(
+          dryRunScenariosCommandSchema,
+          yield* serviceResult(body(request, 131_072)),
+        )
+        return s.jobs.scenarios(command)
+      }
+      if (method === 'POST' && path === '/api/jobs/from-message') {
+        if (actor.kind !== 'person')
+          throw new HttpError(403, 'Save routine suggestions from a paired client.')
+        const input = decode(
+          routineSuggestionSaveSchema,
+          yield* serviceResult(body(request, 65_536)),
+        )
+        const key = `routine-from-message:${input.id}`
+        const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex')
+        return s.store.transaction(() => {
+          const previous = s.db.prepare('SELECT value FROM documents WHERE id=?').pluck().get(key)
+          const workspace = s.store.get()
+          const existing = workspace.automations.some((flow) => flow.id === input.id)
+          if (previous === fingerprint) {
+            if (!existing) throw new HttpError(410, 'This routine was deleted.')
+            return { id: input.id }
+          }
+          if (previous !== undefined || existing)
+            throw new HttpError(409, 'This suggestion ID belongs to another routine.')
+          const bot = workspace.tasks.find(
+            (task) => task.id === input.taskId && task.bot && !task.archivedAt && !task.replica,
+          )
+          if (!bot) throw new HttpError(404, 'This Bot is no longer available.')
+          if (botPaused(bot)) throw new HttpError(409, botPausedMessage)
+          const message = s.store.taskMessage(bot.id, input.messageId)
+          if (!isOwnerMessage(message))
+            throw new HttpError(400, 'Choose one of your own Bot messages.')
+          const flow = routineSuggestionAutomation(input.id, bot.id, input.draft)
+          const issue = runtimeAutomationIssues(flow, workspace)[0]
+          if (issue) throw new HttpError(400, issue)
+          s.store.update((workspace) => ({
+            ...workspace,
+            automations: [...workspace.automations, flow],
+          }))
+          recordRoutineChange(s.db, undefined, flow, {
+            kind: 'owner',
+            taskId: bot.id,
+            messageId: message.id,
+            ...routineSourceQuote(message.text),
+            cited: true,
+          })
+          s.db.prepare('INSERT INTO documents VALUES (?, ?)').run(key, fingerprint)
+          return { id: flow.id }
+        })
+      }
+      if (method === 'POST' && path === '/api/jobs/detail') {
+        const { id, automationId } = decode(
+          mutableStruct({ id: idSchema, automationId: idSchema }),
+          yield* serviceResult(body(request)),
+        )
+        return s.jobs.summary(id, automationId)
+      }
       if (method === 'POST' && path === '/api/jobs/definition') {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
         const saved = s.jobs.detail(id)

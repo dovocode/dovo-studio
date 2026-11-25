@@ -107,6 +107,22 @@ export function pullRevision(detail: Pick<PullDetail, 'pull'>) {
   return `${detail.pull.headSha}:${detail.pull.baseSha}`
 }
 
+export const pullChangedFileSchema = mutableStruct({
+  path: Schema.String,
+  previousPath: Schema.optional(Schema.String),
+  status: Schema.String,
+  additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  patch: Schema.optional(Schema.String),
+  patchOmitted: Schema.optional(Schema.Boolean),
+  attributes: Schema.optional(
+    mutableStruct({
+      binary: Schema.Boolean,
+      generated: Schema.Boolean,
+      vendored: Schema.Boolean,
+    }),
+  ),
+})
 export const pullDetailSchema = mutableStruct({
   omittedFiles: Schema.optional(Schema.Number),
   destination: Schema.optional(forgeIdentityTokenSchema),
@@ -138,24 +154,7 @@ export const pullDetailSchema = mutableStruct({
     },
   }),
   comments: mutableArray(pullCommentSchema),
-  files: mutableArray(
-    mutableStruct({
-      path: Schema.String,
-      previousPath: Schema.optional(Schema.String),
-      status: Schema.String,
-      additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
-      deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
-      patch: Schema.optional(Schema.String),
-      patchOmitted: Schema.optional(Schema.Boolean),
-      attributes: Schema.optional(
-        mutableStruct({
-          binary: Schema.Boolean,
-          generated: Schema.Boolean,
-          vendored: Schema.Boolean,
-        }),
-      ),
-    }),
-  ),
+  files: mutableArray(pullChangedFileSchema),
   checks: mutableArray(
     mutableStruct({
       name: Schema.String,
@@ -344,6 +343,7 @@ export const pullLineCommentSchema = refine(
       )
       .pipe(Schema.check(Schema.isGreaterThan(0))),
     headSha: taskPullSchema.fields.headSha,
+    baseSha: Schema.optional(taskPullSchema.fields.headSha),
     path: minValue(Schema.String, 1),
     side: Schema.Literals(['additions', 'deletions']),
     start: Schema.Number.pipe(Schema.check(Schema.isFinite()))

@@ -52,8 +52,11 @@ export class ProviderFailure extends Error {
   constructor(
     readonly kind: Exclude<ProviderFailureKind, 'unknown'>,
     cause: unknown,
+    readonly quotaResetAt?: number,
   ) {
-    super(`${guidance[kind]}\n${errorMessage(cause)}`, { cause })
+    const reset =
+      quotaResetAt === undefined ? '' : `\nQuota resets at ${new Date(quotaResetAt).toISOString()}.`
+    super(`${guidance[kind]}\n${errorMessage(cause)}${reset}`, { cause })
   }
 }
 export function explainProviderFailure(error: unknown): unknown {

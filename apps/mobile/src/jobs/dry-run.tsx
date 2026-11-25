@@ -10,9 +10,15 @@ import {
   automationDryRunRequest,
   automationDryRunSchema,
   automationDryRunStatusText,
+  dryRunScenario,
+  dryRunScenarioFields,
+  randomUUID,
   type Automation,
   type AutomationDryRun,
+  type AutomationDryRunRequest,
+  type DryRunScenario,
 } from '@dovo/protocol'
+import { useDryRunScenarios } from '@dovo/studio-core'
 import { useRuntime } from '../runtime/connection/provider'
 import { SettingsAction as Action } from '../screens/settings-controls'
 import { SettingsChoice as Choice } from '../screens/settings-controls'
@@ -27,16 +33,33 @@ const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 export function DryRun({ flow, disabled }: { flow: Automation; disabled: boolean }) {
   const uiText = useInterfaceText()
   const { colors, styles } = useTheme()
-  const { callEffect, profile, connected } = useRuntime()
+  const { callEffect, profile, connected, read, snapshot } = useRuntime()
   const { act, error, busy } = useAction()
   const [open, setOpen] = useState(false)
   const [fields, setFields] = useState(() => automationDryRunFields(flow))
   const [result, setResult] = useState<AutomationDryRun>()
   const [shown, setShown] = useState<string[]>([])
+  const [lastInput, setLastInput] = useState<AutomationDryRunRequest>()
+  const [scenarioName, setScenarioName] = useState('')
+  const [editing, setEditing] = useState<DryRunScenario>()
+  const scenarioId = useRef<string | undefined>(undefined)
+  const canSaveScenarios =
+    !!snapshot?.automationDryRunScenariosSupported &&
+    snapshot.workspace.automations.some((item) => item.id === flow.id)
+  const scenarios = useDryRunScenarios(
+    flow,
+    read,
+    profile?.connection,
+    canSaveScenarios && connected && open,
+  )
   const generation = useRef(0)
   useEffect(() => {
     generation.current++
     setResult(undefined)
+    setLastInput(undefined)
+    setScenarioName('')
+    setEditing(undefined)
+    scenarioId.current = undefined
   }, [profile?.id, flow.id])
   useEffect(
     () => () => {
@@ -54,6 +77,7 @@ export function DryRun({ flow, disabled }: { flow: Automation; disabled: boolean
       )
       if (version === generation.current) {
         setResult(next)
+        setLastInput(body)
         setShown([])
       }
     })
@@ -123,6 +147,24 @@ export function DryRun({ flow, disabled }: { flow: Automation; disabled: boolean
           />
         </>
       )}
+      {snapshot?.automationDryRunScenariosSupported && use.results.length > 0 && (
+        <>
+          <Field
+            label={uiText('Sample step results (JSON)')}
+            value={fields.stepResults}
+            editable={!busy}
+            multiline
+            autoCorrect={false}
+            maxLength={16384}
+            onChangeText={(stepResults) => setFields((value) => ({ ...value, stepResults }))}
+            style={{ minHeight: 100, textAlignVertical: 'top', fontFamily: monospace }}
+          />
+          <Text style={styles.muted}>
+            {uiText('Use the step ID as the JSON key.')}{' '}
+            {use.results.map(({ id, label }) => `${label} (${id})`).join(', ')}
+          </Text>
+        </>
+      )}
       {use.stops.length > 0 && (
         <Choice
           label={uiText('Simulated outcome')}
@@ -142,6 +184,92 @@ export function DryRun({ flow, disabled }: { flow: Automation; disabled: boolean
             setFields((value) => ({ ...value, stopAt: stopAt === 'pass' ? '' : stopAt }))
           }
         />
+      )}
+      {canSaveScenarios && (
+        <View style={{ gap: 8 }}>
+          {scenarios.cases.length > 0 && (
+            <Action
+              secondary
+              disabled={scenarios.busy || busy || !connected}
+              label={uiText('Run saved scenarios')}
+              onPress={() => void scenarios.run()}
+            />
+          )}
+          {scenarios.cases.map((scenario) => {
+            const check = scenarios.checks?.find((item) => item.id === scenario.id)
+            return (
+              <View key={scenario.id} style={{ gap: 4 }}>
+                <View style={styles.row}>
+                  <Action
+                    secondary
+                    disabled={scenarios.busy || busy}
+                    label={scenario.name}
+                    onPress={() => {
+                      setFields(dryRunScenarioFields(scenario))
+                      setScenarioName(scenario.name)
+                      setEditing(scenario)
+                      setResult(undefined)
+                      setLastInput(undefined)
+                    }}
+                  />
+                  <Action
+                    secondary
+                    disabled={scenarios.busy || !connected}
+                    label={uiText('Delete scenario')}
+                    onPress={() => void scenarios.remove(scenario)}
+                  />
+                </View>
+                {check && <Text>{uiText(check.issues.length ? 'Changed' : 'Passed')}</Text>}
+                {check?.issues.map((issue) => (
+                  <Text key={issue}>{issue}</Text>
+                ))}
+              </View>
+            )
+          })}
+          {result && lastInput && (
+            <>
+              <Field
+                label={uiText('Scenario name')}
+                value={scenarioName}
+                onChangeText={setScenarioName}
+                maxLength={100}
+              />
+              <Action
+                secondary
+                disabled={scenarios.busy || busy || !connected || !scenarioName.trim()}
+                label={uiText(editing ? 'Update scenario' : 'Save as scenario')}
+                onPress={async () => {
+                  if (
+                    await scenarios.save(
+                      dryRunScenario(
+                        editing?.id ?? (scenarioId.current ??= randomUUID()),
+                        scenarioName,
+                        lastInput,
+                        result,
+                      ),
+                      editing,
+                    )
+                  ) {
+                    setScenarioName('')
+                    setEditing(undefined)
+                    scenarioId.current = undefined
+                  }
+                }}
+              />
+              {editing && (
+                <Action
+                  secondary
+                  label={uiText('Cancel edit')}
+                  onPress={() => {
+                    setEditing(undefined)
+                    setScenarioName('')
+                  }}
+                />
+              )}
+            </>
+          )}
+          {scenarios.error && <Text accessibilityRole="alert">{scenarios.error}</Text>}
+        </View>
       )}
       <View style={[styles.row, { gap: 16 }]}>
         <Action

@@ -114,6 +114,7 @@ window.showAnchored=()=>rootView.render(<main className="studio dark flex flex-c
 
 const browser = await chromium.launch({ headless: true })
 try {
+  await checkReloadedLineComment(browser)
   await checkPinRemoval(browser, 'file')
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.setDefaultTimeout(10000)
@@ -1294,4 +1295,87 @@ try {
   )
 } finally {
   await browser.close()
+}
+
+async function checkReloadedLineComment(browser) {
+  const page = await browser.newPage()
+  const posts = new Map()
+  try {
+    await page.route('http://draft.fixture/**', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/')
+        return route.fulfill({ body: '<div id="app"></div>', contentType: 'text/html' })
+      const { submissionId } = route.request().postDataJSON()
+      assert.ok(submissionId)
+      if (path.endsWith('/comment-status'))
+        return route.fulfill({ json: posts.get(submissionId) ?? { status: 'unknown' } })
+      posts.set(submissionId, {
+        status: 'posted',
+        url: 'https://github.com/team/project/pull/7#comment',
+      })
+      await route.abort()
+    })
+    const mount = async (base = 'b') => {
+      await page.addScriptTag({ content: built.outputFiles[0].text })
+      await page.evaluate((base) => {
+        window.detail.pull.baseSha = base.repeat(40)
+        window.detail.capabilities.actions.push('inline-comment')
+        window.store.connection = { address: location.origin, token: 'fixture-device' }
+        window.store.snapshot = { pullCommentReceiptsSupported: true }
+        const request = window.store.request
+        window.store.request = async (path, input, ...rest) => {
+          if (!['/api/scm/pulls/comment', '/api/scm/pulls/comment-status'].includes(path))
+            return request(path, input, ...rest)
+          const response = await fetch(path, { method: 'POST', body: JSON.stringify(input) })
+          return response.json()
+        }
+        window.showStandalone()
+      }, base)
+      await page.getByRole('tab', { name: /^Changes/ }).click()
+    }
+    await page.goto('http://draft.fixture/')
+    await mount()
+    await page.waitForFunction(() => window.inlineSelections?.['src/first.ts'])
+    await page.evaluate(() =>
+      window.inlineSelections['src/first.ts']({ start: 2, end: 2, side: 'additions' }),
+    )
+    const comment = page.getByRole('textbox', { name: 'Line comment', exact: true })
+    await comment.fill('Recover this line comment after reload')
+    await page.reload()
+    await mount('c')
+    await comment.waitFor()
+    assert.equal(await comment.inputValue(), 'Recover this line comment after reload')
+    const inline = comment.locator('xpath=ancestor::form')
+    await page.getByRole('button', { name: 'Choose new lines', exact: true }).click()
+    await page.evaluate(() =>
+      window.inlineSelections['src/first.ts']({ start: 2, end: 2, side: 'additions' }),
+    )
+    assert.equal(await comment.inputValue(), 'Recover this line comment after reload')
+    await inline.getByRole('button', { name: 'Comment destination', exact: true }).click()
+    await page.getByRole('option', { name: 'GitHub PR', exact: true }).click()
+    const post = inline.getByRole('button', { name: 'Post to GitHub', exact: true })
+    await comment.evaluate((target) => {
+      target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }),
+      )
+      target.form.requestSubmit()
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true }),
+      )
+      target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    assert.equal(posts.size, 0)
+    await post.click()
+    await page.getByText('This comment was already posted.', { exact: true }).waitFor()
+    assert.equal(posts.size, 1)
+    assert.equal(await post.isDisabled(), true)
+    await page.reload()
+    await mount('c')
+    await page.getByText('This comment was already posted.', { exact: true }).waitFor()
+    assert.equal(await post.isDisabled(), true)
+    assert.equal(posts.size, 1)
+  } finally {
+    await page.close()
+  }
 }

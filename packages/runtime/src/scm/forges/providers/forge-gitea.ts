@@ -522,7 +522,9 @@ export class GiteaForge implements ForgeAdapter {
         400,
         'This server only supports single-line review comments. Select one line.',
       )
-    await this.current(input.number, input.headSha)
+    const pull = await this.current(input.number, input.headSha)
+    if (input.baseSha !== undefined && pull.base.sha !== input.baseSha)
+      throw new HttpError(409, 'The pull request changed. Refresh before commenting.')
     const review = decode(
       forgeReview,
       await this.http.json(`${this.path}/pulls/${input.number}/reviews`, {

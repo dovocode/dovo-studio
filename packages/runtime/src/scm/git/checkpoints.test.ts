@@ -3,6 +3,7 @@ import {
   chmod,
   mkdir,
   lstat,
+  mkdtemp,
   readFile,
   rename,
   rm,
@@ -12,6 +13,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
 import sharp from 'sharp'
@@ -19,6 +21,26 @@ import { safeFile } from '../repositories/paths.js'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
+})
+it('detects terminal Git commits and staging only in their own checkout', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const temporary = await mkdtemp(join(tmpdir(), 'dovo-checkout-revision-'))
+  cleanups.push(() => rm(temporary, { recursive: true, force: true }))
+  const git = new GitService()
+  const linked = join(temporary, 'linked')
+  await git.command(f.directory, ['worktree', 'add', '-b', 'revision-fixture', linked])
+  const main = await git.checkoutChangesRevision(f.directory)
+  const initial = await git.checkoutChangesRevision(linked)
+  await writeFile(join(linked, 'hello.txt'), 'changed\n')
+  await git.command(linked, ['add', 'hello.txt'])
+  const staged = await git.checkoutChangesRevision(linked)
+  expect(staged).not.toBe(initial)
+  const head = await git.command(linked, ['symbolic-ref', 'HEAD'])
+  await git.command(linked, ['commit', '-m', 'Commit from terminal'])
+  expect(await git.command(linked, ['symbolic-ref', 'HEAD'])).toBe(head)
+  expect(await git.checkoutChangesRevision(linked)).not.toBe(staged)
+  expect(await git.checkoutChangesRevision(f.directory)).toBe(main)
 })
 it('keeps repository-root checkpoint paths from subfolders with diff.relative enabled', async () => {
   const f = await fixture()

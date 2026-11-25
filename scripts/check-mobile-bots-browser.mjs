@@ -87,6 +87,12 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       contents: 'export const CatalogPicker=()=>null;',
     },
     {
+      path: '../ui/content/clipboard',
+      importer: mobile + 'bots/',
+      contents:
+        'export const copyText=async(text)=>{window.copiedBotTemplate=text;return "copied"};',
+    },
+    {
       path: '../resources/editor',
       importer: mobile + 'bots/',
       contents: `export const ResourceEditor=()=>null;`,
@@ -876,6 +882,23 @@ try {
     state: 'detached',
   })
   assert.equal((await creates(page)).length, 0, 'A starter sends nothing')
+  await page.getByLabel('Role', { exact: true }).fill('')
+  await page.getByRole('button', { name: 'Use a Bot template', exact: true }).click()
+  await page.getByLabel('Bot template', { exact: true }).fill(
+    JSON.stringify({
+      version: 1,
+      name: 'Template name',
+      role: 'Role from the template',
+      responsibilities: 'Keep mine',
+    }),
+  )
+  await page.getByRole('button', { name: 'Fill empty fields', exact: true }).click()
+  assert.deepEqual(await fields(page), [
+    'My release helper',
+    'Role from the template',
+    'Investigate failed checks.\nPrepare release notes.\nAsk before publishing.',
+  ])
+  assert.equal((await creates(page)).length, 0, 'A template stays in the draft')
   await page.getByLabel('Bot name', { exact: true }).fill('Release assistant')
   await page.getByLabel('Role', { exact: true }).fill('Keep releases ready to ship')
   await page

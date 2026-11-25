@@ -29,6 +29,7 @@ export class Devices {
     private readonly db: Database.Database,
     private readonly ownerToken: string,
     private readonly onRevoked: (id: string) => void = () => {},
+    private readonly onConfirmed: (id: string, name: string) => void = () => {},
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS provisional_devices (device_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)',
@@ -78,10 +79,18 @@ export class Devices {
   }
   confirm(id: string) {
     this.expireProvisional()
-    if (!this.db.prepare('SELECT id FROM devices WHERE id=? AND revoked_at IS NULL').get(id))
-      throw new HttpError(401, 'Device authentication required')
-    this.db.prepare('DELETE FROM provisional_devices WHERE device_id=?').run(id)
-    this.invalidate()
+    const changed = this.db.transaction(() => {
+      const device = this.db
+        .prepare('SELECT name FROM devices WHERE id=? AND revoked_at IS NULL')
+        .pluck()
+        .get(id)
+      if (typeof device !== 'string') throw new HttpError(401, 'Device authentication required')
+      if (!this.db.prepare('DELETE FROM provisional_devices WHERE device_id=?').run(id).changes)
+        return false
+      this.onConfirmed(id, device)
+      return true
+    })()
+    if (changed) this.invalidate()
   }
   authenticate(token: string) {
     this.expireProvisional()

@@ -1,6 +1,6 @@
 import { CronExpressionParser } from 'cron-parser'
 import { Schema } from 'effect'
-import { mutableArray, mutableStruct } from '../shared/schema.js'
+import { decodeResult, mutableArray, mutableStruct } from '../shared/schema.js'
 import { automationSchema, nodeDataSchema, type Automation } from '../workspace.js'
 import { automationOnceTime } from './automations.js'
 import { defaultGithubTrigger } from './triggers.js'
@@ -134,6 +134,7 @@ export function automationDryRunFields(
     scheduledFor: defaults.scheduledFor ?? '',
     sourceText: defaults.sourceText ?? '',
     sourceUnchanged: false,
+    stepResults: '',
     stopAt: '',
   }
 }
@@ -146,10 +147,17 @@ export function automationDryRunFieldUse(flow: Pick<Automation, 'nodes' | 'monit
     payload: trigger === 'webhook' || trigger === 'github' || trigger === 'mcp-event',
     scheduledFor: trigger === 'schedule' || trigger === 'once',
     source: !!flow.monitor,
+    results: flow.nodes
+      .filter((node) => node.data.kind === 'task' && node.data.resultSchema !== undefined)
+      .map((node) => ({ id: node.id, label: node.data.label })),
     /** Steps that can fail or be rejected. */
     stops: flow.nodes
       .filter((node) => node.data.kind !== 'trigger')
-      .map((node) => ({ id: node.id, label: node.data.label, kind: node.data.kind })),
+      .map((node) => ({
+        id: node.id,
+        label: node.data.label,
+        kind: node.data.pipelineWait ? 'pipeline-wait' : node.data.kind,
+      })),
   }
 }
 
@@ -180,8 +188,33 @@ export function automationDryRunRequest(
     input.sourceText = fields.sourceText
     input.sourceUnchanged = fields.sourceUnchanged
   }
+  if (use.results.length && fields.stepResults.trim()) {
+    input.stepResults = fields.stepResults
+    automationDryRunStepResults(flow, input)
+  }
   const stopAt = use.stops.some((step) => step.id === fields.stopAt) ? fields.stopAt : undefined
   return { flow, input, ...(stopAt ? { stopAt } : {}) }
+}
+
+export function automationDryRunStepResults(flow: Automation, input: AutomationDryRunInput) {
+  if (input.stepResults === undefined) return new Map<string, Schema.Json>()
+  const decoded = decodeResult(automationDryRunInputSchema.fields.stepResults, input.stepResults)
+  if (!decoded.success) throw new Error('Sample step results must be at most 16,384 characters.')
+  let values: Record<string, Schema.Json>
+  try {
+    const parsed = decodeResult(
+      Schema.Record(Schema.String, Schema.Json),
+      JSON.parse(input.stepResults),
+    )
+    if (!parsed.success) throw new Error()
+    values = parsed.data
+  } catch {
+    throw new Error('Enter sample step results as a JSON object keyed by step ID.')
+  }
+  const allowed = new Set(automationDryRunFieldUse(flow).results.map(({ id }) => id))
+  for (const id of Object.keys(values))
+    if (!allowed.has(id)) throw new Error(`No task with a result schema has step ID "${id}".`)
+  return new Map(Object.entries(values))
 }
 
 export function automationDryRunCounts(result: Pick<AutomationDryRun, 'steps'>) {

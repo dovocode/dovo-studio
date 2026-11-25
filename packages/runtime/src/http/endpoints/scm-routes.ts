@@ -1,4 +1,3 @@
-import { readLinearIssues } from '../../scm/work/linear-issues.js'
 import { linearIssueQuerySchema } from '@dovo/protocol'
 import { conditionalRead } from '../support/conditional-read.js'
 import { conditionalPullRead } from '../../scm/pulls/conditional-read.js'
@@ -86,7 +85,13 @@ export function scmRoute(request: IncomingMessage, path: string) {
       const method = request.method
       if (method === 'POST' && path === '/api/scm/linear/issues/read') {
         const input = decode(linearIssueQuerySchema, yield* serviceResult(body(request, 4096)))
-        return yield* runtimeOperation(() => readLinearIssues(input, s.linearSettings.key()))
+        return yield* runtimeOperation(() =>
+          s.linearSettings.issues(input, (id) =>
+            s.store
+              .get()
+              .repositories.some((project) => project.id === id && project.kind !== 'scratch'),
+          ),
+        )
       }
       if (method === 'POST' && path === '/api/scm/repositories/delete') {
         return yield* deleteProjectEffect(s, yield* serviceResult(body(request)))
@@ -863,6 +868,8 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* serviceResult(s.git.stagingFilePreview(cwd, name, comparison))
         }
         if (path === '/api/scm/changes') {
+          if (input.revisionOnly === true)
+            return { revision: yield* serviceResult(s.git.checkoutChangesRevision(cwd)) }
           const includeFiles = decode(Schema.UndefinedOr(Schema.Boolean), input.includeFiles)
           const metadataOnly = decode(Schema.UndefinedOr(Schema.Boolean), input.metadataOnly)
           if (input.previewPath !== undefined) {

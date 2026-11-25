@@ -4,6 +4,7 @@ import {
   jobRunSchema,
   attachmentSchema,
   type JobRunStep,
+  type JobRunFailure,
   type Task,
   type TaskSummary,
 } from '@dovo/protocol'
@@ -11,7 +12,9 @@ import { Schema } from 'effect'
 import { createHash } from 'node:crypto'
 import { botStepTurn } from './bot-step.js'
 import { readStepResult } from './step-result.js'
+import { redact } from '../storage/activity.js'
 export const storedRunSchema = mutableStruct({
+  resumeAfterPipelineWait: Schema.optional(Schema.Literal(true)),
   reviewDecisions: Schema.optional(
     mutableArray(
       mutableStruct({ nodeId: Schema.String, attempt: Schema.Number, allow: Schema.Boolean }),
@@ -46,6 +49,26 @@ export const storedRunSchema = mutableStruct({
   },
 })
 export type StoredRun = Schema.Schema.Type<typeof storedRunSchema>
+
+export function runFailures(run: StoredRun): JobRunFailure[] | undefined {
+  const attempt = run.attempt ?? 1
+  if (run.status !== 'failed' || run.failures?.some((failure) => failure.attempt === attempt))
+    return run.failures
+  const step = runSteps(run).find((step) => step.nodeId === run.failedNodeId)
+  const raw = step?.error ?? run.error
+  const failure = {
+    attempt,
+    failedAt: run.finishedAt ?? run.updatedAt ?? run.createdAt,
+    nodeId: step?.nodeId,
+    stepAttempt: step?.attempt,
+    taskId: step?.taskId,
+    turnId: step?.turnId,
+    error: raw
+      ? String((redact({ error: raw }) as { error: unknown }).error).slice(0, 1000)
+      : undefined,
+  }
+  return [...(run.failures ?? []), failure].slice(-20)
+}
 type StepOutput = NonNullable<StoredRun['outputs']>[string]
 export function runReadyToFinish(run: StoredRun) {
   return (
@@ -153,6 +176,7 @@ export function runSteps(run: StoredRun): JobRunStep[] {
       nodeId: node.id,
       label: node.data.label,
       kind: node.data.kind,
+      waitsForCi: node.data.pipelineWait ? true : undefined,
       taskId,
       status: completed
         ? 'completed'

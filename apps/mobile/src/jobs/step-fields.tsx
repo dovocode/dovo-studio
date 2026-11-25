@@ -8,6 +8,7 @@ import {
   resolveScopedAgents,
   projectDisplayName,
   defaultTaskHarness,
+  defaultPipelineWait,
   resolveTaskAgent,
   decode,
   taskHarnessSchema,
@@ -77,6 +78,10 @@ export function StepFields({
   const installations = snapshot?.acpInstallations ?? []
   const changeAgent = (next: Agent) =>
     onChange({ agentId: '', agentOverrides: undefined, harness: decode(taskHarnessSchema, next) })
+  const wait = data.pipelineWait ?? defaultPipelineWait
+  const sources = data.pipelineWait
+    ? automationInputSources(flow, nodeId).filter(({ data }) => data.resultSchema !== undefined)
+    : []
   return (
     <View style={{ gap: 12 }}>
       <Field
@@ -85,12 +90,75 @@ export function StepFields({
         editable={!disabled}
         onChangeText={(label) => onChange({ label })}
       />
-      {data.kind === 'review' ? (
+      {data.kind === 'review' && !data.pipelineWait ? (
         <Text style={styles.muted}>
           <InterfaceText>
             {'Pause here until you approve this run. Rejecting stops the remaining steps.'}
           </InterfaceText>
         </Text>
+      ) : data.pipelineWait ? (
+        snapshot?.automationPipelineWaitSupported ? (
+          <>
+            <Choice
+              label={uiText('GitHub project')}
+              value={data.repositoryId}
+              disabled={disabled}
+              items={workspace.repositories
+                .filter((repo) => !repo.kind)
+                .map((repo) => ({ id: repo.id, name: projectDisplayName(repo) }))}
+              onChange={(repositoryId) => onChange({ repositoryId })}
+            />
+            {(sources.length > 0 || wait.resultStepId) && (
+              <Choice
+                label={uiText('Attempt source')}
+                value={wait.resultStepId ?? ''}
+                disabled={disabled}
+                items={[
+                  { id: '', name: uiText('Enter a URL') },
+                  ...sources.map((source) => ({ id: source.id, name: source.data.label })),
+                ]}
+                onChange={(resultStepId) =>
+                  onChange({
+                    pipelineWait: {
+                      ...wait,
+                      resultStepId: resultStepId || undefined,
+                      url: resultStepId ? '' : wait.url,
+                    },
+                  })
+                }
+              />
+            )}
+            {wait.resultStepId ? (
+              <Text style={styles.muted}>
+                {uiText('The upstream task must return the attempt URL as a JSON string.')}
+              </Text>
+            ) : (
+              <Field
+                label={uiText('GitHub Actions attempt URL')}
+                value={wait.url}
+                maxLength={512}
+                editable={!disabled}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="https://github.com/owner/repo/actions/runs/123/attempts/1"
+                onChangeText={(url) => onChange({ pipelineWait: { ...wait, url } })}
+              />
+            )}
+            <Field
+              label={uiText('Timeout (minutes)')}
+              value={wait.timeoutMinutes ? String(wait.timeoutMinutes) : ''}
+              editable={!disabled}
+              keyboardType="number-pad"
+              maxLength={4}
+              onChangeText={(value) => {
+                if (/^\d*$/.test(value))
+                  onChange({ pipelineWait: { ...wait, timeoutMinutes: Number(value) } })
+              }}
+            />
+          </>
+        ) : (
+          <Text style={styles.muted}>{uiText('Update this runtime to wait for CI.')}</Text>
+        )
       ) : (
         <>
           <Field

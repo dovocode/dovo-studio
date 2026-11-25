@@ -624,6 +624,8 @@ export class BitbucketForge implements ForgeAdapter {
     if (input.start !== input.end)
       throw new HttpError(400, 'Bitbucket Cloud supports single-line comments. Select one line.')
     const value = await this.current(input.number, input.headSha)
+    if (input.baseSha !== undefined && value.destination.commit.hash !== input.baseSha)
+      throw new HttpError(409, 'The pull request changed. Refresh before commenting.')
     const result = decode(
       comment,
       await this.http.json(`${this.path}/pullrequests/${input.number}/comments`, {

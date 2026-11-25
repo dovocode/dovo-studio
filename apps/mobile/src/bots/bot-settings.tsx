@@ -7,16 +7,18 @@ import { BotAvatarEditor } from './bot-avatar-editor'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
+import { copyText } from '../ui/content/clipboard'
 import { automationHref } from '../shell/source-route'
 import { Sheet, useSheetNavigation } from '../ui/layout/sheet'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   botResultSchema,
+  botTemplateText,
   botLifecyclePresentation,
   responses,
   botRoutines,
   botWorkInbox,
-  botRunStatusLabels,
+  botRunStatusLabel,
   workspacePatchResultSchema,
   emptyBotResources,
   taskResources,
@@ -84,6 +86,7 @@ function BotSettingsEditor({
   )
   const [memory, setMemory] = useState(initialSection === 'memory')
   const [routines, setRoutines] = useState(initialSection === 'routines')
+  const [templateStatus, setTemplateStatus] = useState('')
   const [revision] = useState(task.bot?.revision)
   const title = useRef(task.title)
   const currentRevision = useRef(revision)
@@ -260,6 +263,21 @@ function BotSettingsEditor({
             )}
             <Action label={uiText('Routines')} secondary onPress={() => setRoutines(true)} />
             <Action label={uiText('Memory')} secondary onPress={() => setMemory(true)} />
+            <Action
+              label={uiText('Copy Bot template')}
+              secondary
+              onPress={() => {
+                void (async () => {
+                  try {
+                    const result = await copyText(botTemplateText(task.title, bot))
+                    setTemplateStatus(result === 'copied' ? uiText('Bot template copied') : '')
+                  } catch {
+                    setTemplateStatus(uiText('Could not copy the Bot template.'))
+                  }
+                })()
+              }}
+            />
+            {!!templateStatus && <Text accessibilityLiveRegion="polite">{templateStatus}</Text>}
             <Action
               destructive
               label={uiText('Delete Bot…')}
@@ -491,7 +509,7 @@ function BotRoutines({ taskId }: { taskId: string }) {
               key={run.id}
               secondary
               disabled={!profile}
-              label={`${botRunStatusLabels[run.status]} · ${new Date(run.createdAt).toLocaleString()}`}
+              label={`${botRunStatusLabel(run)} · ${new Date(run.createdAt).toLocaleString()}`}
               onPress={() => {
                 if (profile)
                   navigate(() => router.navigate(automationHref(profile.id, flow.id, run.id)))

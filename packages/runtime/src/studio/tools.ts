@@ -660,6 +660,7 @@ export async function studioTool(
           enabled: enabled ?? false,
         })),
       }
+    if (command.action === 'readRun') return { run: s.jobs.summary(command.id) }
     if (command.action === 'definition' || command.action === 'restore') {
       const run = s.jobs.detail(command.id)
       const current = workspace.automations.find((item) => item.id === run.automationId)
@@ -767,8 +768,7 @@ export async function studioTool(
     const flow = workspace.automations.find((item) => item.id === command.id)
     if (!flow) throw new HttpError(404, 'Automation not found')
     if (command.action === 'read') return { automation: flow }
-    if (command.action === 'runs')
-      return { runs: s.jobs.list().filter((run) => run.automationId === flow.id) }
+    if (command.action === 'runs') return { runs: s.jobs.list(flow.id) }
     if (command.action === 'eventStatus') {
       if (!flow.nodes.some(({ data }) => data.kind === 'trigger' && data.trigger === 'mcp-event'))
         throw new HttpError(400, 'This automation does not use an MCP event trigger')

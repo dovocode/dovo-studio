@@ -1,4 +1,4 @@
-import { randomUUID } from '@dovo/protocol'
+import { defaultPipelineWait, randomUUID } from '@dovo/protocol'
 import { automationIssues, defaultTaskHarness } from '@dovo/studio-core'
 import type { Automation, AutomationNode, Workspace } from '@dovo/studio-core'
 
@@ -7,7 +7,7 @@ export function validateGraph(flow: Automation, workspace: Workspace): string[] 
 }
 
 export function newNode(
-  kind: AutomationNode['data']['kind'],
+  kind: AutomationNode['data']['kind'] | 'pipeline-wait',
   workspace: Workspace,
   index: number,
 ): AutomationNode {
@@ -16,14 +16,22 @@ export function newNode(
     type: 'automation',
     position: { x: 80 + index * 320, y: 80 },
     data: {
-      kind,
-      label: kind === 'trigger' ? 'Trigger' : kind === 'task' ? 'Agent thread' : 'Human review',
+      kind: kind === 'pipeline-wait' ? 'review' : kind,
+      label:
+        kind === 'trigger'
+          ? 'Trigger'
+          : kind === 'task'
+            ? 'Agent thread'
+            : kind === 'pipeline-wait'
+              ? 'Wait for CI'
+              : 'Human review',
       trigger: 'manual',
       schedule: '0 9 * * 1-5',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       objective: '',
       agentId: '',
       ...(kind === 'task' ? { harness: defaultTaskHarness('codex') } : {}),
+      ...(kind === 'pipeline-wait' ? { pipelineWait: defaultPipelineWait } : {}),
       repositoryId: workspace.repositories[0]?.id ?? '',
     },
   }

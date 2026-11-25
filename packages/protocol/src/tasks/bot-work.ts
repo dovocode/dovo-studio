@@ -11,6 +11,8 @@ export const botRunStatusLabels = {
   failed: 'Failed',
   cancelled: 'Cancelled',
 } satisfies Record<JobRun['status'], string>
+export const botRunStatusLabel = (run: JobRun) =>
+  run.pipelineWait ? 'Waiting for CI' : botRunStatusLabels[run.status]
 
 export function botRoutines(
   taskId: string,
@@ -44,7 +46,7 @@ export function botRoutines(
           label: node.data.label,
           botId: node.data.botId,
           botJob: node.data.kind === 'task' && node.data.botId === taskId,
-          review: node.data.kind === 'review',
+          review: node.data.kind === 'review' && !node.data.pipelineWait,
         })),
       runs: runs
         .filter((run) => run.automationId === flow.id)
@@ -67,8 +69,8 @@ export function botWorkSummary(
   )
   return {
     routines: routines.length,
-    running: relevant.filter((run) => run.status === 'running').length,
-    review: relevant.filter((run) => run.status === 'waiting').length,
+    running: relevant.filter((run) => run.status === 'running' || run.pipelineWait).length,
+    review: relevant.filter((run) => run.status === 'waiting' && !run.pipelineWait).length,
     failed: routines.filter((routine) => routine.runs[0]?.status === 'failed').length,
     workers:
       taskSubagents(task, tasks, true).length +
@@ -139,8 +141,8 @@ export function botWorkInbox(
             ? queued.activity
             : r.outcome === 'unchanged'
               ? 'No change'
-              : botRunStatusLabels[r.status],
-        attention: r.status === 'failed' || r.status === 'waiting',
+              : botRunStatusLabel(r),
+        attention: r.status === 'failed' || (r.status === 'waiting' && !r.pipelineWait),
         at: r.updatedAt ?? r.createdAt,
         runId: r.id,
         automationId: r.automationId,

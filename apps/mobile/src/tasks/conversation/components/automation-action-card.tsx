@@ -103,9 +103,19 @@ function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
       )}
       {workflow.nodes.map((node, index) => {
         const resource = snapshot.resources.find((item) => item.nodeId === node.id)
+        const ci = node.data.pipelineWait
         const rows: [string, string][] = [
           ...(node.data.kind === 'trigger'
             ? [['Trigger', triggerText(node.data)] as [string, string]]
+            : []),
+          ...(ci
+            ? ([
+                [
+                  'GitHub Actions attempt',
+                  ci.resultStepId ? (labels.get(ci.resultStepId) ?? ci.resultStepId) : ci.url,
+                ],
+                ['Timeout (minutes)', String(ci.timeoutMinutes)],
+              ] as [string, string][])
             : []),
           ...(node.data.kind !== 'trigger' && node.data.objective
             ? [
@@ -165,7 +175,7 @@ function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
             }}
           >
             <Text style={{ fontWeight: '600' }}>
-              {labels.get(node.id)} ({node.data.kind})
+              {labels.get(node.id)} ({ci ? uiText('Wait for CI') : node.data.kind})
             </Text>
             {rows.map(([label, value]) => (
               <View key={label} style={{ gap: 2 }}>

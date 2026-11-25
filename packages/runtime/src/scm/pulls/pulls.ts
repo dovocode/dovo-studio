@@ -322,7 +322,10 @@ export class PullRequests {
       restDetail,
       await this.json(cwd, ['api', '--hostname', repo.host, `${repo.path}/pulls/${input.number}`]),
     )
-    if (pull.head.sha !== input.headSha)
+    if (
+      pull.head.sha !== input.headSha ||
+      (input.baseSha !== undefined && pull.base.sha !== input.baseSha)
+    )
       throw new HttpError(409, 'This PR changed. Refresh before posting your comment.')
     const side = input.side === 'additions' ? 'RIGHT' : 'LEFT'
     const result = decode(

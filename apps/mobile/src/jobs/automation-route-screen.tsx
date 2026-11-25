@@ -1,5 +1,6 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
+import { useAutomationRun } from '@dovo/studio-core'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useLocalSearchParams } from 'expo-router'
 import { ScrollView, View } from 'react-native'
@@ -7,6 +8,7 @@ import { useRuntime } from '../runtime/connection/provider'
 import { RuntimeRoute } from '../shell/runtime-route'
 import { backToCollection } from '../shell/source-route'
 import { IconButton } from '../ui/controls/icon-button'
+import { Action } from '../ui/controls/action'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { useSettingsTheme as useTheme, SettingsPage } from '../screens/settings-theme'
@@ -31,13 +33,20 @@ export function AutomationRouteScreen() {
     </RuntimeRoute>
   )
 }
-/** The exact requested run, never the latest one. Runs outside the retained snapshot say so. */
 function RequestedRun({ automationId, runId }: { automationId: string; runId: string }) {
   const uiText = useInterfaceText()
 
   const { styles } = useTheme()
-  const { snapshot } = useRuntime()
-  const run = snapshot?.runs.find((item) => item.id === runId && item.automationId === automationId)
+  const { snapshot, profile, connected, read } = useRuntime()
+  const { run, error, loading, retry } = useAutomationRun({
+    automationId,
+    runId,
+    summary: snapshot?.runs.find((item) => item.id === runId && item.automationId === automationId),
+    connection: profile?.connection,
+    connected,
+    supported: snapshot?.automationRunLookupSupported,
+    request: read,
+  })
   return (
     <View testID="Requested automation run" style={{ gap: 8 }}>
       <Text style={{ fontWeight: '600' }}>
@@ -47,13 +56,15 @@ function RequestedRun({ automationId, runId }: { automationId: string; runId: st
         <RunProgress key={run.id} run={run} />
       ) : (
         <Text style={styles.muted}>
-          {snapshot
-            ? uiText(
-                'This run is not in the recent run history on this computer. It may be older than the runs the computer keeps.',
-              )
-            : uiText('Loading run history from this computer.')}
+          {error ??
+            (loading || !snapshot
+              ? uiText('Loading the requested run…')
+              : snapshot.automationRunLookupSupported && !connected
+                ? uiText('Reconnect to load the requested run.')
+                : uiText('This run is not in the recent run history on this computer.'))}
         </Text>
       )}
+      {error && connected && <Action label={uiText('Retry')} onPress={retry} />}
     </View>
   )
 }

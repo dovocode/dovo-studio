@@ -286,7 +286,7 @@ const styleServer = await createServer({
   configFile: false,
   root: new URL('../', import.meta.url).pathname,
   plugins: [tailwindcss()],
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   logLevel: 'error',
 })
 let nativeStyles
@@ -608,13 +608,37 @@ try {
   await page.evaluate(() => window.route({ viewId: 'bots' }))
   await page.getByRole('button', { name: 'New Bot', exact: true }).click()
   await page.getByLabel('Bot name', { exact: true }).fill('Build assistant')
-  await page.getByLabel('Bot role', { exact: true }).fill('Keep builds green')
+  await page.getByText('Use a Bot template', { exact: true }).click()
+  await page.getByLabel('Bot template', { exact: true }).fill(
+    JSON.stringify({
+      version: 1,
+      name: 'Template name',
+      role: 'Keep builds green',
+      responsibilities: '',
+    }),
+  )
+  await page.getByRole('button', { name: 'Fill empty fields', exact: true }).click()
+  assert.equal(await page.getByLabel('Bot name', { exact: true }).inputValue(), 'Build assistant')
+  assert.equal(await page.getByLabel('Bot role', { exact: true }).inputValue(), 'Keep builds green')
   await page.evaluate(() => (window.failCreate = true))
   await page.getByRole('button', { name: 'Create Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Retry creation', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Retry creation', exact: true }).click()
   await botTool('Settings')
   await page.getByRole('heading', { name: 'Assistant', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.dovoCopyText = async (text) => {
+      window.copiedBotTemplate = text
+    }
+  })
+  await page.getByRole('button', { name: 'Copy Bot template', exact: true }).click()
+  await page.getByText('Bot template copied', { exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => JSON.parse(window.copiedBotTemplate)), {
+    version: 1,
+    name: 'Build assistant',
+    role: 'Keep builds green',
+    responsibilities: '',
+  })
   const creates = await page.evaluate(() =>
     window.calls.filter((call) => call.path === '/api/bots/create'),
   )

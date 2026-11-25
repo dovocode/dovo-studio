@@ -3,7 +3,7 @@ import { containerSandboxEnabled, type Agent, type ContainerSandbox } from '@dov
 import { threadContainerSandbox } from '../../sandbox/thread-terminal.js'
 import type { Sandboxes } from '../../sandbox/sandboxes.js'
 import { sandboxInstructions } from '../../sandbox/instructions.js'
-import { explainProviderFailure } from './provider-failure.js'
+import { explainProviderFailure, ProviderFailure } from './provider-failure.js'
 import { botContextMessages, botInstructions, botRoutineContext } from '@dovo/protocol'
 import { goalCommand, goalCommandText } from '@dovo/protocol'
 import { ToolLoopGuard, ToolLoopStop } from './tool-loop.js'
@@ -2260,9 +2260,20 @@ export class TaskTurnRunner {
                 !flushError &&
                 !(controller.signal.reason instanceof ToolLoopStop)
               const finalStatus = finalCancelled ? ('cancelled' as const) : ('failed' as const)
+              const providerFailure =
+                error instanceof RuntimeOperationError ? error.cause : undefined
               const continuation = finalCancelled
                 ? undefined
-                : quotaContinuation(errorMessage(error), turnLimits, policy, turnId)
+                : quotaContinuation(
+                    errorMessage(error),
+                    turnLimits,
+                    policy,
+                    turnId,
+                    Date.parse(finishedAt),
+                    providerFailure instanceof ProviderFailure
+                      ? providerFailure.quotaResetAt
+                      : undefined,
+                  )
               this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 status: finalStatus,

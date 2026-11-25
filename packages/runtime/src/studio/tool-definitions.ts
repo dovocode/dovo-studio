@@ -50,7 +50,7 @@ const definitions = [
     part: 'automations',
     schema: studioAutomationsCommandSchema,
     description:
-      'Manage automations. Create/update need the full definition. automation_prepare opens review. Bot steps use data.botId and data.objective. run needs requestId; cancel/retry/wait use run ID; runs uses automation ID. source quotes owner words. dryRun tests automation with sample input; changes nothing. previewFromEvent/runFromEvent take subscriptionId/offset/eventId from mcp_events. eventStatus shows queued deliveries and gaps. definition/restore use run ID; restore pauses triggers. Review stays human-only.',
+      'Manage automations. Create/update need the full definition. automation_prepare opens review. Bot steps use data.botId and data.objective. run needs requestId; readRun/cancel/retry/wait use run ID; runs uses automation ID. source quotes owner words. dryRun tests automation with sample input; changes nothing. previewFromEvent/runFromEvent take subscriptionId/offset/eventId from mcp_events. eventStatus shows queued deliveries and gaps. definition/restore use run ID; restore pauses triggers. Review stays human-only.',
   },
   {
     part: 'browsers',

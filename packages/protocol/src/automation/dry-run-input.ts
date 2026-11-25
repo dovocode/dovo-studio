@@ -13,6 +13,8 @@ export const automationDryRunInputSchema = mutableStruct({
   sourceText: Schema.optional(maxValue(Schema.String, 64 * 1024)),
   /** Treat the monitored source as unchanged since the last successful run. */
   sourceUnchanged: Schema.optional(Schema.Boolean),
+  /** JSON object mapping task step IDs to sample results. */
+  stepResults: Schema.optional(maxValue(Schema.String, 16 * 1024)),
 })
 export type AutomationDryRunInput = typeof automationDryRunInputSchema.Type
 

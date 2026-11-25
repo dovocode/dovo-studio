@@ -5,14 +5,18 @@ import {
   filePreviewLabel,
   fileTreePaths,
   pullFileKind,
+  mutableStruct,
   type ChangedFile,
 } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { FileBrowserTree, FileChangeCounts, IconButton, cn } from '@dovo/studio-ui'
 import { CheckpointDiff } from '../files/saved-file-diff'
 import { SavedFilePreview } from '../files/saved-file-preview'
 import { fileStats } from '../files/presentation'
+
+const revisionResponse = mutableStruct({ revision: Schema.String })
 
 /** Working tree changes for a terminal or project checkout in the workspace tools pane. */
 export function CheckoutChanges({
@@ -30,6 +34,7 @@ export function CheckoutChanges({
   const uiText = useInterfaceText()
   const { connected, request, snapshot } = useWorkspace()
   const metadataOnly = snapshot?.selectedCheckoutDiffSupported || undefined
+  const watchRevision = snapshot?.checkoutChangesRevisionSupported === true
   const [files, setFiles] = useState<ChangedFile[]>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -39,29 +44,45 @@ export function CheckoutChanges({
   useEffect(() => {
     if (!connected) return
     let current = true
-    setError('')
-    setLoading(true)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let loadedRevision: string | undefined
+    const path = terminalId ? '/api/terminals/workspace/changes' : '/api/scm/changes'
     const input = terminalId ? { id: terminalId } : { repositoryId }
-    void request(
-      terminalId ? '/api/terminals/workspace/changes' : '/api/scm/changes',
-      metadataOnly ? { ...input, metadataOnly } : input,
-      responses.files,
-    )
-      .then(
-        (response) => {
-          if (current) setFiles(response.files)
-        },
-        (cause: unknown) => {
-          if (current) setError(cause instanceof Error ? cause.message : String(cause))
-        },
-      )
-      .finally(() => {
-        if (current) setLoading(false)
-      })
+    const refresh = async (first = false) => {
+      try {
+        if (!first && document.visibilityState === 'hidden') return
+        const revision = watchRevision
+          ? await request(path, { ...input, revisionOnly: true }, revisionResponse).then(
+              (value) => value.revision,
+              () => undefined,
+            )
+          : undefined
+        if (!current || (!first && (!revision || revision === loadedRevision))) return
+        setError('')
+        setLoading(true)
+        const response = await request(
+          path,
+          metadataOnly ? { ...input, metadataOnly } : input,
+          responses.files,
+        )
+        if (!current) return
+        setFiles(response.files)
+        loadedRevision = revision
+      } catch (cause) {
+        if (current) setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        if (current) {
+          setLoading(false)
+          if (watchRevision) timer = setTimeout(() => void refresh(), 4000)
+        }
+      }
+    }
+    void refresh(true)
     return () => {
       current = false
+      clearTimeout(timer)
     }
-  }, [attempt, connected, repositoryId, request, terminalId, metadataOnly])
+  }, [attempt, connected, repositoryId, request, terminalId, metadataOnly, watchRevision])
   const entries = useMemo(
     () =>
       (files ?? []).map((file) => {

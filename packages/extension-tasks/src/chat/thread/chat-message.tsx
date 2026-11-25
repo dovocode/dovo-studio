@@ -32,6 +32,7 @@ import { MessageCopy } from './message-copy'
 import { RunInTerminal } from '../actions/run-in-terminal'
 import { ForkTurn } from '../actions/fork-turn'
 import { ForkMessage } from '../actions/fork-message'
+import { SuggestRoutine } from '../actions/suggest-routine'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity } from './task-activity'
 
@@ -332,7 +333,10 @@ export const ChatMessage = memo(function ChatMessage({
               <RunInTerminal taskId={taskId} text={message.text} onRan={onTerminal} />
             )}
             {pending?.message.id !== message.id && (
-              <ForkMessage taskId={taskId} message={message} status={groupStatus} />
+              <>
+                <ForkMessage taskId={taskId} message={message} status={groupStatus} />
+                {message.role === 'user' && <SuggestRoutine taskId={taskId} message={message} />}
+              </>
             )}
             {ownsFooter && turn && turn.status !== 'running' && (
               <ForkTurn taskId={taskId} turn={turn} message={message} />

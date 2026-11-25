@@ -13,6 +13,8 @@ import {
   remoteMcpEventsVersion,
   remoteMcpNeedsInputSchema,
   remoteMcpTurnFinishedSchema,
+  remoteMcpAutomationFinishedSchema,
+  remoteMcpAutomationReviewSchema,
   type RemoteMcpEventPoll,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -37,6 +39,18 @@ const events = [
     payloadSchema: jsonSchema(remoteMcpNeedsInputSchema),
   },
 ].map((event) => ({ ...event, inputSchema, delivery: ['poll'] }))
+const automationEvents = [
+  {
+    name: 'automation.run_finished',
+    description: 'An automation run finished an attempt.',
+    payloadSchema: jsonSchema(remoteMcpAutomationFinishedSchema),
+  },
+  {
+    name: 'automation.needs_review',
+    description: 'An automation is waiting for a person to review a step.',
+    payloadSchema: jsonSchema(remoteMcpAutomationReviewSchema),
+  },
+].map((event) => ({ ...event, inputSchema, delivery: ['poll'] }))
 
 // The installed MCP SDK supports the initialization-based protocol. Handle the native
 // discovery and polling requests here so both versions can use the same OAuth resource.
@@ -46,6 +60,7 @@ export async function nativeRemoteMcpRequest(
   body: unknown,
   handlers: {
     eventsEnabled: boolean
+    automationEventsEnabled?: boolean
     tools: Tool[]
     callTool: (params: (typeof CallToolRequestSchema)['_output']['params']) => Promise<unknown>
     poll: (params: RemoteMcpEventPoll) => Promise<unknown>
@@ -97,7 +112,10 @@ export async function nativeRemoteMcpRequest(
     }
     case 'events/list':
       return handlers.eventsEnabled
-        ? result({ resultType: 'complete', events })
+        ? result({
+            resultType: 'complete',
+            events: handlers.automationEventsEnabled ? [...events, ...automationEvents] : events,
+          })
         : error(-32601, 'This computer does not currently offer MCP events.')
     case 'events/poll': {
       let poll: RemoteMcpEventPoll

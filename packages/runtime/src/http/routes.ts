@@ -54,6 +54,7 @@ import {
 import { taskListAction } from './endpoints/task-list-action.js'
 import { pullCommentReceiptId, pullCommentStatus } from './endpoints/pull-comment-receipts.js'
 import { pullCommentSubmissionSchema } from '@dovo/protocol'
+import { linearConnectionCommandSchema } from '@dovo/protocol'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
@@ -1852,7 +1853,7 @@ export function route(
             input.resumeInterrupted !== undefined
           ) &&
           (s.store.publicWorkspace().tasks.some((task) => task.status === 'running') ||
-            s.jobs.list().some((run) => run.status === 'running'))
+            s.jobs.hasRunning())
         )
           throw new HttpError(
             409,
@@ -2261,6 +2262,29 @@ export function route(
       if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
       if (path.startsWith('/api/scm/project-transfer/'))
         return yield* projectTransferRoute(request, path, device.id, token)
+      if (method === 'POST' && path === '/api/scm/linear/key/connections') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Manage Linear connections from a paired human client.')
+        const command = decode(
+          linearConnectionCommandSchema,
+          yield* serviceResult(body(request, 4096)),
+        )
+        const result = yield* runtimeOperation(() =>
+          s.linearSettings.configure(
+            command,
+            () =>
+              new Set(
+                s.store
+                  .get()
+                  .repositories.filter((project) => project.kind !== 'scratch')
+                  .map((project) => project.id),
+              ),
+            () => s.devices.authenticate(token),
+          ),
+        )
+        s.store.update((workspace) => workspace)
+        return result
+      }
       if (
         method === 'POST' &&
         (path === '/api/scm/linear/key/save' || path === '/api/scm/linear/key/remove')

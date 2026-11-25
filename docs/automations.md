@@ -75,7 +75,29 @@ Select the preceding task under **Inputs from preceding tasks** to pass its save
 task. File copying still uses **Include files**. Open the run audit and select **Load output for
 this page** on the first page to see the redacted JSON and its step, worker, attempt and turn IDs.
 Agents can set `data.resultSchema` in a task node through `studio_automations` and use `validate` or
-`dryRun` to check the definition. A dry run shows the schema without running the worker.
+`dryRun` to check the definition. In **Dry run**, enter a JSON object in **Sample step results**
+with step IDs as keys, for example `{"count-step":{"count":7}}`. The runtime validates each reached
+sample against the worker's schema and passes it to tasks that select that step as an input. A
+schema error stops the simulation at that step. Saved scenarios keep the sample values.
+
+## Wait for CI
+
+Add **Wait for CI** and select the GitHub project. Paste a GitHub Actions URL ending in
+`/actions/runs/<run-id>/attempts/<attempt-number>`. For a routine that handles a different run each
+time, choose a preceding task as the attempt source. Set that task's result schema to
+`{"type":"string"}` and have it return the full attempt URL as a JSON string.
+
+Enter a timeout from one minute to 24 hours. The runtime reads the exact attempt through the
+selected project's GitHub connection. A successful attempt continues the automation. A failed
+attempt or an expired deadline fails the step. A runtime restart keeps the original attempt and
+deadline. **Cancel run** stops waiting and leaves GitHub Actions running. Retrying keeps completed
+steps and starts a new timeout for the same attempt. Use **Dry run** to simulate both outcomes
+without contacting GitHub.
+
+Clients offer the step when the runtime advertises `automationPipelineWaitSupported`. An older
+client can still open the automation, but needs updating to edit its CI gate. Finish or cancel
+active CI waits and pause automations with CI gates before rolling back to a runtime that does not
+support them.
 
 ## Run a step in a Bot
 
@@ -83,6 +105,17 @@ A task step with `botId` creates an isolated worker with that [Bot](bots.md)'s s
 `data.objective` to the worker's instructions. The worker reports its result to the Bot and keeps
 the coordinator available. A paused Bot fails the step without queueing work. Resume the Bot and
 retry the run. Retained legacy runs can still wait for a message in the shared Bot thread.
+
+### Suggest a routine from a message
+
+Open a Bot thread and choose **Suggest a routine** on one of your messages. Dovo prefills the
+instructions and recognizes explicit times such as “every Friday at 09:00.” Review the time zone and
+the next scheduled time. Enter a schedule when the message leaves the timing open.
+
+Choose **Save paused routine** to save it on the Bot's computer. Open **Dry run** to inspect its
+inputs, or choose **Test run** to start real work. Enable triggers when you are ready for the
+schedule. Cancel closes the editor without creating a routine. The change history links back to the
+owner message. The runtime advertises `routineSuggestionsSupported`.
 
 ## Delete an automation
 
@@ -208,7 +241,31 @@ Agents call `studio_automations` with
 unsaved draft. To test a saved automation, read it first. Read-only agents can use dry runs. An
 older runtime rejects the `dryRun` action.
 
+### Save Dry run scenarios
+
+Run a sample, enter a scenario name and choose **Save as scenario**. Dovo saves the sample input,
+simulated outcome, and expected result for each step on the automation's computer. Save different
+inputs for cases such as an accepted event, a filtered event or a rejected review.
+
+Choose **Run saved scenarios** after changing the automation. Each case shows whether the outcome or
+a step's status changed. Select a case to load its sample, rerun it and choose **Update scenario**
+to replace its expectation. Delete a case when it is no longer needed. The limit is 12 cases per
+automation, each up to 32,768 characters. Use sample data without credentials or private records.
+Scenario runs use the same simulated Dry run path. The runtime advertises
+`automationDryRunScenariosSupported`.
+
 ## Follow a run
+
+Current work and reviews stay visible even after 100 newer runs. A link from an existing automation
+loads the exact retained run by ID, including when it is outside recent history. Older runtimes can
+show links from their recent run list. Agents can use `studio_automations` with `action: "readRun"`
+and the run ID for its status and steps. The direct lookup omits the trigger payload and saved
+definition.
+
+Under **Failed attempts**, choose **Explain attempt** to open a read-only thread draft. It uses the
+recorded failure and step from that attempt's saved definition. Review the draft, then send it if
+you want a diagnosis. Opening the draft does not retry the automation. Dovo retains up to 20 failed
+attempts with the run. Older run records can show the last failure only when it is still available.
 
 Each run records the current step, completed steps, review gates, failures, task links and start/end
 times. Expand run details on mobile or open **Runs** beside the desktop canvas. Steps distinguish

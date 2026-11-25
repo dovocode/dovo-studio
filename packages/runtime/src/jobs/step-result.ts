@@ -51,6 +51,11 @@ export function readStepResult(schema: string, task: Task, turn: TaskTurn) {
   } catch {
     throw new Error('The automation result is not valid JSON.')
   }
+  validateStepResult(schema, value)
+  return value
+}
+
+export function validateStepResult(schema: string, value: Schema.Json) {
   const validate = compileStepResult(schema)
   if (!validate(value)) {
     const error = validate.errors?.[0]
@@ -58,5 +63,4 @@ export function readStepResult(schema: string, task: Task, turn: TaskTurn) {
       `The automation result does not match its schema.${error ? ` ${error.instancePath || '/'} ${error.message}` : ''}`,
     )
   }
-  return value
 }

@@ -2,8 +2,10 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { useApplicationState } from '../runtime/state/application-state'
 import { Pressable, View } from 'react-native'
+import { useEffect, useRef } from 'react'
+import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import { Text } from '../ui/content/text'
-import { responses, type JobRun } from '@dovo/protocol'
+import { explainAutomationDraftSchema, randomUUID, responses, type JobRun } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
 import { SettingsAction as Action } from '../screens/settings-controls'
@@ -29,6 +31,15 @@ export function RunProgress({
   const { snapshot, connected, callEffect, profile } = useRuntime()
   const { navigate, focused } = useNavigation()
   const { busy, error, act } = useAction()
+  const attemptRequests = useRef(new Map<string, string>())
+  const pairing = clientScopeKey(profile?.connection)
+  const explainScope = useRef(0)
+  useEffect(
+    () => () => {
+      explainScope.current++
+    },
+    [focused, pairing, run.id],
+  )
   const [expanded, setExpanded] = useApplicationState(
     run.status === 'running' || run.status === 'waiting' || run.status === 'failed',
   )
@@ -70,6 +81,23 @@ export function RunProgress({
       : run.status === 'failed'
         ? colors.error
         : colors.muted
+  const explain = (attempt: number) => {
+    if (!profile) return
+    const key = JSON.stringify([pairing, run.id, attempt])
+    const taskId = attemptRequests.current.get(key) ?? randomUUID()
+    attemptRequests.current.set(key, taskId)
+    const scope = explainScope.current
+    act(async () => {
+      const result = await runClientEffect(
+        callEffect(
+          '/api/jobs/explain',
+          { id: run.id, attempt, taskId },
+          explainAutomationDraftSchema,
+        ),
+      )
+      if (scope === explainScope.current) navigate('tasks', result.taskId, profile.id)
+    })
+  }
   return (
     <View
       testID={`Job run ${run.id}`}
@@ -169,7 +197,16 @@ export function RunProgress({
           )}
         </Text>
       )}
-      {run.status === 'waiting' && !run.retryAt && (
+      {run.pipelineWait && (
+        <Text style={styles.muted} selectable>
+          {uiText('Waiting for CI until {value0}', {
+            value0: formatDateTime(run.pipelineWait.until),
+          })}
+          {'\n'}
+          {run.pipelineWait.url}
+        </Text>
+      )}
+      {run.status === 'waiting' && !run.retryAt && !run.pipelineWait && (
         <View
           style={{
             gap: 6,
@@ -253,6 +290,23 @@ export function RunProgress({
           )}
         </View>
       )}
+      {!!run.failures?.length && snapshot?.automationExplainSupported && (
+        <View style={{ gap: 6 }}>
+          <Text style={styles.muted}>{uiText('Failed attempts')}</Text>
+          {run.failures.map(({ attempt, failedAt }) => (
+            <Action
+              key={attempt}
+              secondary
+              label={uiText('Explain attempt {value0} · {value1}', {
+                value0: attempt,
+                value1: formatDateTime(failedAt),
+              })}
+              disabled={!connected || !focused || busy}
+              onPress={() => explain(attempt)}
+            />
+          ))}
+        </View>
+      )}
       {!!run.error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {run.error}
@@ -332,7 +386,13 @@ export function RunProgress({
                         {taskNeedsInput(step.taskId)
                           ? uiText('Needs input')
                           : step.status === 'waiting'
-                            ? uiText(run.retryAt ? 'Waiting for provider' : 'Awaiting approval')
+                            ? uiText(
+                                step.waitsForCi
+                                  ? 'Waiting for CI'
+                                  : run.retryAt
+                                    ? 'Waiting for provider'
+                                    : 'Awaiting approval',
+                              )
                             : step.status === 'running' && step.queuedAt && !step.workStartedAt
                               ? uiText('Waiting for worker')
                               : step.status}

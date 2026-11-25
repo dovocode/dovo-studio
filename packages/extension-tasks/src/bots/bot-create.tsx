@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import {
   botCreateSchema,
+  botTemplateTextLimit,
+  fillFromBotTemplate,
   botResultSchema,
   decode,
   randomUUID,
@@ -139,6 +141,8 @@ export function BotCreateForm({
   const [, renderAgent] = useState(0)
   const [submitting, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [template, setTemplate] = useState('')
+  const [templateError, setTemplateError] = useState('')
   const lock = useRef(false)
   const submission = useRef(0)
   const mounted = useRef(true)
@@ -324,6 +328,41 @@ export function BotCreateForm({
             className="order-2 grid min-w-0 content-start gap-5 rounded-xl border bg-card p-5 @3xl:order-none @3xl:col-start-1 @3xl:row-span-2 @3xl:row-start-1 @3xl:p-6"
           >
             <legend className="sr-only">Bot purpose</legend>
+            <details className="space-y-2 text-sm">
+              <summary className="cursor-pointer">{uiText('Use a Bot template')}</summary>
+              <Textarea
+                aria-label={uiText('Bot template')}
+                rows={3}
+                maxLength={botTemplateTextLimit}
+                value={template}
+                onChange={(event) => {
+                  setTemplate(event.target.value)
+                  setTemplateError('')
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!template.trim()}
+                onClick={() => {
+                  try {
+                    change(fillFromBotTemplate(template, session.draft))
+                    setTemplate('')
+                    setTemplateError('')
+                  } catch {
+                    setTemplateError(uiText('Paste a valid Dovo Bot template.'))
+                  }
+                }}
+              >
+                {uiText('Fill empty fields')}
+              </Button>
+              {templateError && (
+                <p role="alert" className="text-destructive">
+                  {templateError}
+                </p>
+              )}
+            </details>
             <h2 className="text-lg font-semibold tracking-tight">Start with a task</h2>
             <FormField label="First task · optional">
               <Textarea

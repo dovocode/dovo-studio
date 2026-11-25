@@ -89,7 +89,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     if (fixture !== 'quoted') {
       const { DatabaseSync } = require('node:sqlite');
       const db = new DatabaseSync(require('node:path').join(process.env.GEMINI_HOME, 'antigravity-acp', 'conversations', 'session.db'));
-      db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(2, 17, Buffer.from('Error 503: auth_not_found'));
+      const error = fixture === 'quota' ? 'RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 4m42s.' : 'Error 503: auth_not_found';
+      db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(2, 17, Buffer.from(error));
       db.close();
     }
     if (fixture !== 'receipt') process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session',update:{sessionUpdate:'usage_update',size:8192,used:10}}})+'\\n');
@@ -439,7 +440,7 @@ it('applies Antigravity model and reasoning changes in the same idle session', a
   }
 })
 
-async function antigravityFailureFixture(mode: 'receipt' | 'missing' | 'quoted') {
+async function antigravityFailureFixture(mode: 'receipt' | 'missing' | 'quoted' | 'quota') {
   const { cwd, launch } = await fixture(false, true)
   const profile = join(cwd, 'profile')
   const directory = join(profile, 'antigravity-acp', 'conversations')
@@ -479,6 +480,20 @@ it('does not use quota updates, quoted errors or an older Antigravity log row as
   const input = await antigravityFailureFixture('quoted')
   await acpAdapter.run(input.run)
   expect(input.output.join('')).toBe('503 auth_not_found')
+})
+
+it('captures the reset time from an owned Antigravity terminal quota failure', async () => {
+  const { run } = await antigravityFailureFixture('quota')
+  const before = Date.now()
+  const failure = await acpAdapter.run(run).catch((cause: unknown) => cause)
+  expect(failure).toMatchObject({
+    kind: 'quota',
+    quotaResetAt: expect.any(Number),
+    message: expect.stringContaining('Quota resets at'),
+  })
+  const { quotaResetAt } = failure as { quotaResetAt: number }
+  expect(quotaResetAt).toBeGreaterThanOrEqual(before + 282000)
+  expect(quotaResetAt).toBeLessThanOrEqual(Date.now() + 282000)
 })
 
 it('selects the restrictive mode for a tools-none turn', async () => {

@@ -1,4 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { BotSkillProposals } from './bot-skill-proposals'
 import { BotAvatarEditor } from './bot-avatar-editor'
 import { BotResourceEditor } from './bot-resource-editor'
@@ -6,6 +7,7 @@ import { botScope } from './bot-scope'
 import { useEffect, useRef, useState } from 'react'
 import {
   botResultSchema,
+  botTemplateText,
   botLifecyclePresentation,
   responses,
   workspacePatchResultSchema,
@@ -321,6 +323,21 @@ export function BotSettings({
             </Button>
           )}
         </form>
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled}
+            onClick={() =>
+              void run(async () => {
+                await copyTextToClipboard(botTemplateText(task.title, hostBot))
+                setNotice(uiText('Bot template copied'))
+              })
+            }
+          >
+            {uiText('Copy Bot template')}
+          </Button>
+        </div>
         <section className="grid gap-3">
           <h2 className="font-semibold">Harness, model and tool permissions</h2>
           <ComposerHarnessControls

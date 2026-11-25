@@ -1,7 +1,9 @@
 import {
   automationDryRunDefaults,
+  automationDryRunStepResults,
   botPaused,
   githubEventChoices,
+  pipelineWaitUrl,
   projectDisplayName,
   resolveTaskAgent,
   type AutomationData,
@@ -12,11 +14,13 @@ import {
   type Workspace,
 } from '@dovo/protocol'
 import { ROUTINE_SOURCE_TEXT_LIMIT } from './source-monitor.js'
-import { taskStepObjective, triggerContext } from './step-input.js'
+import type { Schema } from 'effect'
+import { precedingStepResult, taskStepObjective, triggerContext } from './step-input.js'
+import { stepResultInstructions, validateStepResult } from './step-result.js'
 import { runtimeAutomationIssues } from './validation.js'
 import type { McpAutomationInput } from '../mcp-events/subscriptions.js'
 
-type DryRunStepKind = AutomationData['kind'] | 'source'
+type DryRunStepKind = AutomationData['kind'] | 'source' | 'pipeline-wait'
 type DryRunStep = AutomationDryRun['steps'][number]
 
 /**
@@ -32,6 +36,8 @@ export const dryRunStepEffects = {
   task: 'external',
   /** Waits for a person to approve the run. */
   review: 'external',
+  /** Reads the selected GitHub Actions attempt. */
+  'pipeline-wait': 'external',
   /** Reads an HTTP URL or MCP resource before the steps. */
   source: 'external',
 } as const satisfies Record<DryRunStepKind, 'pure' | 'external'>
@@ -80,10 +86,16 @@ export function dryRunAutomation(
   const unreached = (node: AutomationNode): DryRunStep => ({
     nodeId: node.id,
     label: node.data.label,
-    kind: node.data.kind,
+    kind: node.data.pipelineWait ? 'pipeline-wait' : node.data.kind,
     status: 'not-reached',
     inputs: [],
   })
+  let samples = new Map<string, Schema.Json>()
+  try {
+    samples = automationDryRunStepResults(flow, input)
+  } catch (error) {
+    result.issues.push(error instanceof Error ? error.message : String(error))
+  }
   if (!trigger || result.issues.length) {
     result.outcome = 'invalid'
     result.steps = flow.nodes.map(unreached)
@@ -122,7 +134,7 @@ export function dryRunAutomation(
     )
     if (!node) break
     done.add(node.id)
-    const nodeKind: string = node.data.kind
+    const nodeKind: string = node.data.pipelineWait ? 'pipeline-wait' : node.data.kind
     const effect = dryRunStepEffect(nodeKind)
     if (nodeKind === 'trigger' && effect === 'pure') {
       result.steps.push(triggerStep(node, input, triggerPayload, result))
@@ -132,7 +144,34 @@ export function dryRunAutomation(
     const stop = request.stopAt === node.id
     if (stop) result.outcome = 'stopped'
     if (nodeKind === 'task') result.steps.push(taskStep(node, stop))
-    else if (nodeKind === 'review')
+    else if (nodeKind === 'pipeline-wait' && node.data.pipelineWait) {
+      const config = node.data.pipelineWait
+      const sample = config.resultStepId ? samples.get(config.resultStepId) : undefined
+      const step: DryRunStep = {
+        ...unreached(node),
+        status: 'simulated',
+        output: stop ? 'Simulated CI failure. The run stops here.' : 'Simulated CI success.',
+        inputs: [{ name: 'Timeout', value: `${config.timeoutMinutes} minutes` }],
+      }
+      if (config.resultStepId && sample === undefined) {
+        step.inputs.push({ name: 'Attempt source', value: config.resultStepId })
+        result.unexercised.push(
+          `The exact CI attempt for "${node.data.label}". Supply a sample result for ${config.resultStepId}.`,
+        )
+      } else {
+        try {
+          step.inputs.push({
+            name: 'GitHub Actions attempt',
+            value: pipelineWaitUrl(config, sample),
+          })
+        } catch (error) {
+          result.outcome = 'stopped'
+          step.output = 'The sample did not identify a GitHub Actions attempt.'
+          step.note = error instanceof Error ? error.message : String(error)
+        }
+      }
+      result.steps.push(step)
+    } else if (nodeKind === 'review')
       result.steps.push({
         nodeId: node.id,
         label: node.data.label,
@@ -155,7 +194,8 @@ export function dryRunAutomation(
       result.unexercised.push(
         stop ? `Approval at "${node.data.label}".` : `Rejection at "${node.data.label}".`,
       )
-    else if (!stop) result.unexercised.push(`Failure of "${node.data.label}".`)
+    else if (!stop && result.outcome === 'completed')
+      result.unexercised.push(`Failure of "${node.data.label}".`)
   }
   for (const node of flow.nodes)
     if (!done.has(node.id)) {
@@ -254,23 +294,51 @@ export function dryRunAutomation(
             .join(', '),
         })
     }
+    const supplied = (data.inputFrom ?? []).flatMap((id) => {
+      const sample = samples.get(id)
+      return sample === undefined ? [] : [precedingStepResult(id, JSON.stringify(sample))]
+    })
     inputs.push({
       name: 'Instructions',
-      value: taskStepObjective(data.objective, {
-        triggerPayload,
-        mcpEvent:
-          context.mcpEvent ??
-          (kind === 'mcp-event' && eventConfig ? { server: eventConfig.server } : undefined),
-        ...source,
-      }),
+      value: [
+        taskStepObjective(data.objective, {
+          triggerPayload,
+          mcpEvent:
+            context.mcpEvent ??
+            (kind === 'mcp-event' && eventConfig ? { server: eventConfig.server } : undefined),
+          ...source,
+        }),
+        ...supplied,
+        ...stepResultInstructions(data.resultSchema),
+      ].join('\n\n'),
     })
     if (data.resultSchema !== undefined)
       inputs.push({ name: 'Result schema', value: data.resultSchema })
     if (data.inputFrom?.length)
       inputs.push({
         name: 'Preceding step inputs',
-        value: `${data.inputFrom.join(', ')}${data.inputFiles ? ' with files' : ' as text'}. Real results are read only during a real run.`,
+        value:
+          data.inputFrom
+            .map((id) => (samples.has(id) ? `${id} (sample)` : `${id} (no sample)`))
+            .join(', ') + (data.inputFiles ? '. Step files are available during a real run.' : ''),
       })
+    const sample = samples.get(node.id)
+    if (!stop && sample !== undefined && data.resultSchema !== undefined) {
+      try {
+        validateStepResult(data.resultSchema, sample)
+      } catch (error) {
+        result.outcome = 'stopped'
+        return {
+          nodeId: node.id,
+          label: data.label,
+          kind: data.kind,
+          status: 'simulated',
+          inputs,
+          output: JSON.stringify(sample),
+          note: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
     return {
       nodeId: node.id,
       label: data.label,
@@ -279,7 +347,9 @@ export function dryRunAutomation(
       inputs,
       output: stop
         ? 'Simulated failure. The run stops here.'
-        : 'Simulated. No thread was created and no agent ran.',
+        : sample === undefined
+          ? 'Simulated. No thread was created and no agent ran.'
+          : `Sample result: ${JSON.stringify(sample)}`,
     }
   }
 }

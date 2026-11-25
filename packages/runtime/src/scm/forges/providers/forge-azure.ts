@@ -919,7 +919,11 @@ export class AzureForge implements ForgeAdapter {
   async comment(input: Schema.Schema.Type<typeof pullLineCommentSchema>) {
     const value = await this.current(input.number, input.headSha)
     const latest = await this.iterations(input.number)
-    if (latest.sourceRefCommit.commitId !== input.headSha)
+    if (
+      latest.sourceRefCommit.commitId !== input.headSha ||
+      (input.baseSha !== undefined &&
+        (latest.commonRefCommit.commitId ?? value.lastMergeTargetCommit.commitId) !== input.baseSha)
+    )
       throw new HttpError(409, 'The pull request changed. Refresh before commenting.')
     const files = await this.changes(input.number, latest.id)
     const file = files.find((entry) => safePath(entry.item.path) === safePath(input.path))

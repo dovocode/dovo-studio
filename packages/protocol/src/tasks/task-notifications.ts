@@ -96,7 +96,7 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
         target: { runtimeId: entry.profile.id, viewId: 'jobs', entityId: run.id },
         running: run.status === 'running' || run.status === 'waiting',
         // A review step waits for a person to approve the run.
-        needsInput: run.status === 'waiting',
+        needsInput: run.status === 'waiting' && !run.pipelineWait,
         failed: run.status === 'failed',
         automation: true,
         cancelled: run.status === 'cancelled',

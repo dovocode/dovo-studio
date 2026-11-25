@@ -453,6 +453,7 @@ export class RemoteMcp {
       if (
         await nativeRemoteMcpRequest(req, res, body, {
           eventsEnabled: this.mailbox.eventsEnabled(grant.installation),
+          automationEventsEnabled: this.mailbox.automationEventsEnabled(grant.installation),
           tools: advertisedTools,
           callTool,
           poll: async (command) => {

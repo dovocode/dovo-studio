@@ -609,6 +609,17 @@ it('retries only the failed task and confirms the earlier review without advanci
     finishedAt: expect.any(String),
   })
   expect(failed.completedNodes).toEqual(['trigger', 'task', 'middle-review'])
+  s.store.update((workspace) => ({
+    ...workspace,
+    automations: workspace.automations.map((automation) => ({
+      ...automation,
+      nodes: automation.nodes.map((node) =>
+        node.id === 'second-task'
+          ? { ...node, data: { ...node.data, objective: 'Instructions edited after the failure' } }
+          : node,
+      ),
+    })),
+  }))
   fail = false
   expect(s.jobs.retry(id)).toBe(id)
   await waitForJob(() => expect(s.jobs.list()[0].waitingNodeId).toBe('review'))
@@ -660,6 +671,31 @@ it('retries only the failed task and confirms the earlier review without advanci
   expect(s.jobs.detail(id).waitingNodeId).toBe('review')
   expect((await review('review')).status).toBe(200)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
+  const taskId = randomUUID()
+  const explain = (attempt: number) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/jobs/explain`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-owner-token-with-at-least-32-characters',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id, attempt, taskId }),
+    })
+  const draft = await explain(1)
+  expect(draft.status).toBe(200)
+  expect(await draft.json()).toEqual({ taskId })
+  expect((await explain(1)).status).toBe(200)
+  expect((await explain(2)).status).toBe(409)
+  const explanation = s.store.task(taskId)
+  expect(explanation).toMatchObject({
+    status: 'draft',
+    messages: [],
+    harness: { permission: 'read-only' },
+  })
+  expect(explanation.draft).toContain('Provider disconnected')
+  expect(explanation.draft).toContain('Second step')
+  expect(explanation.draft).not.toContain('Instructions edited after the failure')
+  expect(execute).toHaveBeenCalledTimes(3)
 })
 it('keeps a later manual answer out of an automation retry and its downstream input', async () => {
   const f = await fixture()

@@ -186,15 +186,22 @@ export function createServices(
   // Devices may expire during construction, before the peer service exists. Once started,
   // revocation closes encrypted streams synchronously rather than waiting for the reaper.
   let peerConnections: PeerConnections | undefined
-  const devices = new Devices(db, ownerToken, (id) => {
-      peerConnections?.internet.revoke(id)
-      peerConnections?.disable(id)
-      mutations.revoke(id)
-      deviceHostUploads.cancelDevice(id)
-      void simulators
-        .closeForeignDevice(id)
-        .catch((error) => console.warn('Revoked device preview cleanup failed', error))
-    }),
+  const devices = new Devices(
+      db,
+      ownerToken,
+      (id) => {
+        peerConnections?.internet.revoke(id)
+        peerConnections?.disable(id)
+        mutations.revoke(id)
+        deviceHostUploads.cancelDevice(id)
+        void simulators
+          .closeForeignDevice(id)
+          .catch((error) => console.warn('Revoked device preview cleanup failed', error))
+      },
+      (id, name) => {
+        activity.add('pairing', id, `Device paired · ${name}`)
+      },
+    ),
     pairing = new Pairing(devices),
     git: GitService = new GitService(
       () => commands.get(),
@@ -334,6 +341,7 @@ export function createServices(
         attachments,
       },
       runtimeId,
+      (repositoryId, url) => forgeWork.githubAttempt(repositoryId, url),
     )
   const sandboxes = new Sandboxes({
     runtimeId,
@@ -755,8 +763,9 @@ export function createServices(
   }
   // Before any thread can run, apply the latest move decisions, including after a backup restore.
   reconcileTransferOwnership(db, store)
-  services.peers.internet.registerRemoteMcp((claim, authorize) =>
-    remoteMcpTool(services, claim, authorize),
+  services.peers.internet.registerRemoteMcp(
+    (claim, authorize) => remoteMcpTool(services, claim, authorize),
+    () => enabledStudioTools(preferences.get()).automations,
   )
   return services
 }

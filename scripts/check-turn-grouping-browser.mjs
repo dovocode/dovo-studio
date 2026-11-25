@@ -27,6 +27,7 @@ export const ConversationContent=({children})=><div>{children}</div>,Conversatio
 export const Message=({children,id})=><div id={id}>{children}</div>,MessageContent=ConversationContent;
 export const MessageResponse=({children})=>{(window.renderedProse??=[]).push(children);return <p data-prose>{children}</p>};
 export const Button=({children,onClick,disabled,...props})=><button aria-expanded={props['aria-expanded']} disabled={disabled} onClick={onClick}>{children}</button>,IconButton=Button;
+export const Input=(props)=><input {...props}/>;export const MessageAction=({label,children,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
 export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
 async function bundle(mobile) {

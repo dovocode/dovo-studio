@@ -7,7 +7,7 @@ import {
   type RuntimeSnapshot,
   type Workspace,
 } from '@dovo/studio-core'
-import { pendingTaskInput, runLabels, runSteps } from './run-progress'
+import { pendingTaskInput, runLabel, runSteps } from './run-progress'
 import { automationBotJobSummary } from '@dovo/protocol'
 
 export type FleetAutomation = {
@@ -80,7 +80,7 @@ export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): Flee
         status: needsInput
           ? 'Needs input'
           : latest
-            ? runLabels[latest.status]
+            ? runLabel(latest)
             : flow.enabled
               ? 'Scheduled'
               : 'Ready',
@@ -88,7 +88,7 @@ export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): Flee
           ...new Set(
             flow.nodes.flatMap((node) => {
               const name =
-                node.data.kind === 'task' && !node.data.botId
+                (node.data.kind === 'task' && !node.data.botId) || node.data.pipelineWait
                   ? projects.get(node.data.repositoryId)
                   : undefined
               return name ? [name] : []

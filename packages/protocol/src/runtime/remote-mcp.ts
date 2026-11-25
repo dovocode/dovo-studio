@@ -42,7 +42,7 @@ export const remoteMcpThreadsSchema = Schema.Union([
 
 const remoteAutomationReads = [
   mutableStruct({ action: Schema.Literal('list') }),
-  mutableStruct({ action: Schema.Literals(['read', 'runs']), id }),
+  mutableStruct({ action: Schema.Literals(['read', 'runs', 'readRun']), id }),
 ] as const
 export const remoteMcpReadAutomationsSchema = Schema.Union(remoteAutomationReads)
 const isRemoteAutomationRead = Schema.is(remoteMcpReadAutomationsSchema)
@@ -56,10 +56,14 @@ export const remoteMcpEventsVersion = '2026-07-28'
 export const remoteMcpEventNameSchema = Schema.Literals([
   'thread.turn_finished',
   'thread.needs_input',
+  'automation.run_finished',
+  'automation.needs_review',
 ])
 export const remoteMcpEventFilterSchema = mutableStruct({
   threadIds: Schema.optional(maxValue(mutableArray(id), 20)),
   projectIds: Schema.optional(maxValue(mutableArray(id), 20)),
+  automationIds: Schema.optional(maxValue(mutableArray(id), 20)),
+  runIds: Schema.optional(maxValue(mutableArray(id), 20)),
 })
 export const remoteMcpEventPollSchema = mutableStruct({
   name: remoteMcpEventNameSchema,
@@ -89,6 +93,20 @@ export const remoteMcpNeedsInputSchema = mutableStruct({
   kind: Schema.Literals(['question', 'approval']),
 })
 const eventFields = { eventId: id, timestamp: isoDateTime(Schema.String) }
+const automationFields = {
+  automationId: id,
+  runId: id,
+  attempt: Schema.Int.check(Schema.isGreaterThan(0)),
+}
+export const remoteMcpAutomationFinishedSchema = mutableStruct({
+  ...automationFields,
+  outcome: Schema.Literals(['completed', 'failed', 'cancelled']),
+})
+export const remoteMcpAutomationReviewSchema = mutableStruct({
+  ...automationFields,
+  stepId: id,
+  stepAttempt: Schema.Int.check(Schema.isGreaterThan(0)),
+})
 export const remoteMcpEventSchema = Schema.Union([
   mutableStruct({
     ...eventFields,
@@ -99,6 +117,16 @@ export const remoteMcpEventSchema = Schema.Union([
     ...eventFields,
     name: Schema.Literal('thread.needs_input'),
     data: remoteMcpNeedsInputSchema,
+  }),
+  mutableStruct({
+    ...eventFields,
+    name: Schema.Literal('automation.run_finished'),
+    data: remoteMcpAutomationFinishedSchema,
+  }),
+  mutableStruct({
+    ...eventFields,
+    name: Schema.Literal('automation.needs_review'),
+    data: remoteMcpAutomationReviewSchema,
   }),
 ])
 export type RemoteMcpEvent = typeof remoteMcpEventSchema.Type

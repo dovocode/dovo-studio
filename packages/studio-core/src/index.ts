@@ -4,6 +4,8 @@ export * from './studio-extensions'
 export * from './extension-marketplace'
 export * from './studio-extension-views'
 export { useCodexSessionImport } from './use-codex-session-import'
+export { useAutomationRun } from './use-automation-run'
+export { useDryRunScenarios } from './use-dry-run-scenarios'
 export { pullCreateOptionsSchema } from '@dovo/protocol'
 export {
   createUsageSummary,
@@ -284,6 +286,7 @@ export { useSecretReferenceCheck } from './use-secret-reference-check'
 export * from './shortcuts'
 
 export * from './scm/use-linear-issues'
+export * from './scm/use-linear-connections'
 
 export * from './studio-data-sources'
 export * from './studio-source-policy'

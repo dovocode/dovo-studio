@@ -21,6 +21,17 @@ const privateFile = (file: Stats | undefined) =>
   !file || (file.isFile() && file.nlink === 1 && owned(file))
 const lastStep = mutableStruct({ step_type: Schema.Number, payload: Schema.Unknown })
 
+function antigravityQuotaResetAt(message: string) {
+  const duration = /\bResets in (?:(\d{1,3})h)?(?:(\d{1,3})m)?(?:(\d{1,3})s)?(?=[.\s]|$)/.exec(
+    message,
+  )
+  if (!duration) return
+  const [, hours, minutes, seconds] = duration
+  const delay =
+    (Number(hours ?? 0) * 3600 + Number(minutes ?? 0) * 60 + Number(seconds ?? 0)) * 1000
+  return delay > 0 ? Date.now() + delay : undefined
+}
+
 /** Only inspect an owned ACP session, and only rows that this prompt added. The log format is optional. */
 export function watchAntigravityOutcome(launch: AcpLaunch, sessionId: string) {
   if (launch.sandbox || !/^[\w-]{1,128}$/.test(sessionId)) return
@@ -90,7 +101,13 @@ export function watchAntigravityOutcome(launch: AcpLaunch, sessionId: string) {
           ? 'Antigravity reported 503 auth_not_found.'
           : 'Antigravity recorded a provider error for this turn.'
         const error = new Error(detail)
-        return kind === 'unknown' ? error : new ProviderFailure(kind, error)
+        return kind === 'unknown'
+          ? error
+          : new ProviderFailure(
+              kind,
+              error,
+              kind === 'quota' ? antigravityQuotaResetAt(message) : undefined,
+            )
       } catch {
         // Versions with a different log layout still report their ACP stop reason.
         return undefined

@@ -15,6 +15,7 @@ export function LineCommentForm({
   onDraft,
   commentRef,
   disabled = false,
+  submitDisabled = false,
 }: {
   label: string
   submitLabel: string
@@ -26,6 +27,7 @@ export function LineCommentForm({
   onDraft?: (draft: { body: string; suggesting: boolean; replacement: string }) => void
   commentRef?: Ref<HTMLTextAreaElement>
   disabled?: boolean
+  submitDisabled?: boolean
 }) {
   const uiText = useInterfaceText()
 
@@ -39,13 +41,35 @@ export function LineCommentForm({
   const { body, suggesting, replacement } = draft ?? localDraft
   const updateDraft = onDraft ?? setLocalDraft
   const pending = useRef(false)
+  const composing = useRef(false)
   const submitted = suggesting ? suggestionComment(body, replacement) : body.trim()
   return (
     <form
       className="space-y-2 rounded border bg-background p-3 text-xs"
+      onCompositionStart={() => {
+        composing.current = true
+      }}
+      onCompositionEnd={() => {
+        composing.current = false
+      }}
+      onKeyDownCapture={(event) => {
+        if (
+          (event.key === 'Enter' || event.key === 'Escape') &&
+          (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)
+        )
+          event.stopPropagation()
+      }}
       onSubmit={async (e) => {
         e.preventDefault()
-        if (disabled || pending.current || !submitted || submitted.length > 10000) return
+        if (
+          disabled ||
+          submitDisabled ||
+          pending.current ||
+          composing.current ||
+          !submitted ||
+          submitted.length > 10000
+        )
+          return
         pending.current = true
         setBusy(true)
         setError('')
@@ -118,7 +142,10 @@ export function LineCommentForm({
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={disabled || busy || !submitted || submitted.length > 10000}>
+        <Button
+          size="sm"
+          disabled={disabled || submitDisabled || busy || !submitted || submitted.length > 10000}
+        >
           {busy ? 'Saving…' : submitLabel}
         </Button>
         <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onCancel}>

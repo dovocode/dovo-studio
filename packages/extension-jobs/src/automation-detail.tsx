@@ -4,7 +4,7 @@ import { automationBotJobSummary, githubEventChoices } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Ellipsis, Monitor, Plus, Settings2, Workflow, X } from 'lucide-react'
-import { useWorkspace } from '@dovo/studio-core'
+import { useAutomationRun, useWorkspace } from '@dovo/studio-core'
 import {
   Button,
   cn,
@@ -41,7 +41,7 @@ export function AutomationDetail({
 
   const { workspace, flow, selectedNode, selectNode, messages, setMessages, update, drafts } =
     useAutomation(automationId)
-  const { snapshot, connected } = useWorkspace()
+  const { snapshot, connected, connection, request } = useWorkspace()
   const botJob = flow && automationBotJobSummary(flow, workspace.tasks)
   const provenance = useRoutineProvenance(flow?.id)
   const compact = useCompactLayout()
@@ -56,7 +56,18 @@ export function AutomationDetail({
   const runs = (snapshot?.runs.filter((run) => run.automationId === flow?.id) ?? []).sort(
     (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
   )
-  const run = runId ? runs.find((item) => item.id === runId) : runs[0]
+  const selected = useAutomationRun({
+    automationId,
+    runId,
+    summary: runId ? runs.find((item) => item.id === runId) : undefined,
+    connection,
+    connected,
+    supported: snapshot?.automationRunLookupSupported,
+    request,
+  })
+  const run = runId
+    ? selected.run
+    : (runs.find((item) => item.status === 'running' || item.status === 'waiting') ?? runs[0])
   const selectRun = (id: string) => {
     setRunId(id)
     setSurface('runs')
@@ -67,7 +78,7 @@ export function AutomationDetail({
     setInspectorOpen(!!id)
   }
   const node = flow?.nodes.find((item) => item.id === selectedNode)
-  const addStep = (kind: 'trigger' | 'task' | 'review') => {
+  const addStep = (kind: 'trigger' | 'task' | 'review' | 'pipeline-wait') => {
     if (!flow) return
     const next = newNode(kind, workspace, flow.nodes.length)
     update((current) => ({
@@ -266,8 +277,18 @@ export function AutomationDetail({
                 {runId && !run && (
                   <div className="grid justify-items-start gap-3 p-4">
                     <p role="status" className="text-sm text-muted-foreground">
-                      This run is not in this computer's recent history.
+                      {selected.loading
+                        ? 'Loading the requested run…'
+                        : (selected.error ??
+                          (snapshot?.automationRunLookupSupported && !connected
+                            ? 'Reconnect to load the requested run.'
+                            : 'This run is not in this computer’s recent history.'))}
                     </p>
+                    {selected.error && connected && (
+                      <Button size="sm" variant="outline" onClick={selected.retry}>
+                        Retry
+                      </Button>
+                    )}
                     {runs.length > 0 && (
                       <Button size="sm" variant="outline" onClick={() => setRunId(null)}>
                         Show latest run
@@ -278,7 +299,7 @@ export function AutomationDetail({
                 {(!runId || run) && (
                   <RunDetails
                     flow={flow}
-                    runs={runs}
+                    runs={run && !runs.some((item) => item.id === run.id) ? [...runs, run] : runs}
                     run={run}
                     provenance={provenance}
                     selectRun={selectRun}
@@ -336,6 +357,14 @@ export function AutomationDetail({
                                 : 'Review gate'}
                           </DropdownMenu.Item>
                         ))}
+                        {snapshot?.automationPipelineWaitSupported && (
+                          <DropdownMenu.Item
+                            className={menuItem}
+                            onSelect={() => addStep('pipeline-wait')}
+                          >
+                            Wait for CI
+                          </DropdownMenu.Item>
+                        )}
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                   </DropdownMenu.Root>

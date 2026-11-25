@@ -10,7 +10,13 @@ export async function remoteMcpTool(s: Services, claim: RemoteMcpClaim, authoriz
   if (claim.access !== 'run' && remoteMcpWrites(input))
     throw new HttpError(403, 'This MCP grant has read-only access.')
   if (input.part === 'events') {
-    requireStudioPart(s, 'threads')
+    const automation = input.command.name.startsWith('automation.')
+    requireStudioPart(s, automation ? 'automations' : 'threads')
+    const filter = input.command.arguments
+    if (
+      automation ? filter?.threadIds || filter?.projectIds : filter?.automationIds || filter?.runIds
+    )
+      throw new HttpError(400, 'Use filters for the selected event type.')
     return s.activity.remoteMcpEvents.poll(input.command)
   }
   const caller = {

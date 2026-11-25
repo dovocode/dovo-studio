@@ -4,7 +4,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowLeft, Monitor } from 'lucide-react'
 import { Button, ChoicePicker, IconButton } from '@dovo/studio-ui'
 import { type FleetAutomation } from './fleet'
-import { runLabels, runSteps } from './run-progress'
+import { runLabel, runSteps } from './run-progress'
 import { StepStatus } from './run-details'
 export function CachedAutomation({
   row,
@@ -65,8 +65,7 @@ export function CachedAutomation({
             >
               {row.runs.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {formatDateTime(item.createdAt)} ·{' '}
-                  {item.retryAt ? 'Waiting for provider' : runLabels[item.status]}
+                  {formatDateTime(item.createdAt)} · {runLabel(item)}
                 </option>
               ))}
             </ChoicePicker>

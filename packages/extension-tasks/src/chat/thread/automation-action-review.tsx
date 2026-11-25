@@ -118,6 +118,7 @@ export function AutomationSnapshotView({ snapshot }: { snapshot: AutomationActio
       )}
       {workflow.nodes.map((node, index) => {
         const resource = snapshot.resources.find((item) => item.nodeId === node.id)
+        const ci = node.data.pipelineWait
         return (
           <section
             key={node.id}
@@ -126,11 +127,21 @@ export function AutomationSnapshotView({ snapshot }: { snapshot: AutomationActio
           >
             <h4 className="text-sm font-medium">
               {labels.get(node.id)}{' '}
-              <span className="font-normal text-muted-foreground">({node.data.kind})</span>
+              <span className="font-normal text-muted-foreground">
+                ({ci ? uiText('Wait for CI') : node.data.kind})
+              </span>
             </h4>
             <dl className="grid gap-1">
               {node.data.kind === 'trigger' && (
                 <Row label="Trigger">{automationTriggerText(node.data)}</Row>
+              )}
+              {ci && (
+                <>
+                  <Row label="GitHub Actions attempt">
+                    {ci.resultStepId ? (labels.get(ci.resultStepId) ?? ci.resultStepId) : ci.url}
+                  </Row>
+                  <Row label="Timeout (minutes)">{ci.timeoutMinutes}</Row>
+                </>
               )}
               {node.data.kind !== 'trigger' && node.data.objective && (
                 <Row label={resource?.botId ? 'Message to Bot' : 'Instructions'}>

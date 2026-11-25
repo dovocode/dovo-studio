@@ -18,21 +18,23 @@ export function automationRunSummary(run: JobRun, inputTasks: ReadonlySet<string
   const needsInput = !!current?.taskId && inputTasks.has(current.taskId)
   const status = needsInput
     ? 'Needs input'
-    : run.retryAt
-      ? 'Waiting for provider'
-      : current?.status === 'running' && current.queuedAt && !current.workStartedAt
-        ? 'Waiting for worker'
-        : run.status === 'waiting'
-          ? 'Needs review'
-          : run.status === 'running'
-            ? 'Running'
-            : run.status === 'completed'
-              ? 'Completed'
-              : run.status === 'cancelled'
-                ? 'Cancelled'
-                : run.interrupted
-                  ? 'Interrupted'
-                  : 'Failed'
+    : run.pipelineWait
+      ? 'Waiting for CI'
+      : run.retryAt
+        ? 'Waiting for provider'
+        : current?.status === 'running' && current.queuedAt && !current.workStartedAt
+          ? 'Waiting for worker'
+          : run.status === 'waiting'
+            ? 'Needs review'
+            : run.status === 'running'
+              ? 'Running'
+              : run.status === 'completed'
+                ? 'Completed'
+                : run.status === 'cancelled'
+                  ? 'Cancelled'
+                  : run.interrupted
+                    ? 'Interrupted'
+                    : 'Failed'
   return {
     steps,
     current,
@@ -57,6 +59,8 @@ export function automationRowState(automationId: string, snapshot: RuntimeSnapsh
     latest,
     summary,
     needsAttention:
-      !!summary?.needsInput || latest?.status === 'waiting' || latest?.status === 'failed',
+      !!summary?.needsInput ||
+      (latest?.status === 'waiting' && !latest.pipelineWait) ||
+      latest?.status === 'failed',
   }
 }

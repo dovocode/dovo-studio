@@ -1,6 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { formatDateTime, useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { botRoutines, botRunStatusLabels, botWorkInbox } from '@dovo/protocol'
+import { botRoutines, botRunStatusLabel, botWorkInbox } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 
 /** Run links use the normal automation history, with its owning computer intact. */
@@ -101,7 +101,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
                 aria-label={`Open ${routine.name} run ${formatDateTime(run.createdAt)}`}
                 onClick={() => open(routine.id, run.id)}
               >
-                {formatDateTime(run.createdAt)} · {botRunStatusLabels[run.status]}
+                {formatDateTime(run.createdAt)} · {botRunStatusLabel(run)}
               </Button>
             ))}
             {!!runs.length && (

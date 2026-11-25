@@ -415,5 +415,12 @@ A saved key takes precedence over `DOVO_LINEAR_API_KEY`. Removing a saved key re
 environment key if the runtime has one. To remove all access, also remove that variable and restart
 the runtime.
 
+For multiple Linear workspaces, use **Named Linear connection** to save each workspace's read-only
+key under a name. To scope a project, select **Project for Linear issues**, the named connection,
+and the exact Linear team key, such as `ENG`. Choose **Save project binding**. In the Issues view,
+the **Linear source** picker lists the default key, the named connections and each bound
+project/team. A project source searches only its bound team. Remove the project binding before
+removing its connection.
+
 On desktop and web, hover over or focus an issue link in a thread to see its title and status when
 Dovo can match one connected Git or Jira source. Select the link to use the normal link actions.

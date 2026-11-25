@@ -2,6 +2,9 @@ import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/proto
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { decode, managedPolicySchema } from '@dovo/protocol'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 const requestUrl = (input: Parameters<typeof fetch>[0]) =>
   typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 
@@ -25,6 +28,7 @@ const f = vi.hoisted(() => ({
   next: 'next',
   checks: vi.fn<() => void>(),
   downloads: vi.fn<(version: string) => void>(),
+  downloadFiles: undefined as string[] | undefined,
   version: 'fixture',
   notes: 'Faster setup and fixes' as string | undefined,
   menu: undefined as unknown,
@@ -82,6 +86,7 @@ vi.mock('electron-updater', () => ({
           total: 10_000_000,
           bytesPerSecond: 1_000_000,
         })
+        return f.downloadFiles ?? [process.execPath]
       },
       setFeedURL: f.feed,
       quitAndInstall: f.install,
@@ -128,6 +133,7 @@ afterEach(() => {
   vi.mocked(readLocalSettingsSection).mockReturnValue(undefined)
   f.listeners.clear()
   f.next = 'next'
+  f.downloadFiles = undefined
   f.version = 'fixture'
   f.notes = 'Faster setup and fixes'
   f.menu = undefined
@@ -376,6 +382,43 @@ it('keeps the downloaded update ready when restart is deferred', async () => {
   expect(updates.state().status).toBe('downloaded')
   expect(prepare).not.toHaveBeenCalled()
   expect(f.install).not.toHaveBeenCalled()
+})
+it('reacquires a removed installer before stopping the runtime', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-update-files-'))
+  try {
+    const installer = join(directory, 'installer')
+    await writeFile(installer, 'verified update fixture')
+    f.downloadFiles = [installer]
+    f.message.mockResolvedValueOnce({ response: 1 })
+    stubRuntimeFetch(async (input) =>
+      Response.json(
+        requestUrl(input).endsWith('/prepare-restart') ? { id: 'restart-lease' } : snapshot,
+      ),
+    )
+    const { registerUpdates } = await import('./updates')
+    const prepare = vi.fn<Parameters<typeof registerUpdates>[1]>(async (beforeStop) => {
+      await beforeStop()
+      return async () => {}
+    })
+    const updates = registerUpdates('/unused', prepare)
+    await updates.install()
+    expect(updates.state().status).toBe('downloaded')
+    await rm(installer)
+
+    await updates.install()
+    expect(f.downloads).toHaveBeenCalledTimes(2)
+    expect(prepare).not.toHaveBeenCalled()
+    expect(f.install).not.toHaveBeenCalled()
+
+    const replacement = join(directory, 'replacement')
+    await writeFile(replacement, 'verified replacement fixture')
+    f.downloadFiles = [replacement]
+    await updates.install()
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(f.install).toHaveBeenCalledOnce()
+  } finally {
+    await rm(directory, { force: true, recursive: true })
+  }
 })
 it('shows Windows installation progress only after restart is confirmed', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
