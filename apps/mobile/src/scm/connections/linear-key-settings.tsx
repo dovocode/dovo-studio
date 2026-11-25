@@ -136,7 +136,6 @@ function LinearConnectionsForm({ snapshot }: { snapshot: LinearConnections }) {
               />
               <SettingsField
                 label={uiText('Linear team key')}
-                placeholder="ENG"
                 maxLength={40}
                 value={editor.team}
                 editable={!disabled}
