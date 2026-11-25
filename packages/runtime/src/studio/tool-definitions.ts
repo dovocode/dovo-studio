@@ -75,9 +75,9 @@ type StudioTool = Omit<Tool, 'inputSchema'> & {
   inputSchema: JSONSchema.JSONSchema & { type: 'object' }
 }
 
-// JSON Schema allows additional properties by default. Omit that repeated default
-// from generated objects, while keeping false and schema-valued constraints.
-function omitObjectDefaults(value: unknown): void {
+// Omit the default for additional properties and collapse bare nullable scalars.
+// Keep union branches with constraints or annotations intact.
+function compactGeneratedSchema(value: unknown): void {
   if (!value || typeof value !== 'object') return
   if (
     'type' in value &&
@@ -86,7 +86,22 @@ function omitObjectDefaults(value: unknown): void {
     value.additionalProperties === true
   )
     delete value.additionalProperties
-  for (const child of Object.values(value)) omitObjectDefaults(child)
+  if ('anyOf' in value && Array.isArray(value.anyOf) && value.anyOf.length === 2) {
+    const [type, nullable] = value.anyOf.map((branch: unknown) =>
+      branch && typeof branch === 'object' && 'type' in branch && Object.keys(branch).length === 1
+        ? branch.type
+        : undefined,
+    )
+    if (
+      !('type' in value) &&
+      nullable === 'null' &&
+      (type === 'string' || type === 'boolean' || type === 'number' || type === 'integer')
+    ) {
+      delete value.anyOf
+      Object.assign(value, { type: [type, 'null'] })
+    }
+  }
+  for (const child of Object.values(value)) compactGeneratedSchema(child)
 }
 
 /** Accept encoded command metadata without changing the target computer or
@@ -139,8 +154,8 @@ export function studioToolDefinitions(enabled: StudioTools): StudioTool[] {
           ...(definition.part === 'ui' ? {} : { runtimeId: Schema.optional(Schema.String) }),
         }),
       )
-      omitObjectDefaults(document.schema)
-      omitObjectDefaults(document.definitions)
+      compactGeneratedSchema(document.schema)
+      compactGeneratedSchema(document.definitions)
       tools.push({
         name: 'studio_' + definition.part,
         description:

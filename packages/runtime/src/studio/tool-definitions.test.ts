@@ -13,6 +13,13 @@ it('validates both restore definitions through the advertised automation schema'
   const definition = { id: 'flow', name: 'Flow', nodes: [], edges: [] }
   const command = { action: 'restore', id: 'run', expected: definition, definition }
   expect(validate({ command }).valid).toBe(true)
+  for (const enabled of [true, false, null])
+    expect(
+      validate({ command: { ...command, definition: { ...definition, enabled } } }).valid,
+    ).toBe(true)
+  expect(
+    validate({ command: { ...command, definition: { ...definition, enabled: 'true' } } }).valid,
+  ).toBe(false)
   expect(
     validate({ command: { ...command, definition: { ...definition, future: true } } }).valid,
   ).toBe(true)

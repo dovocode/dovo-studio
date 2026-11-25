@@ -37,6 +37,8 @@ it('returns complete small files and bounded UTF-8 prefixes', async () => {
       truncated: false,
       startLine: 1,
       hasMore: false,
+      cursor: expect.any(String),
+      nextCursor: undefined,
     })
     expect(await readBoundedFile(handle, 'file', { maxBytes: 2 })).toMatchObject({
       contents: 'a',
