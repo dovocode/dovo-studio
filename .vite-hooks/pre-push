@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+require_release_checkout() {
+  head_oid=$(git rev-parse HEAD)
+  changes=$(git status --porcelain --untracked-files=normal)
+  if [ "$1" != "$head_oid" ] || [ -n "$changes" ]; then
+    printf '%s\n' 'Release preflight needs a clean checkout of the commit you are pushing to main.' >&2
+    exit 1
+  fi
+}
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  if [ "$remote_ref" != refs/heads/main ] || [ "$local_ref" = '(delete)' ]; then
+    continue
+  fi
+
+  require_release_checkout "$local_oid"
+
+  # The test suite opens independent fixture repositories.
+  for name in $(git rev-parse --local-env-vars); do
+    unset "$name"
+  done
+  pnpm verify:push
+  require_release_checkout "$local_oid"
+  exit 0
+done

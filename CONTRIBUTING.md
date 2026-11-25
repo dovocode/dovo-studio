@@ -8,6 +8,7 @@ dependencies from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm exec vp hooks enable
 ```
 
 ## Run an app
@@ -62,13 +63,21 @@ four shards. Register new browser checks in `package.json`; the runner rejects u
 `check-*-browser.mjs` files. New browser fixtures should use `scripts/browser/harness.mjs`, which
 checks for unused stubs and requires an importer for relative module replacements.
 
-Before pushing, run `pnpm verify:ci` for typechecking, unit/integration tests, formatting/lint,
-builds, packaging/CI script regressions, runtime synchronization, Expo configuration, Metro module
-validation and every registered browser suite (including the complete design-system audit).
-Verification builds first, so generated package exports exist even in a fresh checkout. It uses the
-same checks as CI and installs Playwright's managed Chromium. On Linux, install missing browser
-dependencies first with `pnpm exec playwright install --with-deps chromium`. To reproduce one CI
-browser shard, run `node scripts/run-browser-suites.mjs 3 4` (zero-based shard).
+The pre-commit hook checks staged whitespace, changelog fragment headers, formatting and lint. Fix
+the reported files and stage them again. To push to `main`, use a clean checkout of the commit being
+pushed. The pre-push hook runs `pnpm verify:push` there. It builds and typechecks the workspace and
+runs the changelog, interface copy, packaging, runtime and browser checks for recent release
+regressions. You can run `pnpm verify:push` on any branch while you work. Run
+`pnpm exec vp hooks status` to check the current checkout and `pnpm exec vp hooks enable` to set up
+the hooks in a new worktree.
+
+For full local verification, run `pnpm verify:ci` for typechecking, unit/integration tests,
+formatting/lint, builds, packaging/CI script regressions, runtime synchronization, Expo
+configuration, Metro module validation and every registered browser suite (including the complete
+design-system audit). Verification builds first, so generated package exports exist even in a fresh
+checkout. It uses the same checks as CI and installs Playwright's managed Chromium. On Linux,
+install missing browser dependencies first with `pnpm exec playwright install --with-deps chromium`.
+To reproduce one CI browser shard, run `node scripts/run-browser-suites.mjs 3 4` (zero-based shard).
 `pnpm test:ci:scripts` runs the same packaging, CI, changelog and proof script tests as the Check
 workflow.
 

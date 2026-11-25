@@ -6,6 +6,7 @@ import {
   formatProblems,
   isFragmentName,
   needsFragment,
+  parseFragments,
   readFragments,
 } from './fragments.mjs'
 
@@ -67,14 +68,18 @@ function changedFiles(base, cwd) {
 function main(argv, cwd) {
   const baseIndex = argv.indexOf('--base')
   const base = baseIndex === -1 ? undefined : argv[baseIndex + 1]
-  if (baseIndex !== -1 && !base) throw new Error('Usage: check-fragments.mjs [--base <git ref>]')
-  const { fragments, problems } = readFragments(join(cwd, FRAGMENT_DIRECTORY))
+  const staged = argv.includes('--staged')
+  if (baseIndex !== -1 && (!base || staged))
+    throw new Error('Usage: check-fragments.mjs [--staged | --base <git ref>]')
+  const { fragments, problems } = staged
+    ? stagedFragments(cwd)
+    : readFragments(join(cwd, FRAGMENT_DIRECTORY))
   if (problems.length) {
     console.error(`Changelog fragments have format errors:\n\n${formatProblems(problems)}`)
     console.error('\nSee changelog.d/README.md for the format.')
     return 1
   }
-  console.log(`Changelog fragments: ${fragments.length} valid.`)
+  console.log(`Changelog fragments: ${fragments.length} valid${staged ? ' in the index' : ''}.`)
   if (!base) return 0
   const { required, hasFragment, paths } = fragmentRequirement(changedFiles(base, cwd))
   if (!required) console.log('No app or package code changed; a fragment is optional.')
@@ -84,6 +89,27 @@ function main(argv, cwd) {
     return 1
   }
   return 0
+}
+
+function stagedFragments(cwd) {
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' })
+  const directory = `${FRAGMENT_DIRECTORY}/`
+  const paths = git(
+    'diff',
+    '--cached',
+    '--name-only',
+    '--no-renames',
+    '--diff-filter=AMT',
+    '-z',
+    '--',
+    directory,
+  )
+    .split('\0')
+    .filter(Boolean)
+  return parseFragments(
+    paths.map((path) => path.slice(directory.length)),
+    (name) => git('show', `:${directory}${name}`),
+  )
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

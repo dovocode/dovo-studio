@@ -69,28 +69,32 @@ export function parseFragment(name, text) {
   }
 }
 
-/** Reads every fragment in a directory. Returns parsed fragments and per-file errors. */
-export function readFragments(directory) {
+export function parseFragments(names, read) {
   const fragments = []
   const problems = []
-  let names
-  try {
-    names = readdirSync(directory)
-  } catch (error) {
-    if (error.code === 'ENOENT') return { fragments, problems }
-    throw error
-  }
   for (const name of names.toSorted()) {
     if (name === 'README.md') continue
     if (!isFragmentName(name)) {
       problems.push({ name, errors: ['only Markdown fragments (.md) belong in changelog.d'] })
       continue
     }
-    const { fragment, errors } = parseFragment(name, readFileSync(join(directory, name), 'utf8'))
+    const { fragment, errors } = parseFragment(name, read(name))
     if (errors) problems.push({ name, errors })
     else fragments.push(fragment)
   }
   return { fragments, problems }
+}
+
+/** Reads every fragment in a directory. Returns parsed fragments and per-file errors. */
+export function readFragments(directory) {
+  let names
+  try {
+    names = readdirSync(directory)
+  } catch (error) {
+    if (error.code === 'ENOENT') return { fragments: [], problems: [] }
+    throw error
+  }
+  return parseFragments(names, (name) => readFileSync(join(directory, name), 'utf8'))
 }
 
 export function formatProblems(problems) {

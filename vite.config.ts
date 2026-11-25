@@ -184,6 +184,7 @@ export default defineConfig({
     ],
   },
   staged: {
-    '*.{js,jsx,ts,tsx,json,md,yml,yaml,toml}': 'vp check --fix',
+    '*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}': 'vp check --no-error-on-unmatched-pattern',
+    '*.{json,md,yml,yaml,toml}': 'vp fmt --check --no-error-on-unmatched-pattern',
   },
 })

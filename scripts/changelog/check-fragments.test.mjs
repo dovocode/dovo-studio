@@ -46,6 +46,34 @@ await test('a fragment is required only for product changes and only counts when
   assert.equal(fragmentRequirement([{ status: 'M', path: 'docs/architecture.md' }]).required, false)
 })
 
+await test('staged mode checks the fragment in the index and ignores unstaged edits', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dovo-changelog-staged-'))
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' })
+  const check = () => spawnSync(process.execPath, [script, '--staged'], { cwd, encoding: 'utf8' })
+  const name = 'changelog.d/fix-preview.md'
+  const valid = '---\ncategory: Fixed\nclients: desktop\n---\nShow the file preview.\n'
+  const invalid = 'Show the file preview.\n'
+  try {
+    git('init', '-b', 'main')
+    await mkdir(join(cwd, 'changelog.d'))
+    await writeFile(join(cwd, name), invalid)
+    git('add', name)
+    await writeFile(join(cwd, name), valid)
+
+    const brokenIndex = check()
+    assert.equal(brokenIndex.status, 1)
+    assert.match(brokenIndex.stderr, /fix-preview\.md.*\n.*start the file with a header/)
+
+    git('add', name)
+    await writeFile(join(cwd, name), invalid)
+    const fixedIndex = check()
+    assert.equal(fixedIndex.status, 0, fixedIndex.stderr)
+    assert.match(fixedIndex.stdout, /1 valid in the index/)
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+  }
+})
+
 await test('the check validates fragments and explains how to fix a missing fragment', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dovo-changelog-check-'))
   const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()

@@ -54,6 +54,10 @@ jobs:
       - uses: ./.github/actions/setup-build
         id: setup
       - run: pnpm install --frozen-lockfile
+      - name: Validate changelog fragments
+        run: pnpm changelog:check
+      - name: Validate mobile interface copy
+        run: pnpm check:mobile-copy
       - uses: ./.github/actions/save-dependencies
         with:
           store: ${{ steps.setup.outputs.store }}
@@ -62,6 +66,8 @@ jobs:
         with:
           node: ${{ steps.setup.outputs.node }}
       - run: node scripts/ci/workspace-task.mjs build
+      - name: Validate translated interface catalogs
+        run: pnpm check:interface-catalogs
       - run: pnpm test:ci:scripts
       - run: pnpm check
       - run: node scripts/ci/workspace-task.mjs typecheck

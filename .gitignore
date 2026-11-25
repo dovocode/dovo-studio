@@ -73,3 +73,4 @@ apps/design-system/src/hosted-screens.generated.json
 apps/design-system/public/website/
 
 /apps/desktop/electron/generated/browser-json-viewer.json
+.vite-hooks/_/
