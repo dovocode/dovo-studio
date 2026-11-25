@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
+import { HttpError } from '../../errors'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -51,13 +53,15 @@ async function setup() {
   }))
   return { s, id: task.id, at }
 }
-it('consumes continuation before admission and never loops after an admission failure', async () => {
+it('clears continuation after an admission failure and never starts a second attempt', async () => {
   const { s, id } = await setup()
-  const start = vi.spyOn(s.tasks, 'start').mockRejectedValue(new Error('Checkout busy'))
+  const start = vi
+    .spyOn(s.tasks, 'startEffect')
+    .mockReturnValue(Effect.fail(new HttpError(409, 'Checkout busy')))
   await s.tasks.runScheduled()
   await s.tasks.runScheduled()
   expect(start).toHaveBeenCalledTimes(1)
-  expect(start).toHaveBeenCalledWith(id, true)
+  expect(start).toHaveBeenCalledWith(id, true, expect.any(Function), undefined, false)
   expect(s.store.task(id).quotaContinuation).toBeUndefined()
   expect(s.store.task(id).snoozedUntil).toBeNull()
 })
@@ -90,9 +94,34 @@ it.each(['disabled', 'new turn', 'snooze only', 'queued input'] as const)(
             }
           : {}),
       }))
-    const start = vi.spyOn(s.tasks, 'start').mockResolvedValue({ done: Promise.resolve() })
+    const start = vi.spyOn(s.tasks, 'startEffect')
     await s.tasks.runScheduled()
     expect(start).not.toHaveBeenCalled()
     expect(s.store.task(id).quotaContinuation).toBeUndefined()
   },
 )
+
+it('honors cancellation while the scheduler is still admitting the retry', async () => {
+  const { s, id } = await setup()
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const admitted = vi.fn<() => void>()
+  const start = vi.spyOn(s.tasks, 'startEffect').mockImplementation((_id, _pauseQueue, eligible) =>
+    Effect.promise(async () => {
+      await pending
+      if (eligible?.()) admitted()
+      return { completion: Effect.void }
+    }),
+  )
+  const tick = s.tasks.runScheduled()
+  expect(start).toHaveBeenCalledTimes(1)
+  s.tasks.cancelQuotaContinuation(id, 'older-turn')
+  expect(s.store.taskSummary(id).quotaContinuation?.turnId).toBe('turn')
+  s.tasks.cancelQuotaContinuation(id, 'turn')
+  release()
+  await tick
+  expect(admitted).not.toHaveBeenCalled()
+  expect(s.store.taskSummary(id).quotaContinuation).toBeUndefined()
+})

@@ -623,13 +623,22 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         s.tasks.resetSpendLimit(id)
         return { ok: true }
       }
+      if (method === 'POST' && path === '/api/tasks/quota/schedule') {
+        if (!owner) throw new HttpError(403, 'Only paired human clients can schedule quota retries')
+        const { id, turnId } = decode(
+          strictStruct({ id: idSchema, turnId: idSchema }),
+          yield* serviceResult(body(request)),
+        )
+        s.tasks.scheduleQuotaResume(id, turnId)
+        return { ok: true }
+      }
       if (method === 'POST' && path === '/api/tasks/quota/cancel') {
-        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
-        s.store.updateTask(id, (task) => ({
-          ...task,
-          quotaContinuation: undefined,
-          snoozedUntil: task.snoozedUntil === task.quotaContinuation?.at ? null : task.snoozedUntil,
-        }))
+        if (!owner) throw new HttpError(403, 'Only paired human clients can cancel quota retries')
+        const { id, turnId } = decode(
+          mutableStruct({ id: idSchema, turnId: Schema.optional(idSchema) }),
+          yield* serviceResult(body(request)),
+        )
+        s.tasks.cancelQuotaContinuation(id, turnId)
         return { ok: true }
       }
       if (method === 'POST' && path === '/api/tasks/lifecycle') {

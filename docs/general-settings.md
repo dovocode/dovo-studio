@@ -82,10 +82,12 @@ an edited settings page asks before discarding unsaved changes.
 
 - Quota resume and snooze are opt-in. A failed turn must report a quota error with a confirmed reset
   time or exhausted usage windows with future reset times. Dovo waits for the latest reported reset.
-  The task displays its continuation and offers Cancel on desktop and mobile. Manual wake, settle,
-  archive and a new run cancel it.
-- At the reset, Dovo checks the current policy and failed turn again. New queued input, delegated
-  tasks and automation-owned tasks cannot be resumed by this scheduler. Admission is attempted once;
+  Use **Auto-resume after rate limit** in the conversation to schedule one failed turn independently
+  of project defaults. The thread displays its continuation and offers Cancel on desktop and mobile.
+  Manual wake, settle, archive and a new run cancel it.
+- At the reset, Dovo checks the failed turn and the schedule again. For schedules created by a
+  project policy, it also checks that the policy is still enabled. New queued input, delegated tasks
+  and automation-owned tasks cannot be resumed by this scheduler. Admission is attempted once;
   failure is recorded in Activity and requires manual continuation.
 - Inactive settling runs during upkeep (every 15 minutes). The default threshold is 3 days,
   configurable from 1 to 365. It protects task families with pins, running work, waiting input,

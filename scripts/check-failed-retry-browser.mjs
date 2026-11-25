@@ -13,8 +13,9 @@ try {
           contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {${mobile ? 'FailedTaskRetry' : 'RunControls'} as Controls} from '${root}${mobile ? 'apps/mobile/src/tasks/conversation/components/failed-task-retry.tsx' : 'packages/extension-tasks/src/chat/actions/run-controls.tsx'}';
+import {QuotaResumeNotice} from '${root}${mobile ? 'apps/mobile/src/tasks/detail/quota-resume-notice.tsx' : 'packages/extension-tasks/src/detail/quota-resume-notice.tsx'}';
 window.requests=[];window.request=(path,input)=>{window.requests.push({path,input});return new Promise((resolve,reject)=>{window.resolveRequest=resolve;window.rejectRequest=()=>reject(Error('Retry connection failed'))})};
-function App(){const [state,setState]=useState({connected:true,task:{id:'task',status:'failed',error:'Exceeded retry limit, last status: 429 Too Many Requests',messages:[],draft:'Keep draft',queue:[{id:'queued',text:'Keep queued'}]}});window.update=changes=>setState(state=>({...state,...changes,task:{...state.task,...changes.task}}));window.store={connected:state.connected,request:window.request,snapshot:{runs:[],approvals:[]},runtimes:[],activeRuntimeId:'local'};window.current=state.task;return <Controls task={state.task}/>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const [state,setState]=useState({connected:true,task:{id:'task',status:'failed',error:'Exceeded retry limit, last status: 429 Too Many Requests',messages:[],draft:'Keep draft',queue:[{id:'queued',text:'Keep queued'}]}});window.update=changes=>setState(state=>({...state,...changes,task:{...state.task,...changes.task}}));window.store={connected:state.connected,request:window.request,snapshot:{runs:[],approvals:[],quotaResumeSupported:state.quotaResumeSupported},runtimes:[],activeRuntimeId:'local'};window.current=state.task;return <><Controls task={state.task}/><QuotaResumeNotice task={state.task} ${mobile ? '' : 'command'}/></>};createRoot(document.getElementById('app')).render(<App/>);
 `,
         },
         bundle: true,
@@ -28,7 +29,7 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
       [
         {
           path: '@dovo/studio-core',
-          contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});`,
+          contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.store;export const formatDateTime=value=>new Date(value).toLocaleString();const registerCommand=command=>{window.quotaCommand=command;return ()=>{window.quotaCommand=undefined}};export const useStudioHost=()=>({registerCommand});`,
         },
         {
           path: '@dovo/studio-core/state',
@@ -46,6 +47,11 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
         {
           path: '../../../runtime/connection/provider',
           importer: root + 'apps/mobile/src/',
+          contents: `import {Effect} from 'effect';export const useRuntime=()=>({...window.store,callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
+        },
+        {
+          path: '../../runtime/connection/provider',
+          importer: root + 'apps/mobile/src/tasks/detail/',
           contents: `import {Effect} from 'effect';export const useRuntime=()=>({...window.store,callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
         },
         {
@@ -68,6 +74,24 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
           importer: root + 'apps/mobile/src/',
           contents: `export const useTheme=()=>({styles:{error:{},muted:{}}});`,
         },
+        ...[
+          [
+            '../../ui/controls/action',
+            `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
+          ],
+          [
+            '../../ui/content/text',
+            `export const Text=({children,accessibilityRole})=><p role={accessibilityRole}>{children}</p>;`,
+          ],
+          [
+            '../../ui/theme',
+            `export const useTheme=()=>({styles:{muted:{}},colors:{error:'red'}});`,
+          ],
+        ].map(([path, contents]) => ({
+          path,
+          contents,
+          importer: root + 'apps/mobile/src/tasks/detail/',
+        })),
         {
           path: 'react-native',
           contents: `export const View=({children})=><div>{children}</div>;`,
@@ -151,6 +175,62 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
       })
       await page.evaluate(() => window.resolveRequest({ ok: true }))
     }
+    const schedule = page.getByRole('button', { name: 'Auto-resume after rate limit' })
+    const cancel = page.getByRole('button', { name: 'Cancel quota continuation' })
+    const at = new Date(Date.now() + 3600000).toISOString()
+    await page.evaluate(
+      (at) =>
+        window.update({
+          quotaResumeSupported: false,
+          task: {
+            status: 'failed',
+            error: 'Usage limit reached',
+            runPhase: undefined,
+            restartRecovery: undefined,
+            queue: [],
+            turns: [{ id: 'limited', status: 'failed', quotaRetryAt: at }],
+          },
+        }),
+      at,
+    )
+    await page.getByRole('alert').filter({ hasText: 'Usage limit reached' }).waitFor()
+    assert.equal(await schedule.count(), 0)
+    assert.equal(await retry.isVisible(), true)
+    await page.evaluate(() => window.update({ quotaResumeSupported: true, connected: false }))
+    await schedule.waitFor()
+    assert.equal(await schedule.isDisabled(), true)
+    await page.evaluate(() => window.update({ connected: true }))
+    if (mobile) await schedule.click()
+    else {
+      await page.waitForFunction(
+        () => window.quotaCommand?.title === 'Auto-resume after rate limit',
+      )
+      await page.evaluate(() => window.quotaCommand.run())
+    }
+    await page.waitForFunction(() => window.requests.at(-1)?.path === '/api/tasks/quota/schedule')
+    assert.deepEqual(await page.evaluate(() => window.requests.at(-1)), {
+      path: '/api/tasks/quota/schedule',
+      input: { id: 'task', turnId: 'limited' },
+    })
+    await page.evaluate((at) => {
+      window.resolveRequest({ ok: true })
+      window.update({
+        task: { quotaContinuation: { turnId: 'limited', at, resume: true, requested: true } },
+      })
+    }, at)
+    await page.getByText(/Scheduled to resume at/).waitFor()
+    await schedule.waitFor({ state: 'detached' })
+    await cancel.click()
+    assert.deepEqual(await page.evaluate(() => window.requests.at(-1)), {
+      path: '/api/tasks/quota/cancel',
+      input: { id: 'task', turnId: 'limited' },
+    })
+    await page.evaluate(() => {
+      window.resolveRequest({ ok: true })
+      window.update({ task: { quotaContinuation: undefined } })
+    })
+    await schedule.waitFor()
+    await cancel.waitFor({ state: 'detached' })
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} failed retry: 429/general failures, explicit requests, pending/offline states, errors and draft/queue preservation passed.`,

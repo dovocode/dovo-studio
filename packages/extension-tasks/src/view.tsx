@@ -1587,6 +1587,7 @@ export default function TasksView({
                       historyUnauthorized={historyUnauthorized}
                       key={taskCollectionKey(activeRuntimeId, task.id)}
                       task={task}
+                      quotaCommand
                       temporary={temporary}
                       workspaceControls={workspaceControls}
                       onSelectRemote={onSelectRemote}

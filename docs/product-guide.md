@@ -1391,6 +1391,11 @@ again** in a turn’s menu repeats the latest request using the current checkout
 same model or another model from the same provider. To revisit the saved files separately, fork the
 turn.
 
+If the provider reports a reset time, select **Auto-resume after rate limit** to retry that failed
+turn once. The connected computer keeps the schedule even if you close Studio. Select **Cancel quota
+continuation** to remove it, or **Retry** to try immediately. A newer run or queued input prevents
+the scheduled retry. Older runtimes continue to offer **Retry**.
+
 ## Project organization and managed runtimes
 
 Project settings now include **Pin project** and **Archive project**. Pinned projects sort first.

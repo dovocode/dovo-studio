@@ -58,6 +58,7 @@ import {
   applyBotResources,
   mergeResources,
   inheritedResourceProject,
+  quotaRetryTurn,
 } from '@dovo/protocol'
 import type { Attachments } from '../../storage/attachments.js'
 import {
@@ -476,6 +477,87 @@ export class Tasks {
     this.scheduleWork = work
     return work
   }
+  scheduleQuotaResume(id: string, turnId: string) {
+    const task = this.store.taskSummary(id)
+    const retry = quotaRetryTurn(task, task.history.latestTurn, Date.now())
+    if (retry?.turnId !== turnId || this.isAutomationThread(task))
+      throw new HttpError(
+        409,
+        'This failed turn can no longer be scheduled. Refresh the thread or use Retry.',
+      )
+    if (task.quotaContinuation?.turnId === turnId && task.quotaContinuation.resume) return
+    this.store.updateTask(id, (current) => ({
+      ...current,
+      quotaContinuation: { ...retry, resume: true, requested: true },
+    }))
+  }
+  cancelQuotaContinuation(id: string, turnId?: string) {
+    this.store.updateTask(id, (task) => {
+      const continuation = task.quotaContinuation
+      if (!continuation || (turnId !== undefined && continuation.turnId !== turnId)) return task
+      return {
+        ...task,
+        quotaContinuation: undefined,
+        snoozedUntil: task.snoozedUntil === continuation.at ? null : task.snoozedUntil,
+      }
+    })
+  }
+  private isAutomationThread(task: Pick<TaskMetadata, 'origin' | 'botJob'>) {
+    return (
+      !!task.botJob ||
+      this.store.get().automations.some((automation) => automation.id === task.origin)
+    )
+  }
+  private async continueQuota(id: string, continuation: NonNullable<Task['quotaContinuation']>) {
+    const current = () => this.store.get().tasks.find((task) => task.id === id)
+    const stillScheduled = (task: ReturnType<typeof current>) => {
+      const scheduled = task?.quotaContinuation
+      return (
+        scheduled?.turnId === continuation.turnId &&
+        scheduled.at === continuation.at &&
+        scheduled.resume === continuation.resume &&
+        scheduled.requested === continuation.requested
+      )
+    }
+    const ready = () => {
+      const task = current()
+      if (
+        !task ||
+        !stillScheduled(task) ||
+        this.stopping ||
+        botPaused(task) ||
+        task.archived ||
+        task.archivedAt ||
+        task.machineHandoff ||
+        task.example ||
+        task.status !== 'failed' ||
+        task.history.latestTurn?.id !== continuation.turnId ||
+        task.queue?.length ||
+        task.delegation ||
+        this.isAutomationThread(task)
+      )
+        return false
+      return continuation.requested
+        ? quotaRetryTurn(task, task.history.latestTurn)?.at === continuation.at
+        : this.store.projectSettings(task.repositoryId).taskBehavior?.quotaResume === true
+    }
+    try {
+      if (continuation.resume && ready()) {
+        const { completion } = await runClientEffect(
+          this.startEffect(id, true, ready, undefined, continuation.requested === true),
+        )
+        if (completion !== Effect.void)
+          this.activity?.add('task', id, 'Resumed after the reported quota reset')
+      }
+    } catch (error) {
+      this.activity?.add('task', id, `Quota continuation could not start: ${errorMessage(error)}`)
+    }
+    // Admission clears the schedule itself. Clear a failed admission once, keeping any new
+    // schedule or a paused Bot's schedule for a later tick.
+    const remaining = current()
+    if (remaining && !this.stopping && !botPaused(remaining) && stillScheduled(remaining))
+      this.cancelQuotaContinuation(id, continuation.turnId)
+  }
   private async runScheduledTick() {
     try {
       this.deliverCompletions()
@@ -493,35 +575,8 @@ export class Tasks {
         )
           continue
         const continuation = task.quotaContinuation
-        if (continuation && Date.parse(continuation.at) <= now) {
-          const policy = this.store.projectSettings(task.repositoryId).taskBehavior
-          const eligible =
-            continuation.resume &&
-            policy?.quotaResume === true &&
-            task.status === 'failed' &&
-            task.history.latestTurn?.id === continuation.turnId &&
-            !task.queue?.length &&
-            !task.delegation &&
-            !this.store.get().automations.some((automation) => automation.id === task.origin)
-          // Consume before admission: a failed admission cannot retry indefinitely.
-          this.store.updateTask(task.id, (current) => ({
-            ...current,
-            quotaContinuation: undefined,
-            snoozedUntil: current.snoozedUntil === continuation.at ? null : current.snoozedUntil,
-          }))
-          if (eligible) {
-            try {
-              await this.start(task.id, true)
-              this.activity?.add('task', task.id, 'Resumed after the reported quota reset')
-            } catch (error) {
-              this.activity?.add(
-                'task',
-                task.id,
-                `Quota continuation could not start: ${errorMessage(error)}`,
-              )
-            }
-          }
-        }
+        if (continuation && Date.parse(continuation.at) <= now)
+          await this.continueQuota(task.id, continuation)
         for (const message of task.scheduledMessages ?? []) {
           if (this.stopping) break
           if (message.failed || Date.parse(message.at) > now) continue

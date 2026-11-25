@@ -25,17 +25,12 @@ import { ComposerActivity } from '../chat/composer/composer-activity'
 import { TaskQuestions } from '../chat/thread/task-questions'
 import { TaskSecureInputs } from '../chat/thread/task-secure-inputs'
 import { RunControls } from '../chat/actions/run-controls'
-import {
-  useAppPreferences,
-  formatDateTime,
-  responses,
-  useWorkspace,
-  type Task,
-} from '@dovo/studio-core'
+import { useAppPreferences, responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
 import { MachineHandoffNotice } from './machine-handoff-notice'
 import { SpendPauseNotice } from './spend-pause-notice'
+import { QuotaResumeNotice } from './quota-resume-notice'
 import type { SelectRemoteProject } from '../chat/composer/composer-project'
 import { TaskEmptyState } from '../task-creation/task-empty-state'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
@@ -69,6 +64,7 @@ export function TaskConversation({
   onRevealHandled,
   onAside,
   visible,
+  quotaCommand,
   composerInsert,
   onComposerInsertApplied,
   temporary,
@@ -102,6 +98,7 @@ export function TaskConversation({
   /** Opens side chats, showing a newly created draft agent side chat when provided. */
   onAside?: (childId?: string) => void
   visible: boolean
+  quotaCommand?: boolean
   composerInsert?: { id: string; text: string; once?: boolean; replaceKey?: string } | null
   onComposerInsertApplied?: () => void
 }) {
@@ -245,7 +242,6 @@ export function TaskConversation({
       ? JSON.stringify([activeRuntimeId, task.id, taskFailureVersion(task)])
       : undefined,
   )
-  const [quotaError, setQuotaError] = useScopedError(task.quotaContinuation?.at)
   const retry = () => {
     if (retrying || task.activeRunId) return
     setRetrying(true)
@@ -410,31 +406,8 @@ export function TaskConversation({
               <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
             </div>
           ) : null}
-          {task.quotaContinuation && (
-            <div
-              role="status"
-              className="mx-auto flex w-full max-w-[var(--chat-max)] items-center gap-2 px-5 py-2 text-xs text-muted-foreground"
-            >
-              <span className="flex-1">
-                {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
-                {formatDateTime(task.quotaContinuation.at)}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!connected}
-                onClick={() => {
-                  setQuotaError('')
-                  void request('/api/tasks/quota/cancel', { id: task.id }, responses.ok).catch(
-                    (cause) =>
-                      setQuotaError(cause instanceof Error ? cause.message : String(cause)),
-                  )
-                }}
-              >
-                Cancel continuation
-              </Button>
-              {quotaError && <span role="alert">{quotaError}</span>}
-            </div>
+          {(task.quotaContinuation || task.turns?.at(-1)?.quotaRetryAt) && (
+            <QuotaResumeNotice task={task} command={visible && quotaCommand} />
           )}
           <SpendPauseNotice task={task} />
           <TaskQuestions

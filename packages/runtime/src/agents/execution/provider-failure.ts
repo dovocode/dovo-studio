@@ -7,6 +7,30 @@ export type ProviderFailureKind =
   | 'quota'
   | 'unavailable'
   | 'unknown'
+export function providerQuotaResetAt(message: string, now = Date.now()) {
+  const timestamp =
+    /\b(?:resets? at|retry after)\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))/i.exec(
+      message,
+    )?.[1]
+  if (timestamp) {
+    const time = Date.parse(timestamp)
+    if (Number.isFinite(time)) return time
+  }
+  const seconds =
+    /\b(?:retry-after:\s*(\d+(?:\.\d+)?)\b(?!\.)|(?:retry|try again) (?:in|after)\s+(\d+(?:\.\d+)?)\s*seconds?\b)/i.exec(
+      message,
+    )
+  if (seconds) return now + Math.ceil(Number(seconds[1] ?? seconds[2]) * 1000)
+  const compact =
+    /\b(?:resets? in|(?:retry|try again) (?:in|after))\s+(?=\d)(?:(\d{1,3})h)?(?:(\d{1,3})m)?(?:(\d{1,3}(?:\.\d+)?)s)?(?=[.,;\s)]|$)/i.exec(
+      message,
+    )
+  if (!compact) return undefined
+  const [, hours, minutes, remainder] = compact
+  const delay =
+    (Number(hours ?? 0) * 3600 + Number(minutes ?? 0) * 60 + Number(remainder ?? 0)) * 1000
+  return delay > 0 ? now + Math.ceil(delay) : undefined
+}
 export function providerFailureKind(error: unknown): ProviderFailureKind {
   if (error instanceof ProviderFailure) return error.kind
   const message = errorMessage(error)

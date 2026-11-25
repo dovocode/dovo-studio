@@ -5,7 +5,11 @@ import { isAbsolute, join } from 'node:path'
 import { Schema } from 'effect'
 import { decode, mutableStruct } from '@dovo/protocol'
 import type { AcpLaunch } from '../../execution/types.js'
-import { ProviderFailure, providerFailureKind } from '../../execution/provider-failure.js'
+import {
+  ProviderFailure,
+  providerFailureKind,
+  providerQuotaResetAt,
+} from '../../execution/provider-failure.js'
 
 const sameFile = (a: Stats, b: Stats) => a.dev === b.dev && a.ino === b.ino
 const owned = (file: Stats) => !process.getuid || process.getuid() === file.uid
@@ -20,17 +24,6 @@ function optionalStat(path: string) {
 const privateFile = (file: Stats | undefined) =>
   !file || (file.isFile() && file.nlink === 1 && owned(file))
 const lastStep = mutableStruct({ step_type: Schema.Number, payload: Schema.Unknown })
-
-function antigravityQuotaResetAt(message: string) {
-  const duration = /\bResets in (?:(\d{1,3})h)?(?:(\d{1,3})m)?(?:(\d{1,3})s)?(?=[.\s]|$)/.exec(
-    message,
-  )
-  if (!duration) return
-  const [, hours, minutes, seconds] = duration
-  const delay =
-    (Number(hours ?? 0) * 3600 + Number(minutes ?? 0) * 60 + Number(seconds ?? 0)) * 1000
-  return delay > 0 ? Date.now() + delay : undefined
-}
 
 /** Only inspect an owned ACP session, and only rows that this prompt added. The log format is optional. */
 export function watchAntigravityOutcome(launch: AcpLaunch, sessionId: string) {
@@ -106,7 +99,7 @@ export function watchAntigravityOutcome(launch: AcpLaunch, sessionId: string) {
           : new ProviderFailure(
               kind,
               error,
-              kind === 'quota' ? antigravityQuotaResetAt(message) : undefined,
+              kind === 'quota' ? providerQuotaResetAt(message) : undefined,
             )
       } catch {
         // Versions with a different log layout still report their ACP stop reason.

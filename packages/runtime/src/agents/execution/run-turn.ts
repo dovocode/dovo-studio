@@ -18,7 +18,7 @@ import { modelToolInstructions } from './model-tool-instructions.js'
 import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
-import { quotaContinuation } from '../tasks/quota-continuation.js'
+import { quotaFailureTiming } from '../tasks/quota-continuation.js'
 import type { LinkedCheckouts } from '../../scm/tasks/linked-checkouts.js'
 import { linkedBefore, linkedAfter } from '../../scm/tasks/linked-checkpoints.js'
 import { SharedSkillBundles } from '../configuration/shared-skill-bundles.js'
@@ -71,6 +71,7 @@ import {
   turnSettingsMatchHarness,
   lockedTaskProvider,
   reportedPlanLimits,
+  reportedClaudeQuotaResetAt,
   mergePlanLimits,
   nativeAgentWorking,
   type Attachment,
@@ -858,6 +859,7 @@ export class TaskTurnRunner {
         })
         const acceptedIds = new Set<string>()
         let turnLimits: ReturnType<typeof reportedPlanLimits> = []
+        let reportedResetAt: number | undefined
         let providerFinishedAt: string | undefined
         let providerOpen = true
         let promptAccepted = false
@@ -1814,6 +1816,8 @@ export class TaskTurnRunner {
                       ],
                     }))
                   }
+                  if (agent.provider === 'claude' && name === 'rate_limit_event')
+                    reportedResetAt = reportedClaudeQuotaResetAt(payload)
                   if (agent.provider === 'codex' || agent.provider === 'claude') {
                     const limits = reportedPlanLimits(agent.provider, name, payload).map(
                       (limit) => ({
@@ -2279,17 +2283,17 @@ export class TaskTurnRunner {
               const finalStatus = finalCancelled ? ('cancelled' as const) : ('failed' as const)
               const providerFailure =
                 error instanceof RuntimeOperationError ? error.cause : undefined
-              const continuation = finalCancelled
-                ? undefined
-                : quotaContinuation(
+              const { quotaRetryAt, continuation } = finalCancelled
+                ? {}
+                : quotaFailureTiming(
                     errorMessage(error),
                     turnLimits,
                     policy,
                     turnId,
                     Date.parse(finishedAt),
-                    providerFailure instanceof ProviderFailure
+                    (providerFailure instanceof ProviderFailure
                       ? providerFailure.quotaResetAt
-                      : undefined,
+                      : undefined) ?? reportedResetAt,
                   )
               this.store.updateTaskHistory(id, (t) => ({
                 ...t,
@@ -2319,6 +2323,7 @@ export class TaskTurnRunner {
                               }
                             : undefined,
                         status: finalStatus,
+                        quotaRetryAt,
                         finishedAt,
                         error: errorMessage(controller.signal.reason ?? error),
                       }

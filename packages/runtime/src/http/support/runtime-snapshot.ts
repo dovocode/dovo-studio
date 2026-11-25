@@ -417,6 +417,7 @@ export function runtimeSnapshot(
       botAvatarsSupported: true,
       botAvatarHarnessSelectionSupported: true,
       botConversationArchiveSupported: true,
+      quotaResumeSupported: true,
       botContextResetSupported: true,
       botMemoryReviewSupported: true,
       botMemoryVersionsSupported: true,

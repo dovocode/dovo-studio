@@ -630,6 +630,8 @@ export const turnSchema = mutableStruct({
   finishedAt: Schema.optional(Schema.String),
   status: Schema.Literals(['running', 'completed', 'failed', 'cancelled']),
   error: Schema.optional(Schema.String),
+  /** Provider-reported retry time for a rate-limited turn. */
+  quotaRetryAt: Schema.optional(isoDateTime(Schema.String)),
   /** Tokens this turn used, when the provider reports them. */
   tokens: Schema.optional(
     Schema.Number.pipe(
@@ -1120,6 +1122,7 @@ export const taskSchema = mutableStruct({
       turnId: Schema.String,
       at: isoDateTime(Schema.String),
       resume: Schema.Boolean,
+      requested: Schema.optional(Schema.Literal(true)),
     }),
   ),
   /** Runtime-owned timestamps for the current worker's queue and admission. */

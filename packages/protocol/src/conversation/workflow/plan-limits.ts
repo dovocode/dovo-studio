@@ -29,6 +29,12 @@ const record = (value: unknown): Record<string, unknown> =>
     : {}
 const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
+
+/** Claude can reject a prompt with a reset timestamp and omit utilization. */
+export function reportedClaudeQuotaResetAt(payload: unknown) {
+  const info = record(record(payload).rate_limit_info)
+  return info.status === 'rejected' && finite(info.resetsAt) ? info.resetsAt * 1000 : undefined
+}
 export function limitWindowLabel(minutes: number | undefined, fallback: string) {
   if (minutes === 300) return 'Session'
   if (minutes === 10080) return 'Weekly'

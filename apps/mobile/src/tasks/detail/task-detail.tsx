@@ -72,6 +72,7 @@ import { ContinueElsewhere } from './continue-elsewhere'
 import { TaskQuestions } from './task-questions'
 import { TaskSecureInputs } from './task-secure-inputs'
 import { SpendPauseNotice } from './spend-pause-notice'
+import { QuotaResumeNotice } from './quota-resume-notice'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
 import { useTaskLifecycle } from './use-task-lifecycle'
@@ -543,7 +544,6 @@ function TaskDetailContent({
   const preparation = taskPreparation(task)
   const startupLabel = providerStartupLabel(task)
   const budget = taskBudgetUsage(task)
-  const quota = useAction(task.quotaContinuation?.at)
   const retry = useAction(
     preparation?.failed ? JSON.stringify([activeId, task.id, taskFailureVersion(task)]) : undefined,
   )
@@ -1484,32 +1484,8 @@ function TaskDetailContent({
                       </Text>
                     </View>
                   ) : null}
-                  {task.quotaContinuation && (
-                    <View style={{ padding: 12, gap: 8 }}>
-                      <Text style={styles.muted}>
-                        <InterfaceText
-                          values={{
-                            value0: task.quotaContinuation.resume
-                              ? uiText('Scheduled to resume')
-                              : uiText('Snoozed'),
-                            value1: new Date(task.quotaContinuation.at).toLocaleString(),
-                          }}
-                        >
-                          {'{value0} at {value1}'}
-                        </InterfaceText>
-                      </Text>
-                      <Action
-                        secondary
-                        label={uiText('Cancel quota continuation')}
-                        disabled={!connected || quota.busy}
-                        onPress={() =>
-                          quota.act(() =>
-                            callEffect('/api/tasks/quota/cancel', { id: task.id }, responses.ok),
-                          )
-                        }
-                      />
-                      {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
-                    </View>
+                  {(task.quotaContinuation || task.turns?.at(-1)?.quotaRetryAt) && (
+                    <QuotaResumeNotice task={task} />
                   )}
                   <SpendPauseNotice task={task} />
                   <TaskQuestions taskId={task.id} questionId={questionId} />
