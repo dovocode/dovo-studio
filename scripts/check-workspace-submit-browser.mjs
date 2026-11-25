@@ -10,6 +10,29 @@ import { WebSocketServer } from 'ws'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const reactMode = process.argv.includes('--production') ? 'production' : 'development'
+const workspaceCommands = ['tasks.new', 'tasks.search', 'tasks.switch', 'tasks.terminal']
+const runningThreadCommands = [
+  ...workspaceCommands,
+  'tasks.pin-current',
+  ...[
+    'later-today',
+    'tomorrow-morning',
+    'tomorrow-evening',
+    'next-week',
+    'duration-1',
+    'duration-4',
+    'duration-24',
+    'duration-48',
+    'duration-72',
+    'duration-168',
+  ].map((choice) => `tasks.snooze-current:${choice}`),
+]
+const idleThreadCommands = [
+  ...runningThreadCommands,
+  'tasks.archive-current',
+  'tasks.settle-current',
+]
+const browserCommands = ['browser.site-information']
 // Keep the actual workspace, input, thread, browser and terminal components/providers.
 // Only the runtime transport is simulated, so submitting also exercises pane mounting.
 const built = await build({
@@ -34,7 +57,8 @@ const remote={id:'remote',name:'Remote computer',connection:{address:'http://rem
 const profiles=[profile,remote];
 const initial=decode(snapshotSchema,{revision:1,runtimeId:'runtime',owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''}],tasks:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]});
 const remoteInitial=decode(snapshotSchema,{...initial,runtimeId:'remote-runtime',workspace:{...initial.workspace,tasks:[createTask({title:'Remote retained thread',objective:'',agentId:'',repositoryId:'scratch'})]}});
-window.calls=[];window.runtimeCalls=[];window.unexpectedRequests=[];window.switches=[];window.commands=new Map();window.threadRegistrations=0;window.threadDisposals=0;
+window.calls=[];window.runtimeCalls=[];window.unexpectedRequests=[];window.switches=[];window.commands=new Map();window.threadRegistrations=0;window.threadDisposals=0;window.workspaceRegistrations=0;
+const workspaceCommandIds=new Set(${JSON.stringify(workspaceCommands)});
 function App(){
  const [snapshots,setSnapshots,snapshotsRef]=useApplicationState({local:initial,remote:remoteInitial});
  const [activeRuntimeId,setActiveRuntimeId]=useApplicationState('local');
@@ -83,6 +107,7 @@ function App(){
    const isThreadCommand=command.id.startsWith('tasks.');
    window.commands.set(command.id,command);
    if(isThreadCommand)window.threadRegistrations++;
+   if(workspaceCommandIds.has(command.id))window.workspaceRegistrations++;
    setPaletteVersion(value=>value+1);
    return ()=>{
      if(isThreadCommand)window.threadDisposals++;
@@ -181,10 +206,22 @@ sockets.on('connection', (socket, request) => {
 })
 const browser = await chromium.launch()
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, timezoneId: 'UTC' })
+  await page.clock.setFixedTime(new Date('2026-11-23T10:00:00Z'))
   page.setDefaultTimeout(10000)
   const errors = []
   let phase = 'submit destinations'
+  const settle = () =>
+    page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+  const assertCommands = async (expected) => {
+    await page.waitForFunction((count) => window.commands.size === count, expected.length)
+    await settle()
+    const ids = await page.evaluate(() => [...window.commands.keys()].sort())
+    assert.deepEqual(ids, expected.toSorted(), phase)
+    assert.deepEqual(errors, [], phase)
+  }
   page.on('pageerror', (error) => {
     errors.push(`${phase}: ${error.message}`)
     console.error(`${phase}: ${error.stack}`)
@@ -286,11 +323,7 @@ try {
     await page.getByRole('textbox', { name: 'Message thread', exact: true }).innerText(),
     'Retained second-thread draft',
   )
-  assert.equal(
-    await page.evaluate(() => window.commands.size),
-    4,
-    'Only the visible TasksView owns global commands',
-  )
+  await assertCommands(runningThreadCommands)
   // The sidebar starter mounts a temporary TasksView; its first edit persists and reroutes it.
   await page
     .locator('.studio-task-sidebar')
@@ -331,9 +364,7 @@ try {
   await openBrowser.click()
   await page.locator('[data-browser-viewport]').waitFor()
   await page.waitForFunction(() => window.commands.has('browser.site-information'))
-  assert.deepEqual(await page.evaluate(() => [...window.commands.keys()]), [
-    'browser.site-information',
-  ])
+  await assertCommands(browserCommands)
   await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
   await page.getByRole('button', { name: 'Workspace destination', exact: true }).click()
   await page.getByRole('option', { name: 'Terminal', exact: true }).click()
@@ -413,7 +444,8 @@ try {
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   )
   const registrations = await page.evaluate(() => window.threadRegistrations)
-  assert.equal(registrations, 32, 'Eight visible thread lifetimes each register four commands')
+  const workspaceRegistrations = await page.evaluate(() => window.workspaceRegistrations)
+  assert.equal(workspaceRegistrations, 8 * workspaceCommands.length)
   assert.equal(await page.evaluate(() => window.threadDisposals), registrations)
   assert.equal(
     await page.evaluate(() => window.commands.size),
@@ -425,16 +457,6 @@ try {
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   )
   assert.equal(await page.evaluate(() => window.threadRegistrations), registrations)
-  const settle = () =>
-    page.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-    )
-  const assertCommands = async (count) => {
-    await page.waitForFunction((count) => window.commands.size === count, count)
-    await settle()
-    assert.equal(await page.evaluate(() => window.commands.size), count)
-    assert.deepEqual(errors, [], phase)
-  }
   const browserRow = page
     .locator('.studio-task-sidebar')
     .getByRole('group', { name: 'Page: http://lan.local:3000/', exact: true })
@@ -447,7 +469,7 @@ try {
   await input.fill('Home draft survives repeated item swapping')
   await selectThread('Remote retained thread')
   await page.waitForFunction(() => window.activeRuntimeId === 'remote')
-  await assertCommands(4)
+  await assertCommands(idleThreadCommands)
   await editor.fill('Remote owner draft')
   const localTaskIds = await page.evaluate(() =>
     window.snapshots.local.workspace.tasks.map((task) => task.id),
@@ -470,11 +492,13 @@ try {
       phase = `switch ${iteration + 1} at ${width}px: ${runtimeId}/${title}`
       await selectThread(title)
       await page.waitForFunction((id) => window.activeRuntimeId === id, runtimeId)
-      await assertCommands(4)
+      const threadCommands = runtimeId === 'remote' ? idleThreadCommands : runningThreadCommands
+      await assertCommands(threadCommands)
       assert.equal(await editor.innerText(), draft, phase)
       assert.equal(await input.isVisible(), false, 'Unified composer is Home-only')
 
       // Workbench's activity rail uses this same application-state setter.
+      const visibleRegistrations = await page.evaluate(() => window.threadRegistrations)
       await page.evaluate(() => window.setSidebarCollapsed(true))
       await settle()
       assert.equal(
@@ -489,18 +513,16 @@ try {
           title,
           'The retained thread header portals into the actual TitleBar',
         )
-      await assertCommands(4)
+      await assertCommands(threadCommands)
       await page.evaluate(() => window.setSidebarCollapsed(false))
       await settle()
-      await assertCommands(4)
+      await assertCommands(threadCommands)
+      assert.equal(await page.evaluate(() => window.threadRegistrations), visibleRegistrations)
 
       phase += ' → browser'
       await browserRow.locator('[data-browser-tab-select]').click()
       await page.locator('[data-browser-viewport]').waitFor({ state: 'visible' })
-      await assertCommands(1)
-      assert.deepEqual(await page.evaluate(() => [...window.commands.keys()]), [
-        'browser.site-information',
-      ])
+      await assertCommands(browserCommands)
       assert.equal(await page.evaluate(() => window.activeRuntimeId), runtimeId)
 
       phase += ' → local terminal'
@@ -511,7 +533,7 @@ try {
           .querySelector('.dovo-terminal-accessible')
           ?.textContent.includes('Retained terminal replay'),
       )
-      await assertCommands(0)
+      await assertCommands([])
       // Activity tears down and resumes the renderer effect; the owning pane/session survives.
       assert.equal(
         await terminal.evaluate((element) => element === window.originalTerminalPane),
@@ -522,10 +544,10 @@ try {
 
       phase += ' → Home'
       await home()
-      await assertCommands(0)
+      await assertCommands([])
       assert.equal(await input.inputValue(), 'Home draft survives repeated item swapping')
       await page.evaluate(() => window.refreshSnapshot())
-      await assertCommands(0)
+      await assertCommands([])
     }
   }
   assert.deepEqual(
@@ -552,8 +574,8 @@ try {
     'Every resumed TasksView releases its commands on Home',
   )
   assert.equal(
-    await page.evaluate(() => window.threadRegistrations),
-    registrations + 37 * 4,
+    await page.evaluate(() => window.workspaceRegistrations),
+    workspaceRegistrations + 37 * workspaceCommands.length,
     'Each visible thread lifetime registers once; header and snapshot updates do not churn commands',
   )
   assert.ok(
