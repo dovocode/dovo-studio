@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   decode,
@@ -31,8 +33,10 @@ const codex: CodexPluginHost = {
 async function setup() {
   const f = await fixture()
   cleanups.push(f.cleanup)
+  const state = await mkdtemp(join(tmpdir(), 'dovo-organization-plugins-'))
+  cleanups.push(() => rm(state, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const runtime = await startRuntime({
-    databasePath: join(f.directory, 'state.sqlite'),
+    databasePath: join(state, 'state.sqlite'),
     ownerToken: 'group-owner-token-with-at-least-32-characters',
     port: 0,
   })
@@ -41,7 +45,7 @@ async function setup() {
   s.devices.add('Paired computer', human)
   s.harnessPlugins = new HarnessPlugins(
     s.db,
-    join(f.directory, 'harness-plugins'),
+    join(state, 'harness-plugins'),
     codex,
     pluginRepository().fetcher,
   )
