@@ -597,6 +597,7 @@ export function Composer({
     title?: string
     accepted?: boolean
     draftRevision: number
+    draftCheckpoint?: string | null
     runId?: string
     startupConfiguration?: Task
     preserveQueuePause?: boolean
@@ -618,7 +619,12 @@ export function Composer({
       const unchanged = composerDraft.controller.revision === submitted.draftRevision
       if (!submitted.accepted) {
         submitted.accepted = true
-        acceptDraft(submitted.text, submitted.draftRevision, submitted.draftIdentity)
+        acceptDraft(
+          submitted.text,
+          submitted.draftRevision,
+          submitted.draftIdentity,
+          submitted.draftCheckpoint,
+        )
         if (unchanged && submitted.draftIdentity === undefined) {
           setTurnSettings((current) =>
             sameTurnSettings(current, submitted.turnSettings) ? null : current,
@@ -947,6 +953,7 @@ export function Composer({
       if (!mounted.current || composerDraft.controller.revision !== submittedRevision)
         throw new Error('The draft changed while preparing attachments. Review it and try again.')
       composerDraft.flush()
+      attempt.current.draftCheckpoint = composerDraft.checkpoint()
       await flush(task.id)
       if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {
         const selected = await request(
@@ -1048,7 +1055,12 @@ export function Composer({
         )
       const unchanged = composerDraft.controller.revision === attempt.current.draftRevision
       if (!attempt.current.accepted) {
-        composerDraft.accept(text, attempt.current.draftRevision, attempt.current.draftIdentity)
+        composerDraft.accept(
+          text,
+          attempt.current.draftRevision,
+          attempt.current.draftIdentity,
+          acknowledged ? attempt.current.draftCheckpoint : undefined,
+        )
         attempt.current.accepted = true
       }
       if (unchanged && attempt.current.draftIdentity === undefined) {

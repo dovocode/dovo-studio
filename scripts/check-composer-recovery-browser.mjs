@@ -44,7 +44,7 @@ function App() {
   const [visible,setVisible] = useState(true); const [mount,setMount] = useState(0);
   const {scope} = useQuestionRecovery(); window.scope = scope;
   window.navigate = () => setVisible(value=>!value); window.remount = () => setMount(value=>value+1);
-  return visible ? <><Composer key={JSON.stringify([context.connection?.runtimeId, JSON.stringify([context.connection?.address, context.connection?.token, context.workspace.tasks[0].id]), mount])} task={context.workspace.tasks[0]}/></> : <p>Other route</p>;
+  return visible ? <><Composer key={JSON.stringify([context.connection?.runtimeId, JSON.stringify([context.connection?.address, context.connection?.token, context.workspace.tasks[0].id]), mount])} task={{messages:[],...context.workspace.tasks[0]}}/></> : <p>Other route</p>;
 }
 createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
 `,

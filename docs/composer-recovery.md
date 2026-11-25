@@ -8,10 +8,12 @@ Records use the runtime ID, credential identity and thread ID. Legacy connection
 ID use the runtime origin. Known runtime IDs keep recovery records stable across LAN and VPN address
 changes. Keys hash the credential; they do not contain the token. A runtime acknowledgement retires
 the pending text and keeps a revision marker plus a synced backup. If the workspace cache differs
-after reload, **Saved local draft** lets the user select and copy that backup. It does not replace
-the workspace draft. An old send result cannot clear a newer record, including identical text typed
-in a remounted composer. Offline records remain until sync succeeds. Storage errors keep the text in
-memory and show an error. Keep the window open if local storage fails.
+after reload, **Saved local draft** lets the user select and copy that backup. A confirmed send
+removes the backup for the exact local revision it submitted. Older backups stay hidden while their
+exact text is available in the thread or queue. An old send result cannot clear a newer record,
+including identical text typed in a remounted composer. Offline records remain until sync succeeds.
+Storage errors keep the text in memory and show an error. Keep the window open if local storage
+fails.
 
 Ordinary question answers use one shared recovery store on both clients. Web uses local storage.
 Mobile uses AsyncStorage with ordered writes. Each record includes the runtime credential scope,

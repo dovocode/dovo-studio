@@ -137,6 +137,22 @@ test('retired records keep revision identity without replaying already synced te
   expect(createComposerRecovery('thread').text).toBeNull()
   expect(createComposerRecovery('thread').backup).toBe('Submitted')
   expect(old.protect('', 'Submitted')).toBe(false)
+  old.retire(old.checkpoint(), 'Submitted')
+  expect(createComposerRecovery('thread').backup).toBe('Submitted')
+})
+
+test('a send clears its matching backup even when draft sync completes again later', () => {
+  disk()
+  const recovery = createComposerRecovery('thread')
+  recovery.protect(' Submitted\n')
+  const checkpoint = recovery.checkpoint()
+  recovery.retire(checkpoint)
+  recovery.retire(checkpoint, 'Different message')
+  expect(createComposerRecovery('thread').backup).toBe(' Submitted\n')
+  recovery.retire(checkpoint, 'Submitted')
+  recovery.retire(checkpoint)
+  expect(createComposerRecovery('thread').backup).toBe('')
+  expect(createComposerRecovery('thread').checkpoint()).toBe(checkpoint)
 })
 
 test('an unflushed old send cannot replace a remounted composer', () => {

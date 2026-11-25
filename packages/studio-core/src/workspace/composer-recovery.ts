@@ -116,20 +116,23 @@ export function createComposerRecovery(key: string, startupRepositoryId?: string
     checkpoint(this: void) {
       return owned
     },
-    retire(this: void, checkpoint: string | null) {
+    retire(this: void, checkpoint: string | null, submitted?: string) {
       // Keep a small revision marker after sync, so a stale acknowledgement cannot clear
       // identical text written by a newer composer. Synced text is no longer replayed.
       const current = record(key)
-      if (checkpoint !== null && current?.id === checkpoint)
-        localStorage.setItem(
-          key,
-          JSON.stringify({
-            text: null,
-            id: checkpoint,
-            backup: current.text ?? current.backup ?? '',
-            startup: current.startup,
-          }),
-        )
+      if (checkpoint === null || current?.id !== checkpoint) return false
+      const text = current.text ?? current.backup ?? ''
+      if (submitted !== undefined && text.trim() !== submitted.trim()) return false
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          text: null,
+          id: checkpoint,
+          backup: submitted === undefined ? text : '',
+          startup: current.startup,
+        }),
+      )
+      return true
     },
   }
 }

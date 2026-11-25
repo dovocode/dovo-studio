@@ -87,7 +87,10 @@ function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[
 const browser = await chromium.launch({ headless: true })
 try {
   if (!draftIdentityOnly) await checkLateForkSelection()
-  if (!forkNavigationOnly) await checkDraftIdentity()
+  if (!forkNavigationOnly) {
+    await checkDraftIdentity()
+    await checkSentDraftRecovery()
+  }
   if (!forkNavigationOnly && !draftIdentityOnly) await checkComposerSend()
 } finally {
   await browser.close()
@@ -202,6 +205,84 @@ async function checkDraftIdentity() {
   console.log(
     'Composer preserves the newer same-text draft on current runtimes and sends to older runtimes.',
   )
+}
+
+async function checkSentDraftRecovery() {
+  for (const snapshotFirst of [false, true]) {
+    const { page, errors } = await openComposerPage(false)
+    page.setDefaultTimeout(8_000)
+    const input = page.getByRole('textbox', { name: 'Message' })
+    const savedDraft = page.getByText('Saved local draft', { exact: true })
+    const remount = async () => {
+      const mount = await input.getAttribute('data-editor-mount')
+      await page.evaluate(() => window.remount())
+      await page.waitForFunction(
+        (previous) => document.querySelector('textarea').dataset.editorMount !== previous,
+        mount,
+      )
+    }
+    await input.waitFor()
+    await page.evaluate(() => {
+      window.guardedDraft = true
+      window.setTask((task) => ({ ...task, status: 'completed' }))
+    })
+    await input.fill('Send the weekly summary')
+    await page.locator('button[type=submit]').click()
+    await page.waitForFunction(() => typeof window.response === 'function')
+    const publishMessage = () =>
+      page.evaluate(() => {
+        const { message } = window.pending
+        window.setTask((task) => ({
+          ...task,
+          status: 'running',
+          draft: '',
+          messages: [...task.messages, message],
+        }))
+      })
+    if (snapshotFirst) {
+      await publishMessage()
+      await page.waitForFunction(() => document.querySelector('textarea').value === '')
+    }
+    await page.evaluate(() => window.response())
+    await page.waitForFunction(
+      () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+    )
+    if (!snapshotFirst) await publishMessage()
+    await page.waitForFunction(() => window.current.messages.length === 1)
+    await remount()
+    assert.equal(await input.inputValue(), '')
+    assert.equal(await savedDraft.count(), 0)
+    assert.equal(
+      await page.evaluate(() =>
+        Object.keys(localStorage).some(
+          (key) =>
+            key.startsWith('dovo.composer-recovery') &&
+            localStorage.getItem(key).includes('Send the weekly summary'),
+        ),
+      ),
+      false,
+      'An admitted message retires the submitted recovery text',
+    )
+    await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((key) => key.startsWith('dovo.composer-recovery'))
+      localStorage.setItem(
+        key,
+        JSON.stringify({ id: 'old-sync', text: null, backup: window.current.messages[0].text }),
+      )
+    })
+    await remount()
+    assert.equal(await savedDraft.count(), 0, 'The transcript already contains this older backup')
+    await page.evaluate(() =>
+      window.setTask((task) => ({ ...task, queue: task.messages, messages: [] })),
+    )
+    await page.waitForFunction(() => window.current.queue.length === 1)
+    assert.equal(await savedDraft.count(), 0, 'The queue already contains this older backup')
+    await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
+    await savedDraft.waitFor()
+    assert.deepEqual(errors, [])
+    await page.close()
+  }
+  console.log('Sending retires the saved draft in either snapshot order, including after remount.')
 }
 
 async function checkComposerSend() {

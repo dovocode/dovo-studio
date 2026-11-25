@@ -57,13 +57,19 @@ export function useComposerDraft(
       return { current: null }
     }
   })
-  const [recoveryText, setRecoveryText] = useState(() =>
+  const [backup, setBackup] = useState(() =>
     recovery.current?.backup !== task.draft ? (recovery.current?.backup ?? '') : '',
   )
+  const checkpoint = useCallback(() => recovery.current?.checkpoint() ?? null, [recovery])
+  const showBackup =
+    backup &&
+    backup !== task.draft &&
+    !task.queue?.some((message) => message.text === backup) &&
+    !task.messages.some((message) => message.role === 'user' && message.text === backup)
   const discardRecovery = () => {
     try {
       recovery.current?.discardBackup()
-      setRecoveryText('')
+      setBackup('')
     } catch (cause) {
       report(cause)
     }
@@ -189,19 +195,26 @@ export function useComposerDraft(
     [controller, temporary],
   )
   const accept = useCallback(
-    (submitted: string, revision?: number, identity?: string) => {
+    (
+      submitted: string,
+      revision?: number,
+      identity?: string,
+      submittedCheckpoint?: string | null,
+    ) => {
       try {
         const previous = savedController.revision
-        const checkpoint = recovery.current?.checkpoint() ?? null
+        const currentCheckpoint = checkpoint()
         savedController.accept(submitted, revision, identity)
-        if (identity !== undefined && savedController.revision !== previous)
-          recovery.current?.retire(checkpoint)
+        if (submittedCheckpoint != null && recovery.current?.retire(submittedCheckpoint, submitted))
+          setBackup((current) => (current.trim() === submitted.trim() ? '' : current))
+        else if (identity !== undefined && savedController.revision !== previous)
+          recovery.current?.retire(currentCheckpoint)
         setError('')
       } catch (cause) {
         report(cause)
       }
     },
-    [savedController, recovery, report],
+    [savedController, checkpoint, recovery, report],
   )
   // Handoffs always target the saved draft, even while a queued message is being edited, and
   // persist immediately on top of any local edits the runtime has not seen yet.
@@ -222,8 +235,9 @@ export function useComposerDraft(
   )
   return {
     controller,
-    recoveryText,
+    recoveryText: showBackup ? backup : '',
     discardRecovery,
+    checkpoint,
     hasText,
     error,
     update,
