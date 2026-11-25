@@ -1260,6 +1260,7 @@ try {
   if (stylesheet)
     for (const scheme of ['dark', 'light']) {
       const page = await browser.newPage({ viewport: { width: 340, height: 380 } })
+      await page.clock.setFixedTime(new Date('2026-10-14T10:12:30Z'))
       await page.setContent('<div id="app" class="studio"></div>')
       await page.addStyleTag({ content: stylesheet + 'body{margin:0;background:var(--sidebar)}' })
       await page.evaluate((scheme) => {
@@ -1285,8 +1286,10 @@ try {
         const statusLabel = await status.getAttribute('aria-label')
         if (label) assert.equal(statusLabel.split(' · ')[0], label)
         else assert.equal(statusLabel, `${age} ago`)
-        if (label === 'Working') assert.equal(age, '')
-        else assert.match(age, /^\d+[mhd]$/)
+        if (label === 'Working') {
+          assert.equal(age, '2h 12m')
+          assert.equal(statusLabel, `Working · ${age}`)
+        } else assert.match(age, /^\d+[mhd]$/)
         assert.equal(await status.locator('svg').count(), label ? 1 : 0)
         assert.equal(await status.getAttribute('data-tone'), tone)
       }

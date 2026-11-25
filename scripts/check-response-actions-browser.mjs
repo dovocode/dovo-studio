@@ -22,9 +22,9 @@ try {
           loader: 'tsx',
           contents: `
 import {executeStudioUI} from './packages/studio-shell/src/studio-tools-ui';
-window.studioUI=command=>{try{return executeStudioUI(document,command)}catch(error){return {error:error.message}}};
+window.studioUI=command=>{try{return executeStudioUI(document,decode(studioUICommandSchema,{sessionId:'fixture',...command}))}catch(error){return {error:error.message}}};
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
-import {decode,threadActionSchema,threadActionReviewSchema,responseActionSendSchema,RuntimeRequestError,resolveResponseAction} from '@dovo/protocol';
+import {decode,studioUICommandSchema,threadActionSchema,threadActionReviewSchema,responseActionSendSchema,RuntimeRequestError,resolveResponseAction} from '@dovo/protocol';
 import {ResponseActionCard} from './${platform === 'desktop' ? 'packages/extension-tasks/src/chat/thread' : 'apps/mobile/src/tasks/conversation/components'}/response-action-card';
 const stamp='2026-11-13T00:00:00Z';
 const card=(id,response)=>decode(threadActionSchema,{id,key:id,title:id,prompt:'Suggested action',runId:'run',state:'prepared',createdAt:stamp,updatedAt:stamp,response});
@@ -178,7 +178,7 @@ createRoot(document.getElementById('app')).render(<App/>);
     if (platform === 'desktop') {
       const denied = await page.evaluate(() =>
         window.studioUI({
-          action: 'input',
+          action: 'fill',
           selector: '[aria-label="Release name"]',
           text: 'Injected',
         }),

@@ -123,6 +123,7 @@ try {
     }),
   )
   await page.goto('https://dovo.test')
+  await page.clock.install()
   await page.evaluate(() => {
     localStorage.setItem(
       'dovo.app-preferences.v1',
@@ -202,15 +203,34 @@ try {
   await page.getByText('Running thread', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
 
-  // The running row owns its one-second clock; the list itself does not re-render.
+  // Only the running thread and the parent waiting for its child update on clock ticks.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+  const clocks = ['Running thread', 'Parent thread'].map((title) =>
+    page
+      .locator('[data-task-row-key]')
+      .filter({ has: page.getByText(title, { exact: true }) })
+      .locator('.studio-thread-status'),
+  )
+  const ages = await Promise.all(clocks.map((clock) => clock.innerText()))
+  for (const age of ages) assert.match(age.trim(), /^\d+s$/)
   await page.evaluate(() => {
     window.counts.rows = 0
     window.counts.list = 0
   })
-  await page.waitForTimeout(3200)
+  for (let seconds = 1; seconds <= 3; seconds++) {
+    await page.clock.runFor(1000)
+    await Promise.all(
+      clocks.map((clock, index) =>
+        clock
+          .filter({ hasText: new RegExp(`^\\s*${parseInt(ages[index], 10) + seconds}s\\s*$`) })
+          .waitFor(),
+      ),
+    )
+  }
   const ticking = await page.evaluate(() => ({ ...window.counts }))
   assert.equal(ticking.list, 0, `list re-rendered ${ticking.list} times for a running clock`)
-  assert.ok(ticking.rows >= 2 && ticking.rows <= 5, `${ticking.rows} row renders in 3.2 seconds`)
+  assert.equal(ticking.rows, 6, `${ticking.rows} row renders across three clock ticks`)
+  await page.clock.resume()
 
   // Commands resolve the latest entry, including after a task changes underneath its row.
   await page.evaluate(() =>
@@ -1222,7 +1242,7 @@ try {
   assert.equal(await bots.getByRole('button', { name: 'New Bot', exact: true }).isVisible(), true)
   assert.deepEqual(errors, [])
   console.log(
-    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; selector isolation, latest-entry commands, parent-only overview, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
+    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} row renders over three clock ticks with no list renders; selector isolation, latest-entry commands, parent-only overview, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
   )
 } finally {
   await browser.close()

@@ -12,10 +12,10 @@ const bundle = (realDialogs) =>
         loader: 'tsx',
         contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
-import {decode,RuntimeRequestError,taskHarnessSchema,threadActionSchema,threadActionResultSchema,automationActionSendSchema,threadActionReviewSchema} from '@dovo/protocol';
+import {decode,studioUICommandSchema,RuntimeRequestError,taskHarnessSchema,threadActionSchema,threadActionResultSchema,automationActionSendSchema,threadActionReviewSchema} from '@dovo/protocol';
 import {ThreadActionCard} from './packages/extension-tasks/src/chat/thread/thread-action-card';
 import {executeStudioUI} from './packages/studio-shell/src/studio-tools-ui';
-window.studioUI=command=>{try{return executeStudioUI(document,command)}catch(error){return {error:error.message}}};
+window.studioUI=command=>{try{return executeStudioUI(document,decode(studioUICommandSchema,{sessionId:'fixture',...command}))}catch(error){return {error:error.message}}};
 const stamp='2026-11-12T00:00:00Z';
 const node=(id,kind,label,data={})=>({id,type:'automation',position:{x:0,y:0},data:{kind,label,trigger:'manual',schedule:'',timezone:'Europe/Amsterdam',objective:'',agentId:'agent-1',repositoryId:'project',harness:{provider:'codex',env:{API_TOKEN:'SECRET-HARNESS-VALUE'}},...data}});
 const workflow=(objective,enabled=true)=>({id:'nightly',name:'Nightly review',enabled,nodes:[node('start','trigger','Start',{trigger:'schedule',schedule:'0 9 * * 1-5'}),node('triage','task','Triage issues',{objective,botId:'bot-1',execution:'worktree'}),node('fix','task','Fix failures',{objective:'Fix the failing checks.',execution:'worktree'})],edges:[{id:'e1',source:'start',target:'triage'},{id:'e2',source:'triage',target:'fix'}]});
