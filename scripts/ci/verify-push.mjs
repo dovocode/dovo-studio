@@ -41,6 +41,8 @@ const checks = [
     ['node', 'scripts/check-mobile-automation-actions-browser.mjs'],
   ],
   [
+    ['node', 'scripts/check-mobile-sheet-layout-browser.mjs'],
+    ['node', 'scripts/check-mobile-bots-browser.mjs'],
     ['pnpm', 'check:interface-catalogs'],
     ['pnpm', 'test:ci:scripts'],
     ['node', 'scripts/check-runtime-sync.mjs'],

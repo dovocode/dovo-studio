@@ -17,6 +17,7 @@ export const Pressable=({children,onPress,disabled,style,accessibilityLabel})=><
 export const ScrollView=({children,style,contentContainerStyle})=><div data-scroll style={{...base,overflowY:'auto',flexGrow:1,flexShrink:1,...css(style)}}><View style={contentContainerStyle}>{children}</View></div>;
 export const KeyboardAvoidingView=({children,style,behavior})=><div data-keyboard-avoidance={behavior} style={{...base,...css(style)}}>{children}</div>;
 export const Platform={get OS(){return window.platform}};
+export const BackHandler={addEventListener(){return {remove(){}}}};
 const listeners=window.sheetKeyboardListeners??=new Map();
 export const Keyboard={dismiss(){window.keyboardDismissals++;window.emitKeyboard(false)},addListener:(event,callback)=>{const callbacks=listeners.get(event)??new Set();callbacks.add(callback);listeners.set(event,callbacks);return {remove:()=>callbacks.delete(callback)}}};
 window.emitKeyboard=visible=>listeners.get(visible?'keyboardDidShow':'keyboardDidHide')?.forEach(callback=>callback());

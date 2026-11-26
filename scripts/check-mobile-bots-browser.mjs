@@ -628,6 +628,7 @@ const base={display:'flex',flexDirection:'column',alignItems:'stretch',flexShrin
 const scale=()=>window.fontScale;
 export const StyleSheet={create:s=>s,flatten:flat,hairlineWidth:1};
 export const Platform={OS:'android'};export const Alert={alert(){}};
+export const BackHandler={addEventListener(){return {remove(){}}}};
 const keyboard=new Map();
 export const Keyboard={dismiss(){},addListener:(event,callback)=>{const set=keyboard.get(event)??new Set();set.add(callback);keyboard.set(event,set);return {remove:()=>set.delete(callback)}}};
 export const useWindowDimensions=()=>{useSyncExternalStore(window.subscribe,()=>window.version);return {width:innerWidth,height:innerHeight,fontScale:scale()}};

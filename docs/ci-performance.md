@@ -47,6 +47,9 @@ node scripts/ci/update-browser-durations.mjs /tmp/dovo-browser-timings/*/*.json
 node scripts/run-browser-suites.mjs 0 4 --list
 ```
 
+The local `pnpm verify:push` gate runs the mobile Sheet layout and Bot screen browser checks. These
+checks exercise the React Native fixture exports used by the mobile browser suites.
+
 The design-system matrix has four shards covering every story and hosted page in both themes and
 viewports, including accessibility checks. The browser registry runs catalog interactions once. See
 [design-system.md](design-system.md) for the local selection commands.
