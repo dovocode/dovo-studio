@@ -80,7 +80,7 @@ try {
           },
           {
             path: '@dovo/studio-ui',
-            contents: `export const Button=({children,...props})=><button {...props}>{children}</button>;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogDescription=Dialog,DialogFooter=Dialog;export const ModelSettings=()=>null,FormField=Dialog,ChoicePicker=Dialog,PermissionPolicyFields=()=>null;export const permissionPolicyUIIssue=()=>undefined;`,
+            contents: `export const Button=({children,...props})=><button {...props}>{children}</button>;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogDescription=Dialog,DialogFooter=Dialog;export const ModelSettings=()=>null,FormField=Dialog,ChoicePicker=Dialog,PermissionPolicyFields=()=>null;export const permissionPolicyUIIssue=()=>undefined;export const useHarnessAvailability=()=>({claudeAutoLimits:new Map()});`,
           },
         ]
     const built = await bundleBrowser(

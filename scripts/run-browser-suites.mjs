@@ -79,6 +79,7 @@ const windows = process.platform === 'win32'
 const shell = windows ? (process.env.ComSpec ?? 'cmd.exe') : 'sh'
 const shellArgs = (command) => (windows ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command])
 const summary = process.env.GITHUB_STEP_SUMMARY
+let exitCode = 0
 for (const suite of selected.suites) {
   console.log(values.list || count === 1 ? suite : `Shard ${shard + 1}/${count}: ${suite}`)
   if (values.list) continue
@@ -86,36 +87,33 @@ for (const suite of selected.suites) {
   const prepared = browserChecks(manifest.scripts[suite])
   if (!prepared) throw new Error(`Browser suite has no checks: ${suite}`)
   const commands = prepared.split(' && ')
-  const checks = []
+  const report = { name: suite, seconds: 0, status: 'incomplete', checks: [] }
+  timings.push(report)
   for (const command of commands) {
     const results = runBrowserCheck('pnpm', ['exec', shell, ...shellArgs(command)], { attempts })
     const last = results.at(-1)
     const status = last.exitCode !== 0 ? 'failure' : results.length > 1 ? 'flaky' : 'success'
-    checks.push({ command, status, attempts: results })
-    const report = {
-      name: suite,
-      seconds: Math.round((performance.now() - started) / 100) / 10,
-      status:
-        last.exitCode !== 0
-          ? 'failure'
-          : checks.length === commands.length
-            ? 'success'
-            : 'incomplete',
-      checks,
-    }
+    report.checks.push({ command, status, attempts: results })
+    report.seconds = Math.round((performance.now() - started) / 100) / 10
+    report.status =
+      last.exitCode !== 0
+        ? 'failure'
+        : report.checks.length === commands.length
+          ? 'success'
+          : 'incomplete'
     if (timingsPath)
-      writeFileSync(
-        timingsPath,
-        JSON.stringify({ shard, count, suites: [...timings, report] }, null, 2) + '\n',
-      )
+      writeFileSync(timingsPath, JSON.stringify({ shard, count, suites: timings }, null, 2) + '\n')
     if (summary && status !== 'success')
       appendFileSync(
         summary,
         `- ${suite}: \`${command}\` (${status}, ${results.length} attempts)\n`,
       )
-    if (last.exitCode !== 0) process.exit(last.exitCode)
+    if (last.exitCode !== 0) {
+      exitCode ||= last.exitCode
+      break
+    }
   }
-  const seconds = Math.round((performance.now() - started) / 100) / 10
-  timings.push({ name: suite, seconds, status: 'success', checks })
-  if (summary) appendFileSync(summary, `- ${suite}: ${seconds}s (success)\n`)
+  if (summary && report.status === 'success')
+    appendFileSync(summary, `- ${suite}: ${report.seconds}s (success)\n`)
 }
+process.exitCode = exitCode

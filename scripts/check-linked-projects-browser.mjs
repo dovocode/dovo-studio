@@ -31,11 +31,11 @@ try {
   for (const mobile of [false, true]) {
     const mocks = {
       '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
-      '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const formatDateTime=String;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});`,
+      '@dovo/studio-core': `export * from '@dovo/protocol';export {DiscoveryCache} from '${root}/packages/client-runtime/src/index.ts';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const formatDateTime=String;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});`,
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
       '@dovo/studio-ui':
         controls +
-        `export * as Popover from '@radix-ui/react-popover';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';export {LinkedCheckoutEditor} from '${root}/packages/studio-ui/src/linked-checkouts.tsx';`,
+        `export * as Popover from '@radix-ui/react-popover';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';export {LinkedCheckoutEditor} from '${root}/packages/studio-ui/src/linked-checkouts.tsx';export {useHarnessAvailability} from '${root}/packages/studio-ui/src/use-harness-availability.ts';`,
       'react-native': controls,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '../../runtime/connection/provider': `export const useRuntime=()=>({connected:window.store.connected,snapshot:{workspace:window.store.workspace},call:window.store.request});`,

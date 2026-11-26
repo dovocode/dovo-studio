@@ -425,11 +425,13 @@ try {
     ['remote:host-android:android:avd', 'remote:host-ios:ios:uuid'],
   )
 
+  const refreshDevices = button('Refresh devices')
+  await refreshDevices.waitFor()
   const discoveries = await page.evaluate(
     () => window.operations.filter((op) => op.path === '/api/previews/devices').length,
   )
   await page.evaluate(() => window.setHub(false))
-  await button('Refresh devices').click()
+  await refreshDevices.click()
   await button('Enable in Device previews settings').waitFor()
   assert.equal(await ios.count(), 0)
   assert.equal(

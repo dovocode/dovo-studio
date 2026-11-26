@@ -36,6 +36,8 @@ const checks = [
   [
     ['pnpm', 'test:command-palette:browser'],
     ['node', 'scripts/check-desktop-source-readers-browser.mjs'],
+    ['node', 'scripts/check-checkpoint-diff-browser.mjs'],
+    ['node', 'scripts/check-project-file-preview-browser.mjs'],
     ['node', 'scripts/check-mobile-thread-files-browser.mjs'],
     ['node', 'scripts/check-browser-tabs-browser.mjs'],
     ['node', 'scripts/check-mobile-automation-actions-browser.mjs'],
@@ -43,6 +45,7 @@ const checks = [
   [
     ['node', 'scripts/check-mobile-sheet-layout-browser.mjs'],
     ['node', 'scripts/check-mobile-bots-browser.mjs'],
+    ['node', 'scripts/check-mobile-draft-transition-browser.mjs'],
     ['pnpm', 'check:interface-catalogs'],
     ['pnpm', 'test:ci:scripts'],
     ['node', 'scripts/check-runtime-sync.mjs'],

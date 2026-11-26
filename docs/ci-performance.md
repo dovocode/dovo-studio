@@ -38,8 +38,9 @@ The browser registry is assigned longest-first using `scripts/ci/browser-duratio
 registered suites use the median measured duration and are included automatically. Each shard emits
 an actual duration summary and a `browser-timings-N` artifact, including partial results on failure.
 The artifact records each check's exit status and attempts. A retry runs only the failed check, so
-earlier generators and successful checks keep their results. Refresh the estimates after meaningful
-changes to suite timings:
+earlier generators and successful checks keep their results. If a check still fails, the shard stops
+that suite, runs the remaining suites and exits with a failure. Refresh the estimates after
+meaningful changes to suite timings:
 
 ```sh
 gh run download RUN_ID --pattern 'browser-timings-*' --dir /tmp/dovo-browser-timings
@@ -47,8 +48,9 @@ node scripts/ci/update-browser-durations.mjs /tmp/dovo-browser-timings/*/*.json
 node scripts/run-browser-suites.mjs 0 4 --list
 ```
 
-The local `pnpm verify:push` gate runs the mobile Sheet layout and Bot screen browser checks. These
-checks exercise the React Native fixture exports used by the mobile browser suites.
+The local `pnpm verify:push` gate checks mobile Sheet layout, Bot screens, draft transitions,
+checkpoint attachments and project file previews. These checks exercise the fixture exports used by
+those browser suites. Run `pnpm test:browser --jobs 4` for the full browser matrix locally.
 
 The design-system matrix has four shards covering every story and hosted page in both themes and
 viewports, including accessibility checks. The browser registry runs catalog interactions once. See

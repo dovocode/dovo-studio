@@ -51,7 +51,7 @@ const bundle = await bundleBrowser(
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const FileChangeCounts=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
+      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const MessageResponse=({children})=><div>{children}</div>;export const FileTypeIcon=()=>null;export const FileChangeCounts=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
     },
     {
       path: '@dovo/studio-ui/code-themes',

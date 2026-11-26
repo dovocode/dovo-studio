@@ -139,6 +139,7 @@ await test(
         JSON.stringify({
           scripts: {
             'test:fixture:browser': 'node first.mjs && node second.mjs && node third.mjs',
+            'test:later:browser': 'node fourth.mjs',
           },
         }),
       )
@@ -173,7 +174,7 @@ fi
         return {
           result,
           invocations: readFileSync(calls, 'utf8').trim().split('\n'),
-          suite: JSON.parse(readFileSync(timings, 'utf8')).suites[0],
+          suites: JSON.parse(readFileSync(timings, 'utf8')).suites,
         }
       }
       const flaky = run(false)
@@ -183,10 +184,11 @@ fi
         'node second.mjs',
         'node second.mjs',
         'node third.mjs',
+        'node fourth.mjs',
       ])
-      assert.equal(flaky.suite.status, 'success')
+      assert.equal(flaky.suites[0].status, 'success')
       assert.deepEqual(
-        flaky.suite.checks.map(({ status, attempts }) => [
+        flaky.suites[0].checks.map(({ status, attempts }) => [
           status,
           attempts.map(({ exitCode }) => exitCode),
         ]),
@@ -198,9 +200,20 @@ fi
       )
       const failed = run(true)
       assert.equal(failed.result.status, 7)
-      assert.deepEqual(failed.invocations, ['node first.mjs', 'node second.mjs', 'node second.mjs'])
-      assert.equal(failed.suite.status, 'failure')
-      assert.equal(failed.suite.checks[1].status, 'failure')
+      assert.deepEqual(failed.invocations, [
+        'node first.mjs',
+        'node second.mjs',
+        'node second.mjs',
+        'node fourth.mjs',
+      ])
+      assert.deepEqual(
+        failed.suites.map(({ name, status }) => [name, status]),
+        [
+          ['test:fixture:browser', 'failure'],
+          ['test:later:browser', 'success'],
+        ],
+      )
+      assert.equal(failed.suites[0].checks[1].status, 'failure')
 
       writeFileSync(
         join(root, 'package.json'),

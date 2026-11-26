@@ -183,7 +183,7 @@ try {
     previewURL.origin + previewURL.pathname,
     'http://remote-runtime.test:7777/api/tasks/files/shared/scoped-ticket',
   )
-  assert.match(previewURL.hash, /^#dovo-pdf=[0-9a-f-]{36}$/i)
+  assert.equal(previewURL.hash, '#L12')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.evaluate(() => window.append())
   await desktop.getByText('More response text', { exact: false }).waitFor()
@@ -194,8 +194,18 @@ try {
     1,
   )
   const mobile = page.locator('[data-client="mobile"]')
+  await mobile.getByRole('link', { name: 'Source', exact: true }).click()
+  const source = page.getByRole('dialog').locator('[data-video-preview]')
+  await source.waitFor()
+  assert.equal(new URL(await source.getAttribute('data-video-preview')).hash, '#L12')
+  await page.getByRole('button', { name: 'Close preview', exact: true }).click()
   await mobile.getByRole('link', { name: 'File', exact: true }).click()
-  await mobile.getByRole('dialog').locator('[data-video-preview]').waitFor()
+  const pdfPreview = page.getByRole('dialog').locator('[data-video-preview]')
+  await pdfPreview.waitFor()
+  assert.match(
+    new URL(await pdfPreview.getAttribute('data-video-preview')).hash,
+    /^#dovo-pdf=[0-9a-f-]{36}$/i,
+  )
   assert.equal(await page.evaluate(() => window.opened.length), 0)
   await mobile.getByRole('button', { name: 'Close preview', exact: true }).click()
   assert.deepEqual(
@@ -203,8 +213,9 @@ try {
       window.reads.filter((row) => row.path.endsWith('/share')).map((row) => row.input),
     ),
     [
-      { taskId: 'task', path: '/Users/dominic/a%20b.ts' },
-      { taskId: 'task', path: '/Users/dominic/a%20b.ts' },
+      { taskId: 'task', path: '/Users/dominic/a%20b.ts#L12' },
+      { taskId: 'task', path: '/Users/dominic/a%20b.ts#L12' },
+      { taskId: 'task', path: '/Users/dominic/a b.ts:12' },
       { taskId: 'task', path: 'file:///tmp/report.pdf' },
     ],
   )

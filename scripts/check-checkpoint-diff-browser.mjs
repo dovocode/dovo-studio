@@ -75,7 +75,7 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';export {ChangeSummary} from '${ui}/review/change-summary.tsx';`,
+      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';export {ChangeSummary} from '${ui}/review/change-summary.tsx';export {MessageResponse} from '${ui}/components/ai-elements/message.tsx';`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
