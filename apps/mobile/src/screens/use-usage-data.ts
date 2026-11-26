@@ -1,6 +1,11 @@
 import { useAppActive } from '../runtime/state/app-active'
 import { useEffect, useLayoutEffect, useEffectEvent, useRef, useState } from 'react'
-import { refreshUsageEntry, type UsageHub, type UsageHistoryResult } from '@dovo/protocol'
+import {
+  mergeUsageNotices,
+  refreshUsageEntry,
+  type UsageHub,
+  type UsageHistoryResult,
+} from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 /** Synchronize only when hosts change or the usage page's five-minute timer fires. */
 export function useUsageData(selected: string, kind: 'history' | 'limits') {
@@ -12,7 +17,7 @@ export function useUsageData(selected: string, kind: 'history' | 'limits') {
   const [savedHubs, setSavedHubs] = useState<
     Record<string, { connection: string; hubs: UsageHub[] }>
   >({})
-  const [notices, setNotices] = useState<Record<string, string>>({})
+  const [rawNotices, setNotices] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
   const pending = useRef(new Set<string>())
   const requested = useRef(new Set<string>())
@@ -66,7 +71,7 @@ export function useUsageData(selected: string, kind: 'history' | 'limits') {
             },
           })
           if (mounted.current && currentScope.current === scope)
-            setNotices((previous) => ({ ...previous, [entry.profile.id]: messages.join(' ') }))
+            setNotices((previous) => ({ ...previous, [entry.profile.id]: messages }))
         }),
       )
       if (mounted.current && currentScope.current === scope)
@@ -74,8 +79,9 @@ export function useUsageData(selected: string, kind: 'history' | 'limits') {
           if (result.status === 'rejected')
             setNotices((previous) => ({
               ...previous,
-              [hosts[index].profile.id]:
+              [hosts[index].profile.id]: [
                 result.reason instanceof Error ? result.reason.message : String(result.reason),
+              ],
             }))
     } finally {
       pending.current.delete(scope)
@@ -108,5 +114,12 @@ export function useUsageData(selected: string, kind: 'history' | 'limits') {
     if (value?.connection === JSON.stringify(host.profile.connection))
       histories[host.profile.id] = value.history
   }
+  const notices = mergeUsageNotices(
+    hosts.map(({ profile }) => ({
+      id: profile.id,
+      notices: rawNotices[profile.id] ?? [],
+      sources: kind === 'history' ? histories[profile.id]?.transcriptNoticeSources : undefined,
+    })),
+  )
   return { hosts, histories, hubs, notices, busy, refresh: () => void refresh(true) }
 }

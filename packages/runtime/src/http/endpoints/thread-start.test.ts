@@ -18,7 +18,8 @@ import {
 } from '@dovo/protocol'
 import { startRuntime } from '../../index'
 import type { AgentAdapter } from '../../agents/execution/types'
-import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
+import { deferred, runtimeIntegration, waitForRuntime } from '../../testing/integration'
+import { fixture } from '../../testing/fixture.js'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
@@ -111,6 +112,7 @@ async function setup() {
     return [...task.messages, ...(task.queue ?? [])].filter((message) => message.role === 'user')
   }
   return {
+    root,
     get runtime() {
       return runtime
     },
@@ -148,6 +150,130 @@ it('creates the draft and accepts its first message in one request', async () =>
     repositoryId: SCRATCH_PROJECT_ID,
   })
   await waitForRuntime(() => expect(f.runtime.run).toHaveBeenCalledTimes(1))
+})
+
+it('accepts a new worktree send and its follow-up before setup finishes', async () => {
+  const f = await setup()
+  const git = await fixture()
+  cleanups.push(git.cleanup)
+  const s = f.runtime.services
+  s.store.update((workspace) => ({ ...workspace, ...git.workspace }))
+  s.preferences.save({ worktreesRoot: join(f.root, 'worktrees') })
+  const entered = deferred<void>()
+  const setupDone = deferred<void>()
+  vi.spyOn(s.git, 'setupWorktree').mockImplementation(async () => {
+    entered.resolve()
+    await setupDone.promise
+    return ''
+  })
+  const task: Task = {
+    ...f.draft('First worktree prompt'),
+    repositoryId: 'repo',
+    execution: 'worktree',
+    setupCommand: 'echo Setup',
+  }
+  try {
+    expect((await f.startThread(task, 'first')).status).toBe(200)
+    await entered.promise
+    expect(f.runtime.run).not.toHaveBeenCalled()
+    expect(
+      (
+        await f.request('/api/tasks/message', {
+          id: task.id,
+          messageId: 'second',
+          text: 'Second worktree prompt',
+        })
+      ).status,
+    ).toBe(200)
+    expect(f.sent(task.id).map(({ id }) => id)).toEqual(['first', 'second'])
+    setupDone.resolve()
+    await waitForRuntime(() => {
+      expect(f.runtime.run).toHaveBeenCalledTimes(2)
+      expect(s.store.taskSummary(task.id).activeRunId).toBeUndefined()
+    })
+    expect(f.runtime.run.mock.calls.map(([run]) => run.prompt)).toEqual([
+      'user: First worktree prompt',
+      'user: Second worktree prompt',
+    ])
+  } finally {
+    setupDone.resolve()
+  }
+})
+
+it('keeps the registered checkout when Stop interrupts setup during a side chat', async () => {
+  const f = await setup()
+  const git = await fixture()
+  cleanups.push(git.cleanup)
+  const s = f.runtime.services
+  s.store.update((workspace) => ({ ...workspace, ...git.workspace }))
+  s.preferences.save({ worktreesRoot: join(f.root, 'worktrees') })
+  s.titles.save({ agentId: 'agent', model: 'utility-model', reasoning: '' })
+  const entered = deferred<string>()
+  const setupDone = deferred<void>()
+  const sideStarted = deferred<string>()
+  const sideDone = deferred<void>()
+  vi.spyOn(s.git, 'setupWorktree')
+    .mockRejectedValueOnce(new Error('First setup attempt failed'))
+    .mockImplementation(async (cwd, _command, signal) => {
+      entered.resolve(cwd)
+      await setupDone.promise
+      signal?.throwIfAborted()
+      return ''
+    })
+  f.runtime.run.mockImplementation(async (run) => {
+    if (!run.prompt.includes('Read hello.txt')) {
+      run.onText('Done')
+      return
+    }
+    sideStarted.resolve(run.cwd)
+    await sideDone.promise
+    run.onText(await readFile(join(run.cwd, 'hello.txt'), 'utf8'))
+  })
+  const task: Task = {
+    ...f.draft(),
+    repositoryId: 'repo',
+    execution: 'worktree',
+    setupCommand: 'echo Setup',
+  }
+  let side: Promise<Response> | undefined
+  let retry: Promise<Response> | undefined
+  try {
+    expect((await f.startThread(task, 'first')).status).toBe(200)
+    await waitForRuntime(() => expect(s.store.taskSummary(task.id).status).toBe('failed'))
+    const cwd = await s.checkouts.fileDirectory(task.id)
+    const { id: chatId } = s.titles.saveSideChat({ id: task.id })
+    side = f.request('/api/tasks/side-chat/ask', {
+      id: task.id,
+      chatId,
+      question: 'Read hello.txt',
+    })
+    expect(
+      await Promise.race([sideStarted.promise, side.then((response) => response.status)]),
+    ).toBe(cwd)
+    retry = f.request('/api/tasks/retry-failed', { id: task.id })
+    expect((await retry).status).toBe(200)
+    expect(await entered.promise).toBe(cwd)
+    expect(
+      (
+        await f.request('/api/tasks/cancel', {
+          id: task.id,
+          runId: s.store.taskSummary(task.id).activeRunId,
+        })
+      ).status,
+    ).toBe(200)
+    setupDone.resolve()
+    await waitForRuntime(() => expect(s.store.taskSummary(task.id).activeRunId).toBeUndefined())
+    expect(await s.checkouts.fileDirectory(task.id)).toBe(cwd)
+    expect(s.store.taskSummary(task.id).worktreeSetupComplete).toBe(false)
+    sideDone.resolve()
+    const answer = await side
+    expect(answer.status).toBe(200)
+    expect(await answer.json()).toMatchObject({ answer: 'original' })
+  } finally {
+    setupDone.resolve()
+    sideDone.resolve()
+    await Promise.all([side, retry])
+  }
 })
 
 it('retries a lost response, a receipt replay and a restart without duplicates', async () => {
@@ -233,9 +359,11 @@ it.each(receiptCases)(
     )
     expect(result._tag === 'Failure').toBe(savedAfterFirstRemoval)
     expect(saved.length > 0).toBe(savedAfterFirstRemoval)
+    const beforeRetry = savedAfterFirstRemoval
+      ? [compactions, f.runtime.services.mutations.status('owner', actionId).status]
+      : undefined
+    expect(beforeRetry).toEqual(savedAfterFirstRemoval ? [0, 'succeeded'] : undefined)
     if (savedAfterFirstRemoval) {
-      expect(compactions).toBe(0)
-      expect(f.runtime.services.mutations.status('owner', actionId).status).toBe('succeeded')
       failRemoval = false
       await Effect.runPromise(recovered.taskCreationsCachedEffect(connection, cached))
     }
@@ -248,8 +376,7 @@ it.each(receiptCases)(
     })
     const replay = await f.request('/api/tasks/message', message, 'POST', actionId)
     expect(replay.status).toBe(finalReceipt === 'retired' ? 409 : 200)
-    if (finalReceipt === 'retired')
-      expect(await replay.json()).toMatchObject({ mutationRetired: true })
+    expect((await replay.json()).mutationRetired === true).toBe(finalReceipt === 'retired')
     expect(f.sent(task.id)).toHaveLength(admissions)
     expect(f.runtime.run).not.toHaveBeenCalled()
   },

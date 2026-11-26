@@ -1,18 +1,27 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { taskWorkflows, workflowStateLabel, type TaskMetadata, type Subagent } from '@dovo/protocol'
+import {
+  taskWorkflows,
+  workflowReplyPreview,
+  workflowStateLabel,
+  type TaskMetadata,
+  type Subagent,
+} from '@dovo/protocol'
 import { View, Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
+import { taskHref, type OpenThreadInInspector } from '../../shell/task-route'
 import { AutomationSubjectRuns } from '../../jobs/automation-subject-runs'
 
 export function TaskWorkflows({
   task,
   onOpenThread,
+  onOpenChild,
 }: {
   task: TaskMetadata
   onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
+  onOpenChild?: OpenThreadInInspector
 }) {
   const uiText = useInterfaceText()
 
@@ -64,13 +73,21 @@ export function TaskWorkflows({
                   accessibilityRole="button"
                   disabled={!member.taskId && !member.agent}
                   onPress={() => {
-                    if (member.taskId)
-                      navigate(
-                        'tasks',
-                        member.taskId,
-                        member.runtimeId === 'local' ? profile?.id : member.runtimeId,
+                    if (member.taskId) {
+                      const runtimeId =
+                        !member.runtimeId || member.runtimeId === 'local'
+                          ? profile?.id
+                          : member.runtimeId
+                      const identity = runtimeId === profile?.id ? snapshot?.runtimeId : undefined
+                      if (
+                        runtimeId &&
+                        onOpenChild?.(
+                          taskHref(runtimeId, member.taskId, undefined, undefined, identity),
+                        )
                       )
-                    else if (member.agent) onOpenThread({ taskId: task.id, agent: member.agent })
+                        return
+                      navigate('tasks', member.taskId, runtimeId)
+                    } else if (member.agent) onOpenThread({ taskId: task.id, agent: member.agent })
                   }}
                   style={{ padding: 8, gap: 4 }}
                 >
@@ -87,7 +104,7 @@ export function TaskWorkflows({
                   </Text>
                   {!!(member.result || member.activity) && (
                     <Text numberOfLines={2} style={styles.muted}>
-                      {member.result || member.activity}
+                      {workflowReplyPreview(member.result, member.activity)}
                     </Text>
                   )}
                 </Pressable>

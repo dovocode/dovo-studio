@@ -24,10 +24,39 @@ export const usageHistorySchema = mutableStruct({
   sourceId: Schema.String,
   records: mutableArray(usageRecordSchema),
   notices: mutableArray(Schema.String),
+  transcriptNoticeSources: Schema.optional(
+    Schema.Record(Schema.String, mutableArray(Schema.String)),
+  ),
   pricingUpdatedAt: Schema.optional(Schema.String),
   overrides: Schema.optional(Schema.Record(Schema.String, usagePriceSchema)),
 })
 export type UsageHistoryResult = Schema.Schema.Type<typeof usageHistorySchema>
+
+/** A generic warning is shared only when every directory contributing to it has been seen. */
+export function mergeUsageNotices(
+  entries: readonly {
+    id: string
+    notices: readonly string[]
+    sources?: UsageHistoryResult['transcriptNoticeSources']
+  }[],
+) {
+  const seen = new Set<string>()
+  return Object.fromEntries(
+    entries.map(({ id, notices, sources }) => [
+      id,
+      notices
+        .filter((notice) => {
+          const paths = sources && Object.hasOwn(sources, notice) ? sources[notice] : []
+          const keys = paths.map((source) => JSON.stringify([source, notice]))
+          if (!keys.length) return true
+          const duplicate = keys.every((key) => seen.has(key))
+          for (const key of keys) seen.add(key)
+          return !duplicate
+        })
+        .join(' '),
+    ]),
+  )
+}
 export const usageRetentionSchema = mutableStruct({
   days: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 36500 }))),
 })

@@ -1,5 +1,9 @@
 import { setImmediate } from 'node:timers/promises'
 import { readOpenCodeUsage } from './usage-opencode.js'
+import { readAntigravityUsage } from './usage-antigravity.js'
+import { transcriptSourceIdentity } from './usage-transcript-source.js'
+import { antigravityProfile } from '../agents/providers/acp/antigravity-profile.js'
+import { acpPermissionProvider } from '../agents/providers/acp/acp-permissions.js'
 import { createReadStream } from 'node:fs'
 import { createZstdDecompress } from 'node:zlib'
 import { pipeline } from 'node:stream/promises'
@@ -536,6 +540,12 @@ type TranscriptLimits = {
   resultBytes: number
   idleMs: number
 }
+type TranscriptUsageResult = {
+  records: UsageRecord[]
+  notices: string[]
+  transcriptNoticeSources?: Record<string, string[]>
+}
+
 export class UsageTranscripts {
   constructor(
     private readonly limits: TranscriptLimits = {
@@ -578,21 +588,33 @@ export class UsageTranscripts {
       bytes -= entry.retainedBytes
     }
   }
+  private readonly sourceIdentity = transcriptSourceIdentity()
   private readonly cache = new Map<string, TranscriptScan>()
-  private pending?: Promise<{ records: UsageRecord[]; notices: string[] }>
+  private pending?: Promise<TranscriptUsageResult>
   private pendingKey?: string
   private completed?: {
     at: number
     key: string
-    result: { records: UsageRecord[]; notices: string[] }
+    result: TranscriptUsageResult
   }
   async read(
     agents: readonly Agent[],
     knownSessions: ReadonlySet<string>,
     force = false,
-  ): Promise<{ records: UsageRecord[]; notices: string[] }> {
-    const directories = new Map<string, 'codex' | 'claude' | 'opencode'>()
+  ): Promise<TranscriptUsageResult> {
+    const directories = new Map<string, 'codex' | 'claude' | 'opencode' | 'antigravity'>()
     for (const agent of agents) {
+      if (agent.provider === 'acp') {
+        const launch = { command: agent.endpoint, args: agent.args ?? [], env: agent.env ?? {} }
+        if (acpPermissionProvider(launch, agent) === 'antigravity') {
+          const profile = antigravityProfile(launch)
+          if (profile) {
+            const directory = join(profile, 'antigravity-acp', 'conversations')
+            directories.set(`antigravity:${directory}`, 'antigravity')
+          }
+        }
+        continue
+      }
       if (
         agent.provider !== 'codex' &&
         agent.provider !== 'claude' &&
@@ -635,16 +657,25 @@ export class UsageTranscripts {
     this.pendingKey = key
     this.pending = (async () => {
       const records = new Map<string, UsageRecord>(),
-        notices: string[] = [],
+        noticeSources = new Map<string, Set<string | undefined>>(),
         seen = new Set<string>(),
         scannedFiles = new Set<string>()
       const since = Date.now() - 90 * 86400000
       for (const [source, provider] of directories) {
         const directory = source.slice(provider.length + 1)
+        const notices: string[] = []
+        let canonical: string | undefined
         try {
-          const canonical = await realpath(directory)
-          if (seen.has(canonical)) continue
-          seen.add(canonical)
+          canonical = await realpath(directory)
+          const key = `${provider}:${canonical}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          if (provider === 'antigravity') {
+            const result = await readAntigravityUsage(canonical, since, knownSessions)
+            notices.push(...result.notices)
+            for (const row of result.records) records.set(`antigravity:${row.turn.id}`, row)
+            continue
+          }
           if (provider === 'opencode') {
             const result = await readOpenCodeUsage(canonical, Date.now() - 90 * 86400000)
             notices.push(...result.notices)
@@ -772,14 +803,34 @@ export class UsageTranscripts {
         } catch (cause) {
           if (!(cause instanceof Error && 'code' in cause && cause.code === 'ENOENT'))
             notices.push(`${provider}: CLI history could not be read.`)
+        } finally {
+          if (notices.length) {
+            const source = canonical ? await this.sourceIdentity(provider, canonical) : undefined
+            for (const notice of notices) {
+              const sources = noticeSources.get(notice) ?? new Set<string | undefined>()
+              sources.add(source)
+              noticeSources.set(notice, sources)
+            }
+          }
         }
       }
       for (const path of this.cache.keys()) if (!scannedFiles.has(path)) this.cache.delete(path)
-      return { records: [...records.values()], notices: [...new Set(notices)] }
+      const shared = Object.fromEntries(
+        [...noticeSources].flatMap(([notice, sources]) =>
+          sources.has(undefined)
+            ? []
+            : [[notice, [...sources].filter((source): source is string => source !== undefined)]],
+        ),
+      )
+      return {
+        records: [...records.values()],
+        notices: [...noticeSources.keys()],
+        ...(Object.keys(shared).length ? { transcriptNoticeSources: shared } : {}),
+      }
     })()
     try {
       const result = await this.pending
-      let resultBytes = retainedSize(result.notices)
+      let resultBytes = retainedSize([result.notices, result.transcriptNoticeSources])
       for (const row of result.records) {
         resultBytes += retainedSize(row)
         if (resultBytes > this.limits.resultBytes) break

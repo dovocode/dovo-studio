@@ -23,7 +23,7 @@ import { MobileFileTree } from '../../../ui/content/file-tree'
 import { MobileFileReview } from '../../review/file-review'
 import { Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
-import { pullFilePatch, type PullDetail } from '@dovo/protocol'
+import { githubWithheldPatch, pullFilePatch, type PullDetail } from '@dovo/protocol'
 import { Icon } from '../../../ui/controls/icon'
 import { pullFragment } from './pull-destination'
 import { Action } from '../../../ui/controls/action'
@@ -230,14 +230,17 @@ export function PullChanges({
       >
         <View style={{ paddingHorizontal: 12 }}>
           <MobileFileReview
-            files={files.map((file) => ({
-              path: file.path,
-              changeKind: pullFileKind(file),
-              viewed: file.viewed,
-              changedSinceViewed: file.changedSinceViewed,
-              additions: file.additions ?? undefined,
-              deletions: file.deletions ?? undefined,
-            }))}
+            files={files.map((file) => {
+              const withheld = detail.pull.provider === 'github' && githubWithheldPatch(file)
+              return {
+                path: file.path,
+                changeKind: pullFileKind(file),
+                viewed: file.viewed,
+                changedSinceViewed: file.changedSinceViewed,
+                additions: withheld ? undefined : (file.additions ?? undefined),
+                deletions: withheld ? undefined : (file.deletions ?? undefined),
+              }
+            })}
             groups={review.progress?.groups ?? []}
             related={related}
             onRelatedChange={setRelated}
@@ -307,7 +310,11 @@ export function PullChanges({
       ) : (
         <View style={{ gap: 8 }}>
           <Text style={styles.muted}>
-            {uiText('No text patch available. Open this PR on its server.')}
+            {detail.pull.provider === 'github' && githubWithheldPatch(file)
+              ? uiText(
+                  'GitHub withheld this file’s patch. Open the PR on GitHub for the full file.',
+                )
+              : uiText('No text patch available. Open this PR on its server.')}
           </Text>
           {file.patchOmitted &&
             (snapshot?.pullFileLoadingSupported ? (

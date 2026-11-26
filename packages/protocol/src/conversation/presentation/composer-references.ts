@@ -1,4 +1,5 @@
 import { explicitFileMentions, maskFileMentions } from './file-mentions.js'
+import { parseModelMention } from './model-mentions.js'
 import { parseStudioReference } from '../../runtime/studio-reference.js'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { providerSchema, type Agent, type TaskHarness } from '../../workspace.js'
@@ -107,34 +108,20 @@ export function composerModelReference(
   text: string,
   agents: ComposerReferenceResources['agents'] = [],
 ): ComposerReference | undefined {
-  const match = /^model:([^\s/]{1,600})\/([^\s]{1,1000})$/.exec(text)
-  if (!match) return
-  try {
-    const harness = decodeURIComponent(match[1])
-    const model = decodeURIComponent(match[2])
-    if (
-      !harness ||
-      !model ||
-      (harness + model).split('').some((character) => {
-        const code = character.charCodeAt(0)
-        return code < 32 || code === 127
-      })
-    )
-      return
-    const provider = harness.startsWith('acp:')
-      ? 'acp'
-      : harness.startsWith('agent:')
-        ? agents.find((agent) => agent.id === harness.slice(6))?.provider
-        : providerSchema.literals.find((provider) => harness === `harness:${provider}`)
-    return {
-      start: 0,
-      end: text.length,
-      kind: 'model',
-      label: model,
-      ...(provider ? { provider } : {}),
-    }
-  } catch {
-    return
+  const reference = parseModelMention(text)
+  if (!reference) return
+  const { harness, model } = reference
+  const provider = harness.startsWith('acp:')
+    ? 'acp'
+    : harness.startsWith('agent:')
+      ? agents.find((agent) => agent.id === harness.slice(6))?.provider
+      : providerSchema.literals.find((provider) => harness === `harness:${provider}`)
+  return {
+    start: 0,
+    end: text.length,
+    kind: 'model',
+    label: model,
+    ...(provider ? { provider } : {}),
   }
 }
 

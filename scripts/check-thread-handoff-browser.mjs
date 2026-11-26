@@ -66,7 +66,7 @@ export const permissionPolicyUIIssue=()=>undefined;
             path: '../../agents/use-harness-availability',
             importer,
             contents:
-              'export const useHarnessAvailability=()=>({available:new Set(["harness:codex","harness:claude"]),error:null,loading:false});',
+              'export const useHarnessAvailability=()=>({claudeAutoLimits:new Map(),available:new Set(["harness:codex","harness:claude"]),error:null,loading:false});',
           },
           {
             path: '../../agents/harness-model-picker',

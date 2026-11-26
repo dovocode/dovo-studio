@@ -22,6 +22,7 @@ import { useApplicationState } from '../../../runtime/state/application-state'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { SafeModal } from '../../../ui/layout/safe-modal'
 import { Text } from '../../../ui/content/text'
+import { formatArchiveDateTime } from '../../../ui/content/format-date'
 import { Icon } from '../../../ui/controls/icon'
 import { IconButton } from '../../../ui/controls/icon-button'
 import { useAction } from '../../../ui/controls/use-action'
@@ -36,7 +37,7 @@ export function archiveChildren(entries: AttachmentArchiveEntry[], folder: strin
     const slash = remainder.indexOf('/')
     if (slash >= 0) {
       const path = folder + remainder.slice(0, slash + 1)
-      rows.set(path, { path, directory: true, size: 0 })
+      if (!rows.has(path)) rows.set(path, { path, directory: true, size: 0 })
     } else rows.set(entry.path, entry)
   }
   return [...rows.values()].sort(
@@ -382,9 +383,16 @@ export function AttachmentArchive({
                 }}
               >
                 <Icon name={entry.directory ? 'folder' : 'file'} size={20} color={colors.muted} />
-                <Text numberOfLines={1} style={{ flex: 1, color: colors.text }}>
-                  {entry.path.slice(folder.length).replace(/\/$/, '')}
-                </Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={{ color: colors.text }}>
+                    {entry.path.slice(folder.length).replace(/\/$/, '')}
+                  </Text>
+                  {entry.modifiedAt && (
+                    <Text style={{ color: colors.muted, fontSize: 11 }}>
+                      {formatArchiveDateTime(entry.modifiedAt)}
+                    </Text>
+                  )}
+                </View>
                 {!entry.directory && (
                   <Text style={{ color: colors.muted, fontSize: 11 }}>
                     {fileSizeLabel(entry.size)}

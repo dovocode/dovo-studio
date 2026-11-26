@@ -9,6 +9,7 @@ import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { TaskPipelineProgress } from './task-pipeline-progress'
 import { ThreadSharing, InlineThreadSuggestions } from './thread-sharing'
 import { useTaskPanes } from '../../shell/task-panes'
+import { useSoftwareKeyboard } from '../../shell/use-software-keyboard'
 import { contentColumn } from '../../ui/layout/content-column'
 import {
   createRuntimeClient,
@@ -26,6 +27,8 @@ import {
   acpHarnessName,
   resolveTaskAgent,
   resolveScopedAgents,
+  resolveThreadRuntime,
+  runtimeSyncOnline,
   conversationPageSchema,
   readConversationHistory,
   cachedThread,
@@ -98,11 +101,19 @@ import {
   type ReactNode,
 } from 'react'
 import { Text } from '../../ui/content/text'
-import { useRuntime } from '../../runtime/connection/provider'
+import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
-import { ScreenHeader, type HeaderAction } from '../../ui/layout/screen-header'
+import {
+  InlineScreenHeaderContext,
+  ScreenHeader,
+  type HeaderAction,
+} from '../../ui/layout/screen-header'
+import { taskRouteHref, type OpenThreadInInspector, type taskHref } from '../../shell/task-route'
+import { router } from 'expo-router'
+import { ReplicatedThread } from './replicated-thread'
+import { InlineThreadInputContext } from './inline-thread-input'
 import { Composer } from '../composer/composer'
 import { TaskFiles, type ThreadFileDraft } from '../files/task-files'
 import { TaskReview, type FileEditDraft } from './task-review'
@@ -276,6 +287,12 @@ function PendingConversation({
     </View>
   )
 }
+type DetailInspector = {
+  width: number
+  keyboardVisible: boolean
+  onBringBack?: (id: string) => boolean
+}
+
 export function TaskDetail({
   task,
   onBack,
@@ -283,6 +300,7 @@ export function TaskDetail({
   nativeAgentKey,
   startup,
   parentNavigation,
+  inspector,
 }: {
   task: Task
   onBack: () => void
@@ -290,6 +308,7 @@ export function TaskDetail({
   nativeAgentKey?: string
   startup?: StartupControls
   parentNavigation?: ReactNode
+  inspector?: DetailInspector
 }) {
   const uiText = useInterfaceText()
 
@@ -426,7 +445,12 @@ export function TaskDetail({
               computer={runtimeHost}
               computerIcon={snapshot?.runtimeIcon}
               status={connected ? 'Loading conversation…' : 'Offline'}
-              width={(panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0)}
+              width={Math.max(
+                80,
+                (inspector?.width ?? (panes.expanded ? panes.detailWidth : width)) -
+                  180 -
+                  (hasProject ? 44 : 0),
+              )}
             />
           }
         />
@@ -453,7 +477,89 @@ export function TaskDetail({
       nativeAgentKey={nativeAgentKey}
       startup={startup}
       parentNavigation={parentNavigation}
+      inspector={inspector}
     />
+  )
+}
+type InspectedThreadTarget = ReturnType<typeof taskHref>['params']
+
+function InspectedThread({
+  target,
+  parentRuntimeId,
+  parentTaskId,
+  width,
+  onClose,
+}: {
+  target: InspectedThreadTarget
+  parentRuntimeId: string | null
+  parentTaskId: string
+  width: number
+  onClose: () => void
+}) {
+  const uiText = useInterfaceText()
+  const { styles } = useTheme()
+  const { focused } = useNavigation()
+  const keyboardVisible = useSoftwareKeyboard()
+  const { profiles, overviews, refreshRuntime, recovering } = useRuntime()
+  const [approvalId, setApprovalId] = useState(target.approvalId)
+  const [questionId, setQuestionId] = useState(target.questionId)
+  const owner = resolveThreadRuntime(target, profiles, overviews)
+  const source = overviews.find((item) => item.profile.id === owner?.id)
+  const task = source?.snapshot?.workspace.tasks.find((item) => item.id === target.taskId)
+  useEffect(() => {
+    if (!owner || !focused) return
+    const stop = watchRuntimeTask(owner.connection, target.taskId)
+    if (!recovering && !runtimeSyncOnline(owner.connection))
+      void refreshRuntime(owner).catch(() => undefined)
+    return stop
+  }, [owner, focused, target.taskId, refreshRuntime, recovering])
+  if (!owner || !task)
+    return (
+      <View style={styles.screen}>
+        <ScreenHeader
+          title={uiText('Task')}
+          leading={<Action secondary label={uiText('Back')} onPress={onClose} />}
+        />
+        <Text style={[styles.muted, { padding: 16 }]}>
+          {uiText(!owner || !source?.connected ? 'Offline' : 'Loading conversation…')}
+        </Text>
+        <Action
+          secondary
+          label={uiText('Open thread')}
+          onPress={() => router.push(taskRouteHref(target, uiText('Parent thread')))}
+        />
+      </View>
+    )
+  return (
+    <RuntimeScope runtimeId={owner.id}>
+      {task.replica ? (
+        <ReplicatedThread task={task} onBack={onClose} />
+      ) : (
+        <InlineThreadInputContext.Provider
+          value={{
+            questionId,
+            approvalId,
+            clearQuestion: () => setQuestionId(undefined),
+            clearApproval: () => setApprovalId(undefined),
+          }}
+        >
+          <TaskDetail
+            task={task}
+            onBack={onClose}
+            nativeAgentKey={target.nativeAgentKey}
+            inspector={{
+              width,
+              keyboardVisible,
+              onBringBack: (id) => {
+                if (owner.id !== parentRuntimeId || id !== parentTaskId) return false
+                onClose()
+                return true
+              },
+            }}
+          />
+        </InlineThreadInputContext.Provider>
+      )}
+    </RuntimeScope>
   )
 }
 const fileDraftSchema = mutableStruct({
@@ -489,6 +595,7 @@ function TaskDetailContent({
   nativeAgentKey,
   startup,
   parentNavigation,
+  inspector,
 }: {
   task: Task
   onBack: () => void
@@ -496,15 +603,17 @@ function TaskDetailContent({
   nativeAgentKey?: string
   startup?: StartupControls
   parentNavigation?: ReactNode
+  inspector?: DetailInspector
 }) {
   const uiText = useInterfaceText()
 
   const { colors, styles } = useTheme()
 
   const { focused, navigate } = useNavigation()
-  const { width } = useWindowDimensions()
+  const { width, fontScale } = useWindowDimensions()
   const panes = useTaskPanes()
-  const { snapshot, connected, profile, callEffect, activeId, connection } = useRuntime()
+  const { snapshot, connected, profile, callEffect, activeId, connection, profiles, overviews } =
+    useRuntime()
   const copyStudioId = useCopyThreadStudioId(
     task,
     snapshot?.runtimeId ?? profile?.connection.runtimeId,
@@ -875,6 +984,37 @@ function TaskDetailContent({
     if (pane === 'diff' && !hasDiff) setPane('chat')
   }, [pane, hasDiff])
   const [expandedPreview, setExpandedPreview] = useApplicationState(false)
+  const detailWidth = inspector?.width ?? (panes.detailWidth || width)
+  const inspectorWidth =
+    !inspector && Platform.OS === 'android' && !car && detailWidth >= 760 * Math.max(1, fontScale)
+      ? Math.min(520, Math.round(detailWidth * 0.46))
+      : 0
+  const [childThread, setChildThread] = useState<InspectedThreadTarget>()
+  const fullChild = !!childThread && !inspectorWidth
+  const openChild: OpenThreadInInspector = ({ params }) => {
+    const owner = resolveThreadRuntime(params, profiles, overviews)
+    if (!inspectorWidth || !owner || (owner.id === activeId && params.taskId === task.id))
+      return false
+    Keyboard.dismiss()
+    setExpandedPreview(false)
+    setNativeThread(undefined)
+    setChildThread(params)
+    return true
+  }
+  const closeChild = () => {
+    Keyboard.dismiss()
+    setChildThread(undefined)
+  }
+  const inspectedPane =
+    inspectorWidth > 0 &&
+    !expandedPreview &&
+    (pane === 'agents' || pane === 'browser' || pane === 'devices')
+  const nativeInInspector = inspectorWidth > 0 && !!native && !!nativeAgent
+  const sideInInspector = inspectorWidth > 0 && asking && !nativeInInspector
+  const inspectorOpen =
+    !!inspectorWidth && (inspectedPane || nativeInInspector || sideInInspector || !!childThread)
+  const chatVisible = !fullChild && (pane === 'chat' || inspectorOpen)
+  const fullNative = !!native && !nativeInInspector
   const [serverLink, setServerLink] = useState<{
     runtimeId: string | null
     taskId: string
@@ -883,17 +1023,32 @@ function TaskDetailContent({
   } | null>(null)
   const backToChat = () => {
     Keyboard.dismiss()
+    if (childThread) {
+      setChildThread(undefined)
+      return
+    }
+    setNativeThread(undefined)
+    setAsking(false)
     setExpandedPreview(false)
     setPane('chat')
   }
   useEffect(() => {
-    if (Platform.OS !== 'android' || !focused || native || pane !== 'diff') return
+    if (Platform.OS === 'android' && focused && childThread) {
+      const back = BackHandler.addEventListener('hardwareBackPress', () => {
+        setChildThread(undefined)
+        return true
+      })
+      return () => back.remove()
+    }
+    if (Platform.OS !== 'android' || !focused || sideInInspector) return
+    if (!nativeInInspector && (native || (pane !== 'diff' && !inspectedPane))) return
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      setPane('chat')
+      if (nativeInInspector) setNativeThread(undefined)
+      else setPane('chat')
       return true
     })
     return () => back.remove()
-  }, [focused, native, pane])
+  }, [focused, native, pane, inspectedPane, nativeInInspector, sideInInspector, childThread])
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [calling, setCalling] = useState(false)
@@ -920,17 +1075,18 @@ function TaskDetailContent({
     if (error) Alert.alert(uiText('Could not update thread'), error)
   }, [lifecycle.error, newSession.error])
   const viewed = useTaskViewed(task, !native && pane === 'chat' && !linkingProjects && !renaming)
+  const nativeView = native && nativeAgent && (
+    <NativeAgentThread
+      key={`${native.parentKey}:${native.taskId}:${nativeAgent.provider}:${nativeAgent.sessionId}:${nativeAgent.id}`}
+      taskId={native.taskId}
+      agent={nativeAgent}
+      parentTitle={task.title}
+      onClose={() => setNativeThread(undefined)}
+    />
+  )
   return (
     <View style={styles.screen}>
-      {native && nativeAgent && (
-        <NativeAgentThread
-          key={`${native.parentKey}:${native.taskId}:${nativeAgent.provider}:${nativeAgent.sessionId}:${nativeAgent.id}`}
-          taskId={native.taskId}
-          agent={nativeAgent}
-          parentTitle={task.title}
-          onClose={() => setNativeThread(undefined)}
-        />
-      )}
+      {fullNative && nativeView}
       <ScreenHeader
         title={task.title}
         titleMenu={!startup?.temporary}
@@ -945,11 +1101,13 @@ function TaskDetailContent({
               computer={runtimeHost}
               computerIcon={snapshot?.runtimeIcon}
               status={status}
-              width={(panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0)}
+              width={Math.max(80, detailWidth - 180 - (hasProject ? 44 : 0))}
             />
           )
         }
-        hidden={!!native || ((pane === 'browser' || pane === 'devices') && expandedPreview)}
+        hidden={
+          fullChild || fullNative || ((pane === 'browser' || pane === 'devices') && expandedPreview)
+        }
         gestureEnabled={
           pane !== 'browser' &&
           pane !== 'devices' &&
@@ -957,7 +1115,7 @@ function TaskDetailContent({
           !(pane === 'chat' && historyBrowsing)
         }
         onBack={
-          pane === 'diff'
+          pane === 'diff' || inspectorOpen
             ? backToChat
             : pane === 'browser' || pane === 'devices'
               ? onBack
@@ -967,7 +1125,7 @@ function TaskDetailContent({
           <Action
             secondary
             label={uiText('Back')}
-            onPress={pane === 'diff' ? backToChat : onBack}
+            onPress={pane === 'diff' || inspectorOpen ? backToChat : onBack}
           />
         }
         collapsedMenuGroups={['Project', 'Advanced']}
@@ -1020,6 +1178,9 @@ function TaskDetailContent({
                   overflow: !!task.bot || car || tab !== 'diff',
                   onPress: () => {
                     Keyboard.dismiss()
+                    setAsking(false)
+                    setChildThread(undefined)
+                    setNativeThread(undefined)
                     setCheckpoint('')
                     setExpandedPreview(false)
                     if (tab === 'terminal') setTerminalId('')
@@ -1274,7 +1435,7 @@ function TaskDetailContent({
                 })
         }
       />
-      {!native && !expandedPreview && task.bot?.state === 'paused' && (
+      {!fullChild && !native && !expandedPreview && task.bot?.state === 'paused' && (
         <View
           style={{
             paddingHorizontal: 16,
@@ -1290,18 +1451,26 @@ function TaskDetailContent({
           </Text>
         </View>
       )}
-      {!native && !expandedPreview && task.bot && (
+      {!fullChild && !native && !expandedPreview && task.bot && (
         <BotWorkSummary
           task={task}
           onRoutines={() => setBotSettings('routines')}
           onWorkers={() => setPane('agents')}
         />
       )}
-      {!native && !expandedPreview && parentNavigation}
-      {!native && !expandedPreview && (
-        <SideThreadActions task={task} onReview={() => setSideChanges(true)} />
+      {!fullChild && !native && !expandedPreview && parentNavigation}
+      {!fullChild && !native && !expandedPreview && task.sideThread && (
+        <View style={inspector?.keyboardVisible ? { display: 'none' } : undefined}>
+          <SideThreadActions
+            task={task}
+            onReview={() => setSideChanges(true)}
+            onBringBack={inspector?.onBringBack}
+          />
+        </View>
       )}
-      {!native && !expandedPreview && <SideChatAttention task={task} />}
+      {!childThread && !native && !expandedPreview && (
+        <SideChatAttention task={task} onOpenChild={openChild} />
+      )}
       {sideChanges && !!task.sideThread && !native && (
         <SideThreadChanges
           key={`${activeId}:${task.id}`}
@@ -1390,19 +1559,25 @@ function TaskDetailContent({
           <Action secondary label={uiText('Retry')} disabled={viewed.busy} onPress={viewed.retry} />
         </View>
       )}
-      <View style={{ flex: 1, display: native ? 'none' : 'flex' }}>
+      <View
+        style={{
+          flex: 1,
+          display: fullNative ? 'none' : 'flex',
+          flexDirection: inspectorOpen ? 'row' : 'column',
+        }}
+      >
         <ConversationProvider
           key={task.id}
           task={task}
           temporary={startup?.temporary}
           visible={
             focused &&
-            !native &&
-            pane === 'chat' &&
+            !fullNative &&
+            chatVisible &&
             !projectInfo &&
             !linkingProjects &&
             !renaming &&
-            !asking &&
+            (!asking || sideInInspector) &&
             !transferring &&
             !continuing &&
             !sharingTaskId &&
@@ -1432,7 +1607,8 @@ function TaskDetailContent({
             style={{
               ...contentColumn.conversation,
               flex: 1,
-              display: pane === 'chat' ? 'flex' : 'none',
+              minWidth: 0,
+              display: chatVisible ? 'flex' : 'none',
             }}
           >
             <Composer
@@ -1613,7 +1789,7 @@ function TaskDetailContent({
               }}
             />
           </View>
-          {pane === 'files' && (
+          {pane === 'files' && !inspectorOpen && !childThread && (
             <TaskFiles
               key={`${activeId}:${task.id}`}
               task={task}
@@ -1622,86 +1798,122 @@ function TaskDetailContent({
               draftPersistence={draftPersistence}
             />
           )}
-          {pane === 'agents' && (
-            <TaskAgents
-              key={task.id}
-              task={task}
-              onOpenThread={(thread) => {
-                Keyboard.dismiss()
-                setNativeThread({ ...thread, parentKey: JSON.stringify([activeId, task.id]) })
-              }}
-            />
-          )}
-          {asking && (
-            <SideQuestion
-              task={task}
-              selectedChatId={selectedSideChat}
-              drafts={detailDraft.sideChat}
-              draftPersistence={draftPersistence}
-              setDrafts={(update) =>
-                setDraftField(
-                  'sideChat',
-                  typeof update === 'function' ? update(detailDraft.sideChat) : update,
-                )
-              }
-              onClose={() => setAsking(false)}
-            />
-          )}
-          {pane === 'browser' && (
-            <BrowserPane
-              taskId={task.id}
-              openLink={
-                serverLink?.taskId === task.id && serverLink.runtimeId === activeId
-                  ? serverLink
+          <View
+            style={
+              inspectorOpen
+                ? {
+                    width: inspectorWidth,
+                    minWidth: 0,
+                    borderLeftWidth: 1,
+                    borderLeftColor: colors.border,
+                  }
+                : fullChild || (pane !== 'chat' && pane !== 'files')
+                  ? { flex: 1, minWidth: 0 }
                   : undefined
-              }
-              onLinkOpened={() => setServerLink(null)}
-              expanded={expandedPreview}
-              onExpand={setExpandedPreview}
-            />
-          )}
-          {pane === 'devices' && (
-            <DevicesPane
-              taskId={task.id}
-              expanded={expandedPreview}
-              onExpand={setExpandedPreview}
-            />
-          )}
-          {pane === 'diff' && (
-            <TaskReview
-              initialCheckpoint={checkpoint}
-              initialPath={checkpointPath}
-              initialCheckoutId={checkpoint ? checkpointCheckoutId : ''}
-              initialLine={!checkpoint ? reviewLine : undefined}
-              initialTab={!checkpoint ? reviewTab : 'diff'}
-              edit={detailDraft.file}
-              onEditChange={(draft) => setDraftField('file', draft)}
-              draftPersistence={draftPersistence}
-            />
-          )}
-          {pane === 'terminal' && (
-            <TerminalPane
-              task={task}
-              selected={terminalId}
-              onSelect={setTerminalId}
-              visible={
-                focused &&
-                !native &&
-                !projectInfo &&
-                !linkingProjects &&
-                !renaming &&
-                !asking &&
-                !transferring &&
-                !continuing &&
-                !sharingTaskId &&
-                !artifactsOpen &&
-                !linkedPulls &&
-                !threadBehavior &&
-                !editingInstructions &&
-                !editingApprovalRules
-              }
-            />
-          )}
+            }
+          >
+            {childThread && (
+              <InlineScreenHeaderContext.Provider value>
+                <InspectedThread
+                  key={JSON.stringify(childThread)}
+                  target={childThread}
+                  parentRuntimeId={activeId}
+                  parentTaskId={task.id}
+                  width={inspectorWidth || detailWidth}
+                  onClose={closeChild}
+                />
+              </InlineScreenHeaderContext.Provider>
+            )}
+            {nativeInInspector && nativeView}
+            {inspectedPane && !nativeInInspector && !sideInInspector && !childThread && (
+              <View style={{ alignSelf: 'flex-end', paddingHorizontal: 8 }}>
+                <Action secondary label={uiText('Close inspector')} onPress={backToChat} />
+              </View>
+            )}
+            {pane === 'agents' && !nativeInInspector && !sideInInspector && !childThread && (
+              <TaskAgents
+                key={task.id}
+                task={task}
+                onOpenChild={openChild}
+                onOpenThread={(thread) => {
+                  Keyboard.dismiss()
+                  setNativeThread({ ...thread, parentKey: JSON.stringify([activeId, task.id]) })
+                }}
+              />
+            )}
+            {asking && !childThread && (
+              <SideQuestion
+                inline={sideInInspector}
+                onOpenChild={openChild}
+                task={task}
+                selectedChatId={selectedSideChat}
+                drafts={detailDraft.sideChat}
+                draftPersistence={draftPersistence}
+                setDrafts={(update) =>
+                  setDraftField(
+                    'sideChat',
+                    typeof update === 'function' ? update(detailDraft.sideChat) : update,
+                  )
+                }
+                onClose={() => setAsking(false)}
+              />
+            )}
+            {pane === 'browser' && !nativeInInspector && !sideInInspector && !childThread && (
+              <BrowserPane
+                taskId={task.id}
+                openLink={
+                  serverLink?.taskId === task.id && serverLink.runtimeId === activeId
+                    ? serverLink
+                    : undefined
+                }
+                onLinkOpened={() => setServerLink(null)}
+                expanded={expandedPreview}
+                onExpand={setExpandedPreview}
+              />
+            )}
+            {pane === 'devices' && !nativeInInspector && !sideInInspector && !childThread && (
+              <DevicesPane
+                taskId={task.id}
+                expanded={expandedPreview}
+                onExpand={setExpandedPreview}
+              />
+            )}
+            {pane === 'diff' && !inspectorOpen && !childThread && (
+              <TaskReview
+                initialCheckpoint={checkpoint}
+                initialPath={checkpointPath}
+                initialCheckoutId={checkpoint ? checkpointCheckoutId : ''}
+                initialLine={!checkpoint ? reviewLine : undefined}
+                initialTab={!checkpoint ? reviewTab : 'diff'}
+                edit={detailDraft.file}
+                onEditChange={(draft) => setDraftField('file', draft)}
+                draftPersistence={draftPersistence}
+              />
+            )}
+            {pane === 'terminal' && !inspectorOpen && !childThread && (
+              <TerminalPane
+                task={task}
+                selected={terminalId}
+                onSelect={setTerminalId}
+                visible={
+                  focused &&
+                  !native &&
+                  !projectInfo &&
+                  !linkingProjects &&
+                  !renaming &&
+                  !asking &&
+                  !transferring &&
+                  !continuing &&
+                  !sharingTaskId &&
+                  !artifactsOpen &&
+                  !linkedPulls &&
+                  !threadBehavior &&
+                  !editingInstructions &&
+                  !editingApprovalRules
+                }
+              />
+            )}
+          </View>
         </ConversationProvider>
       </View>
       {transferring && repository && !task.bot && (

@@ -1,5 +1,6 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router, useLocalSearchParams } from 'expo-router'
+import { InlineThreadInputContext } from './inline-thread-input'
 import { useOperationGuard } from '../../runtime/state/use-operation-guard'
 import {
   runtimeComputerName,
@@ -19,7 +20,7 @@ import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { ApprovalDetails } from './approval-details'
-import { useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import {
   recordedApprovalOutcome,
@@ -37,7 +38,9 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
   const { snapshot, connected, profile, profiles, overviews, connection, readEffect, callEffect } =
       useRuntime(),
     { busy, error, act } = useAction()
-  const { approvalId } = useLocalSearchParams<{ approvalId?: string }>()
+  const route = useLocalSearchParams<{ approvalId?: string }>()
+  const inline = useContext(InlineThreadInputContext)
+  const approvalId = inline ? inline.approvalId : route.approvalId
   const scope = JSON.stringify([
     profile?.id,
     clientScopeKey(connection),
@@ -152,7 +155,7 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           <Action
             secondary
             label={uiText('Show pending approvals')}
-            onPress={() => router.setParams({ approvalId: undefined })}
+            onPress={inline?.clearApproval ?? (() => router.setParams({ approvalId: undefined }))}
           />
         </View>
       )}

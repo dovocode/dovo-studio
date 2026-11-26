@@ -57,7 +57,7 @@ try {
             path: './use-harness-availability',
             importer: desktop,
             contents:
-              'export const useHarnessAvailability=()=>({available:window.available,loading:false,sandboxNotes:[],refresh(){}});',
+              'export const useHarnessAvailability=()=>({claudeAutoLimits:new Map(),available:window.available,loading:false,sandboxNotes:[],refresh(){}});',
           },
           {
             path: './harness-catalog',

@@ -8,6 +8,7 @@ import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import {
   createRuntimeClient,
   taskFileShareSchema,
+  localMarkdownLine,
   taskImageReadSchema,
   richMarkdown,
   cachedMarkdownParts,
@@ -549,6 +550,7 @@ function TaskFileDialog({
     return () => window.removeEventListener('message', receive)
   }, [current, key, sendRestore])
   const error = !connected ? 'Reconnect to the file’s computer to preview it.' : current?.error
+  const line = localMarkdownLine(path)
   return (
     <Dialog
       open
@@ -586,7 +588,13 @@ function TaskFileDialog({
           <iframe
             ref={frame}
             title="File preview"
-            src={current.bridgeId ? `${current.url}#dovo-pdf=${current.bridgeId}` : current.url}
+            src={
+              line
+                ? `${current.url}#L${line}`
+                : current.bridgeId
+                  ? `${current.url}#dovo-pdf=${current.bridgeId}`
+                  : current.url
+            }
             onLoad={sendRestore}
             referrerPolicy="no-referrer"
             className="min-h-0 w-full flex-1 rounded-md border"

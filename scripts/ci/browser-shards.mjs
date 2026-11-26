@@ -28,14 +28,22 @@ export function browserShards(suites, count, durations) {
   return shards
 }
 
+const workspaceGenerators = new Set([
+  'node scripts/build-browser-viewer.mjs',
+  'node scripts/build-mcp-apps.mjs',
+  'node scripts/build-mobile-desktop.mjs',
+  'node scripts/build-mobile-mermaid.mjs',
+  'node scripts/build-mobile-terminal.mjs',
+])
+
 export function browserChecks(script) {
-  // pnpm build prepares every workspace package before suites start. Strip only
-  // known build commands; leave generators and every actual check in place.
+  // Workspace build already generated these shared assets. Suites can read them concurrently.
   return script
     .split(' && ')
     .filter(
       (command) =>
         command !== 'pnpm design:build' &&
+        !workspaceGenerators.has(command) &&
         !/^pnpm (?:--filter [\w@/.*^-]+ )+(?:-r )?build$/.test(command),
     )
     .join(' && ')

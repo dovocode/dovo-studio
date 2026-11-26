@@ -69,6 +69,7 @@ it('matches separated words and accents without typos, with explicit literal phr
 })
 
 it.each([
+  ['İ 🐱 Café\ropen then other text', '"cafe open"', 'Café\ropen'],
   ['İ 🐱 Café needle', 'needle', 'needle'],
   ['ﬃ İstanbul cafe\u0301 🐱', 'cafe', 'cafe\u0301'],
   ['before ﬁnal after', 'final', 'ﬁnal'],

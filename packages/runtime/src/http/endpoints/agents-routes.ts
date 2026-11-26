@@ -1,5 +1,6 @@
 import { harnessPluginCommandSchema, mcpOAuthCommandSchema } from '@dovo/protocol'
 import type { Agent } from '@dovo/protocol'
+import { claudeAutoDisabledBy } from '../../agents/configuration/claude-settings.js'
 import { agentSecretReferenceSchema } from '@dovo/protocol'
 import { spreadsheetPreview } from '../../scm/repositories/spreadsheet-preview.js'
 import { isSpreadsheet } from '@dovo/protocol'
@@ -38,7 +39,13 @@ import { decodeResult } from '@dovo/protocol'
 import { codexNetworkDiagnostics } from '../../agents/execution/codex-network-diagnostics.js'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
-import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
+import {
+  canChangeTaskCheckout,
+  containerSandboxEnabled,
+  resolveTaskAgent,
+  taskContainerSandbox,
+  taskSchema,
+} from '@dovo/protocol'
 import { taskMachineDraftState, taskMachineDraftStateSchema } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
@@ -203,16 +210,29 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         return { ok: true }
       }
       if (method === 'POST' && path === '/api/agents/availability') {
-        const { repositoryId, refresh } = decode(
+        const input = decode(
           mutableStruct({
             repositoryId: Schema.optional(idSchema),
+            taskId: Schema.optional(idSchema),
+            checkAccess: Schema.optional(Schema.Boolean),
             refresh: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
+        const { taskId, refresh } = input
+        const task = taskId ? s.store.get().tasks.find((item) => item.id === taskId) : undefined
+        const repositoryId = task?.repositoryId ?? input.repositoryId
+        const agents = s.store.agentsFor(repositoryId)
+        const activeAgent = task && resolveTaskAgent(task, agents)
+        const activeChoice = task?.agentId ? `agent:${task.agentId}` : 'harness:claude'
         if (refresh && s.agents.refreshPath) yield* serviceResult(s.agents.refreshPath())
         const { availability: checker } = agentDiscoveryCache(s.db, s.agents)
         const checkout = s.store.get().repositories.find((item) => item.id === repositoryId)?.path
+        const settingsDirectory = input.checkAccess
+          ? task && !task.replica
+            ? yield* serviceResult(s.checkouts.fileDirectory(task.id).catch(() => undefined))
+            : checkout
+          : undefined
         const sandboxSupport = (agent: Agent) => {
           try {
             const configured = s.agents.configure(agent)
@@ -223,17 +243,28 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         }
         return yield* serviceResult(
           Promise.all(
-            harnessAvailabilityCandidates(
-              s.store.agentsFor(repositoryId),
-              s.acpInstallations.list(),
-            ).map(async ({ id, agent }) => {
-              return {
-                id,
-                available: await checker.check(agent, s.agents, refresh),
-                // Local facts only; a missing executable in the container shows at run time.
-                sandbox: sandboxSupport(agent),
-              }
-            }),
+            harnessAvailabilityCandidates(agents, s.acpInstallations.list()).map(
+              async ({ id, agent }) => {
+                const autoDisabledBy = async () => {
+                  if (agent.provider !== 'claude' || !settingsDirectory) return
+                  const configured = s.agents.configure(
+                    id === activeChoice && activeAgent?.provider === 'claude' ? activeAgent : agent,
+                  )
+                  return claudeAutoDisabledBy(settingsDirectory, configured.env, configured.args)
+                }
+                const [available, restriction] = await Promise.all([
+                  checker.check(agent, s.agents, refresh),
+                  autoDisabledBy().catch(() => undefined),
+                ])
+                return {
+                  id,
+                  available,
+                  // Local facts only; a missing executable in the container shows at run time.
+                  sandbox: sandboxSupport(agent),
+                  ...(restriction ? { claudeAutoDisabledBy: restriction } : {}),
+                }
+              },
+            ),
           ),
         )
       }
@@ -1683,7 +1714,13 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
                 const target = await safeFile(root, name)
                 if ((await stat(target)).size > maxBytes)
                   throw new HttpError(413, 'Only text files up to 1 MB can be edited')
-                const current = await readFile(target, 'utf8')
+                const bytes = await readFile(target)
+                let current: string
+                try {
+                  current = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+                } catch {
+                  throw new HttpError(415, 'Only UTF-8 files can be edited')
+                }
                 if (current.includes('\0'))
                   throw new HttpError(415, 'Binary files cannot be edited')
                 if (current !== expectedContents)
@@ -1764,6 +1801,24 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
       if (method === 'POST' && path === '/api/tasks/native-thread') {
         const input = decode(nativeThreadReadSchema, yield* serviceResult(body(request)))
         return yield* serviceResult(s.tasks.nativeThread(input))
+      }
+      if (method === 'POST' && path === '/api/tasks/native-skills') {
+        if (!owner) return []
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        const workspace = s.store.get()
+        const task = workspace.tasks.find((task) => task.id === id)
+        if (!task || task.replica || task.archivedAt) return []
+        const repository = workspace.repositories.find(({ id }) => id === task.repositoryId)
+        if (containerSandboxEnabled(taskContainerSandbox(task, s.defaults.get(), repository)))
+          return []
+        const agent = resolveTaskAgent(task, s.store.agentsFor(task.repositoryId))
+        if (agent?.provider !== 'opencode') return []
+        const cwd = yield* serviceResult(s.checkouts.fileDirectory(id).catch(() => undefined))
+        if (!cwd) return []
+        const adapter = yield* serviceResult(s.agents.get('opencode'))
+        return yield* serviceResult(
+          adapter.nativeSkills?.(agent, cwd, AbortSignal.timeout(5_000)) ?? Promise.resolve([]),
+        )
       }
       if (method === 'POST' && path === '/api/tasks/cancel') {
         const input = decode(

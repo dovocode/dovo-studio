@@ -48,3 +48,12 @@ it('normalizes shell input and textual tool results without treating other tools
   expect(commandInput({ query: 'gh pr create' })).toBe('')
   expect(commandOutput([{ type: 'text', text: url() }])).toBe(url())
 })
+
+it('resolves the merge target without interpreting numeric titles as PR numbers', () => {
+  expect(pullCommands('gh pr merge --subject "Release 20" --squash 7')[0]?.target).toBe('7')
+  expect(pullCommands('gh pr merge --subject=20 --squash')[0]?.target).toBeUndefined()
+  expect(pullCommands('glab mr merge --squash-message "Release 20" 7')[0]?.target).toBe('7')
+  expect(
+    createdPulls('gh pr merge 7 --subject "Release 20" && gh pr create --fill', url(20)),
+  ).toEqual([{ number: 20, url: url(20) }])
+})

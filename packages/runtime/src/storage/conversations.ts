@@ -495,7 +495,12 @@ export class Conversations {
     if (/[\ud800-\udfff]/u.test(needle) || needle.includes('\ufffd') || needle.includes('\0'))
       return this.searchOriginalText(orderedTaskIds, needle, limit, end, hitTaskIds)
     this.boundSearchOverlay(orderedTaskIds)
-    const candidates = this.searchCandidates(terms)
+    // Indexed text preserves source line endings. Narrow a phrase by its words so a
+    // carriage return in an existing index does not eliminate a valid phrase match.
+    const phrase = terms.some((term) => term.includes(' '))
+    const candidates = this.searchCandidates(
+      phrase ? terms.flatMap((term) => term.split(' ').filter(Boolean)) : terms,
+    )
     const candidateJson = candidates === undefined ? undefined : JSON.stringify(candidates)
     const live = this.pendingSearch(orderedTaskIds).map((row) => ({
       row: row.row,
@@ -525,8 +530,9 @@ export class Conversations {
       candidateJson === undefined || live.length
         ? ''
         : 'entry.rowid IN (SELECT value FROM json_each(?)) AND'
+    const searchText = phrase ? "replace(entry.search_text, char(13), ' ')" : 'entry.search_text'
     const matches = `NOT EXISTS (SELECT 1 FROM json_each(?) AS term
-      WHERE coalesce(instr(entry.search_text, term.value), 0) = 0)`
+      WHERE coalesce(instr(${searchText}, term.value), 0) = 0)`
     const query = JSON.stringify(terms)
     if (orderedTaskIds.length === 1) {
       const taskId = orderedTaskIds[0]

@@ -17,6 +17,7 @@ import {
   attachmentPreparedSchema,
   attachmentCommitResultSchema,
   mutableStruct,
+  isImageAttachment,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   type Attachment,
@@ -24,6 +25,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
+import { copiedMessageImages } from '../../ui/content/copied-message-images'
 
 export type AttachmentAsset = {
   id?: string
@@ -55,6 +57,7 @@ export function useAttachmentPicker(
     callEffect,
     snapshot,
     profile,
+    overviews,
     requestAttachmentEffect,
     reviewAttachments,
     readRuntimeEffect,
@@ -531,6 +534,54 @@ export function useAttachmentPicker(
       setPasting(false)
     })
   }
+  const pasteCopiedImages = (marker: string) => {
+    const copied = copiedMessageImages(marker)
+    if (!copied || !profile || !connected || busy || uploading.current) return
+    const source = overviews.find(
+      ({ snapshot, profile }) =>
+        (snapshot?.runtimeId ?? profile.connection.runtimeId) === copied.runtimeId,
+    )?.profile
+    if (!source) return
+    uploading.current = true
+    setPasting(true)
+    const generation = ownership.current.generation
+    void run(() =>
+      mobileWorkflow(function* () {
+        const destination = yield* captureDestination()
+        const files: File[] = []
+        try {
+          const assets: AttachmentAsset[] = []
+          for (const id of copied.ids.slice(0, MAX_ATTACHMENTS)) {
+            const { attachment, data } = yield* readRuntimeEffect(
+              source,
+              '/api/attachments/read',
+              { taskId: copied.taskId, id },
+              attachmentReadSchema,
+            )
+            if (!isImageAttachment(attachment)) continue
+            if (!ownership.current.mounted || ownership.current.generation !== generation)
+              throw new Error('The conversation changed before the image was pasted.')
+            const file = new File(Paths.cache, `copied-image-${randomUUID()}`)
+            files.push(file)
+            yield* nativeEffect(() => file.write(data, { encoding: 'base64' }))
+            assets.push({
+              uri: file.uri,
+              name: attachment.name,
+              mimeType: attachment.mime,
+              prepared: true,
+            })
+          }
+          if (assets.length)
+            yield* uploadAssets(assets, undefined, false, undefined, destination, generation)
+        } finally {
+          for (const file of files) if (file.exists) file.delete()
+        }
+      }),
+    ).finally(() => {
+      uploading.current = false
+      setPasting(false)
+    })
+  }
   const inFlightFiles = pendingUploads?.scope === scopeKey ? pendingUploads.files : []
   return {
     submissionFiles: inFlightFiles,
@@ -579,6 +630,7 @@ export function useAttachmentPicker(
     error,
     pick,
     pasteImage,
+    pasteCopiedImages,
     select,
     upload,
     attachText: async (text: string, name: string) => {

@@ -1,11 +1,19 @@
 import { expect, it } from 'vite-plus/test'
 import {
   combinePullSections,
+  githubWithheldPatch,
   matchingPullSection,
   pullChangesSnapshot,
   type PullDetail,
 } from './pulls'
 import { pullDetailChecks, pullDetailReviews } from './pull-presentation'
+
+it('distinguishes a GitHub zero-count modified file with a withheld patch from a hunkless rename', () => {
+  const counts = { additions: 0, deletions: 0 }
+  expect(githubWithheldPatch({ ...counts, status: 'modified' })).toBe(true)
+  expect(githubWithheldPatch({ ...counts, status: 'renamed' })).toBe(false)
+  expect(githubWithheldPatch({ ...counts, status: 'modified', patch: '@@ -1 +1 @@' })).toBe(false)
+})
 
 const overview: PullDetail = {
   destination: 'account-repository',

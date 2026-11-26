@@ -14,6 +14,7 @@ import {
 } from '@dovo/protocol'
 import { NestedThreads } from '../list/nested-threads'
 import { useNavigation } from '../../shell/navigation'
+import { taskHref, type OpenThreadInInspector } from '../../shell/task-route'
 import { Action } from '../../ui/controls/action'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -40,9 +41,11 @@ import { Switch } from '../../ui/controls/switch'
 export function TaskAgents({
   task,
   onOpenThread,
+  onOpenChild,
 }: {
   task: Task
   onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
+  onOpenChild?: OpenThreadInInspector
 }) {
   const uiText = useInterfaceText()
 
@@ -157,7 +160,7 @@ export function TaskAgents({
           gap: 4,
         }}
       >
-        <TaskWorkflows task={task} onOpenThread={onOpenThread} />
+        <TaskWorkflows task={task} onOpenThread={onOpenThread} onOpenChild={onOpenChild} />
         <View
           style={{
             flexDirection: 'row',
@@ -225,6 +228,7 @@ export function TaskAgents({
             disabled={cancellation.busy}
             acknowledgedFailures={task.acknowledgedSubagentFailures}
             onAcknowledgeFailure={acknowledgeFailure}
+            onOpenChild={onOpenChild}
           />
         ))}
         {visibleAgents.map((agent, index) => {
@@ -370,7 +374,22 @@ export function TaskAgents({
                     <Action
                       secondary
                       label={uiText('Open child thread · {value0}', { value0: agent.provider })}
-                      onPress={() => navigate('tasks', childId, profile?.id)}
+                      onPress={() => {
+                        if (
+                          profile &&
+                          onOpenChild?.(
+                            taskHref(
+                              profile.id,
+                              childId,
+                              undefined,
+                              undefined,
+                              snapshot?.runtimeId,
+                            ),
+                          )
+                        )
+                          return
+                        navigate('tasks', childId, profile?.id)
+                      }}
                     />
                   )}
                   {agent.source !== 'dovo' && owner && (

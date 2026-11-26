@@ -30,6 +30,7 @@ export const ComposerField = memo(function ComposerField({
   showOptions,
   trailingControlCount,
   onSelectionChange,
+  onPasteCopiedImages,
   value = '',
   revision,
   onChangeText,
@@ -45,6 +46,7 @@ export const ComposerField = memo(function ComposerField({
   trailingControlCount: number
   revision: string
   onSelectionChange: (selection: DraftSelection) => void
+  onPasteCopiedImages?: (marker: string) => void
   resources?: ComposerReferenceResources
   inputRef?: Ref<ComposerInputHandle>
 }) {
@@ -122,6 +124,7 @@ export const ComposerField = memo(function ComposerField({
           inputRef={richInput}
           onChangeText={type}
           onSelectionChange={onSelectionChange}
+          onPasteCopiedImages={onPasteCopiedImages}
         />
       ) : (
         <Field
@@ -140,6 +143,7 @@ export const ComposerField = memo(function ComposerField({
           autoComplete="off"
           textContentType="none"
           multiline
+          disableFullscreenUI={Platform.OS === 'android'}
           submitBehavior="newline"
           // Fabric measures native text as it changes. A fixed height prevents that layout
           // from growing and can leave iOS content-size notifications stuck at one line.

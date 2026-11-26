@@ -1,4 +1,10 @@
-import { taskWorkflows, workflowStateLabel, type Subagent, type TaskMetadata } from '@dovo/protocol'
+import {
+  taskWorkflows,
+  workflowReplyPreview,
+  workflowStateLabel,
+  type Subagent,
+  type TaskMetadata,
+} from '@dovo/protocol'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { ChevronRight, Workflow } from 'lucide-react'
 import { AutomationSubjectRuns } from '@dovo/studio-ui/automation-subject-runs'
@@ -90,7 +96,7 @@ export function TaskWorkflows({
                       </p>
                       {(member.result || member.activity) && (
                         <p className="mt-1 line-clamp-2 break-words text-xs text-muted-foreground">
-                          {member.result || member.activity}
+                          {workflowReplyPreview(member.result, member.activity)}
                         </p>
                       )}
                     </div>

@@ -31,7 +31,7 @@ it('lists folders, reads text/image/empty entries and supports long archive comm
   )
   const bytes = Buffer.concat([zipped, Buffer.alloc(200, 'a')])
   bytes.writeUInt16LE(200, zipped.length - 2)
-  expect((await listAttachmentArchive(source(bytes), input)).entries).toEqual([
+  expect((await listAttachmentArchive(source(bytes), input)).entries).toMatchObject([
     { path: 'report/', directory: true, size: 0 },
     { path: 'report/notes.txt', directory: false, size: 15 },
     { path: 'images/screen.png', directory: false, size: png.length },
@@ -54,6 +54,29 @@ it('lists folders, reads text/image/empty entries and supports long archive comm
   await expect(readAttachmentArchive(source(bytes), { ...input, path: 'report/' })).rejects.toThrow(
     'not found',
   )
+})
+
+it('preserves distinct legacy filenames and DOS modification times through a read', async () => {
+  const bytes = Buffer.from(zipSync({ 'a.txt': strToU8('first'), 'b.txt': strToU8('second') }))
+  const first = central(bytes)
+  const second = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), first + 4)
+  for (const [offset, name] of [
+    [first, 0x82],
+    [second, 0x81],
+  ] as const) {
+    bytes[offset + 46] = name
+    bytes[bytes.readUInt32LE(offset + 42) + 30] = name
+    bytes.writeUInt16LE(0, offset + 8)
+    bytes.writeUInt16LE((13 << 11) | (27 << 5) | 6, offset + 12)
+    bytes.writeUInt16LE(((2026 - 1980) << 9) | (11 << 5) | 26, offset + 14)
+  }
+  const archive = source(bytes)
+  expect((await listAttachmentArchive(archive, input)).entries).toEqual([
+    { path: 'é.txt', directory: false, size: 5, modifiedAt: '2026-11-26T13:27:12.000Z' },
+    { path: 'ü.txt', directory: false, size: 6, modifiedAt: '2026-11-26T13:27:12.000Z' },
+  ])
+  const file = await readAttachmentArchive(archive, { ...input, path: 'ü.txt' })
+  expect(Buffer.from(file.data, 'base64').toString()).toBe('second')
 })
 
 it.each(['../secret', '/absolute', 'C:/file', 'a\\b', 'a/./b', 'a/../b', 'a//b', 'a\u0000b'])(
@@ -183,4 +206,82 @@ it('authenticates HTTP requests, isolates thread attachments and attaches a sele
   expect(
     (await request('archive/read', { taskId: task.id, id, path: 'x'.repeat(1025) })).status,
   ).toBe(400)
+})
+
+it('previews EPUB and DOCX text through the attachment reader and preserves the original bytes', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const token = 'document-owner-token-with-more-than-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Documents',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const request = (input: unknown, credential = token) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/attachments/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const word = (body: string) =>
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`
+  const chapter = (body: string) =>
+    `<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`
+  const files: { name: string; expected?: string; entries: Record<string, string> }[] = [
+    {
+      name: 'report.DOCX',
+      expected: 'Release notes\n\nSecond paragraph',
+      entries: {
+        'word/document.xml': word(
+          '<w:p><w:r><w:t>Release </w:t></w:r><w:r><w:t>notes</w:t></w:r></w:p><w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>',
+        ),
+      },
+    },
+    {
+      name: 'book.epub',
+      expected: 'Opening line\nHeading\n\nCover image\n\nSecond chapter',
+      entries: {
+        'META-INF/container.xml':
+          '<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>',
+        'OPS/book.opf':
+          '<package><manifest><item id="two" href="text/second.xhtml" media-type="application/xhtml+xml"/><item id="one" href="text/first%20chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="one"/><itemref idref="two"/></spine></package>',
+        'OPS/text/second.xhtml': chapter('<p>Second chapter</p>'),
+        'OPS/text/first chapter.xhtml': chapter(
+          '<span>Opening line</span><h2>Heading</h2><p hidden="hidden">Hidden passage</p><figure><img src="cover.jpg" alt="Cover image"/></figure>',
+        ),
+      },
+    },
+    {
+      name: 'invalid.docx',
+      expected: undefined,
+      entries: { 'word/document.xml': '<w:document>' },
+    },
+  ]
+  for (const file of files) {
+    const id = randomUUID()
+    const data = Buffer.from(
+      zipSync(
+        Object.fromEntries(
+          Object.entries(file.entries).map(([path, content]) => [path, strToU8(content)]),
+        ),
+      ),
+    ).toString('base64')
+    await s.attachments.upload({ taskId: task.id, id, name: file.name, data })
+    const input = { taskId: task.id, id, previewDocument: true }
+    expect((await request(input, 'invalid')).status).toBe(401)
+    expect((await request({ ...input, taskId: 'other' })).status).toBe(400)
+    const response = await request(input)
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    expect(result.data).toBe(data)
+    expect(result.documentPreview).toBe(file.expected)
+    const original = await (await request({ taskId: task.id, id })).json()
+    expect(original).not.toHaveProperty('documentPreview')
+    expect(original.data).toBe(data)
+  }
 })

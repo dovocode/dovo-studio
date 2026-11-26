@@ -244,6 +244,7 @@ export class ProjectBrowser {
     )
       throw new HttpError(409, 'This directory changed. Refresh its listing.')
     return {
+      root,
       entries: entries
         .filter(
           (entry) =>

@@ -15,6 +15,20 @@ const ratioLimit = (compressed: number) => Math.max(1024 * 1024, compressed * 20
 const invalid = () =>
   new HttpError(400, 'This ZIP cannot be browsed. Share it to open in another app.')
 
+const cp437 =
+  'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ' +
+  'áíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐' +
+  '└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀' +
+  'αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0'
+
+function archivePath(entry: CentralDirectory['files'][number]) {
+  if (entry.isUnicode)
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(entry.pathBuffer)
+  return Array.from(entry.pathBuffer, (byte) =>
+    byte < 128 ? String.fromCharCode(byte) : cp437[byte - 128],
+  ).join('')
+}
+
 /** Bound directory allocation before the ZIP library parses records. No archive paths reach disk. */
 function boundedDirectory(data: Buffer) {
   if (data.length > MAX_ATTACHMENT_BYTES)
@@ -61,7 +75,10 @@ function safePath(path: string, directory: boolean) {
 async function openArchive(attachments: Pick<Attachments, 'read'>, taskId: string, id: string) {
   const source = attachments.read(taskId, id)
   if (!isZipAttachment(source.attachment)) throw invalid()
-  const data = Buffer.from(source.data, 'base64')
+  return openBoundedZip(Buffer.from(source.data, 'base64'))
+}
+
+export async function openBoundedZip(data: Buffer) {
   const normalized = boundedDirectory(data)
   let directory: CentralDirectory
   try {
@@ -72,6 +89,11 @@ async function openArchive(attachments: Pick<Attachments, 'read'>, taskId: strin
   let total = 0
   const paths = new Set<string>()
   for (const entry of directory.files) {
+    try {
+      entry.path = archivePath(entry)
+    } catch {
+      throw invalid()
+    }
     const folder = entry.type === 'Directory'
     const key = entry.path.replace(/\/$/, '')
     const mode = (entry.externalFileAttributes >>> 16) & 0xf000
@@ -119,6 +141,10 @@ export async function listAttachmentArchive(
     path: entry.path,
     directory: entry.type === 'Directory',
     size: entry.uncompressedSize,
+    modifiedAt:
+      entry.lastModifiedDate & 31 && (entry.lastModifiedDate >> 5) & 15
+        ? entry.lastModifiedDateTime.toISOString()
+        : undefined,
   }))
   return { entries }
 }
@@ -130,27 +156,8 @@ export async function readAttachmentArchive(
   const files = await openArchive(attachments, input.taskId, input.id)
   const entry = files.find((file) => file.path === input.path && file.type === 'File')
   if (!entry) throw new HttpError(404, 'ZIP entry not found')
-  const chunks: Buffer[] = []
-  let size = 0
-  let checksum = 0
-  const stream = entry.stream()
-  try {
-    for await (const value of stream) {
-      if (!Buffer.isBuffer(value)) throw invalid()
-      size += value.length
-      if (size > entry.uncompressedSize || size > MAX_ATTACHMENT_BYTES)
-        throw new HttpError(413, 'The expanded file exceeds preview limits. Share the ZIP instead.')
-      checksum = crc32(value, checksum)
-      chunks.push(value)
-    }
-    if (size !== entry.uncompressedSize || checksum !== entry.crc32) throw invalid()
-  } catch (error) {
-    if (error instanceof HttpError) throw error
-    throw invalid()
-  } finally {
-    stream.destroy()
-  }
-  const data = Buffer.concat(chunks, size)
+  const data = await readZipEntry(entry, MAX_ATTACHMENT_BYTES)
+  const size = data.length
   const detected = await fileTypeFromBuffer(data).catch((error) => {
     if (error instanceof Error && error.name === 'EndOfStreamError') return undefined
     throw error
@@ -171,4 +178,30 @@ export async function readAttachmentArchive(
     size,
     data: data.toString('base64'),
   }
+}
+
+export async function readZipEntry(entry: CentralDirectory['files'][number], limit: number) {
+  if (entry.uncompressedSize > limit)
+    throw new HttpError(413, 'The expanded file exceeds preview limits. Share the ZIP instead.')
+  const chunks: Buffer[] = []
+  let size = 0
+  let checksum = 0
+  const stream = entry.stream()
+  try {
+    for await (const value of stream) {
+      if (!Buffer.isBuffer(value)) throw invalid()
+      size += value.length
+      if (size > entry.uncompressedSize)
+        throw new HttpError(413, 'The expanded file exceeds preview limits. Share the ZIP instead.')
+      checksum = crc32(value, checksum)
+      chunks.push(value)
+    }
+    if (size !== entry.uncompressedSize || checksum !== entry.crc32) throw invalid()
+  } catch (error) {
+    if (error instanceof HttpError) throw error
+    throw invalid()
+  } finally {
+    stream.destroy()
+  }
+  return Buffer.concat(chunks, size)
 }

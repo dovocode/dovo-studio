@@ -15,19 +15,22 @@ import {MessageAttachments} from './src/tasks/conversation/components/message-at
 window.edited=[];window.calls=[];window.connected=true;window.disabled=false;window.thumbnailFail=false;window.fail=false;window.sharingAvailable=true;window.shared=[];window.writes=[];
 const image={id:'photo',name:'Schermafbeelding 2026-10-24 om 09.01 — a very long filename.jpg',mime:'image/jpeg',size:2048};
 const doc={id:'notes',name:'Notes for the release.txt',mime:'text/plain',size:32};
+const notebook={id:'notebook',name:'results.ipynb',mime:'application/x-ipynb+json',size:128};
+const book={id:'book',name:'reader.epub',mime:'application/zip',size:256};
+const notebookData=btoa(JSON.stringify({nbformat:4,cells:[{cell_type:'code',outputs:[{data:{'text/markdown':'**Notebook result**'}}]}]}));
 const zip={id:'archive',name:'Build artifacts and supporting reports.zip',mime:'application/zip',size:2048};
 const audio={id:'audio',name:'recording.wav',mime:'audio/wav',size:8044};const video={id:'video',name:'movie.mp4',mime:'video/mp4',size:100};
 const wav=new Uint8Array(8044), wavView=new DataView(wav.buffer);for(const [offset,text] of [[0,'RIFF'],[8,'WAVE'],[12,'fmt '],[36,'data']])for(let index=0;index<text.length;index++)wav[offset+index]=text.charCodeAt(index);wavView.setUint32(4,8036,true);wavView.setUint32(16,16,true);wavView.setUint16(20,1,true);wavView.setUint16(22,1,true);wavView.setUint32(24,8000,true);wavView.setUint32(28,8000,true);wavView.setUint16(32,1,true);wavView.setUint16(34,8,true);wavView.setUint32(40,8000,true);wav.fill(128,44);
 window.archiveEntries=[{path:'reports/deep/results.txt',size:15,directory:false},{path:'reports/other.txt',size:12,directory:false},{path:'image.png',size:32,directory:false},{path:'empty/',size:0,directory:true}];window.uploads=[];
 
-window.files=[image,doc,zip];window.mediaFiles=[audio,video];window.request=async(path,input)=>{window.calls.push({path,input});
+window.files=[image,doc,zip];window.mediaFiles=[audio,video];window.notebook=notebook;window.book=book;window.request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/attachments/ocr'){if(window.failOcr)throw Error('Local vision is busy');return {text:window.ocrText??'Release notes'}};
 if(path==='/api/attachments/archive/list'){if(window.archiveFail)throw Error('Expanded ZIP exceeds preview limits');return {entries:window.archiveEntries}};
 if(path==='/api/attachments/archive/read'){if(window.holdEntry){window.holdEntry=false;await new Promise(resolve=>window.releaseEntry=resolve)}if(window.entryFail)throw Error('Entry unavailable');const image=input.path==='image.png';return {path:input.path,name:input.path.split('/').at(-1),mime:image?'image/png':'text/plain',size:15,data:image?window.png.split(',')[1]:btoa(input.path==='reports/other.txt'?'Other result':'Selected result')}};
 if(path==='/api/attachments/draft-guard')return {guard:'guard'};
 if(path==='/api/attachments/commit-upload'){window.committed=(window.committed||[]).concat(input);const upload=window.uploads.find(item=>item.id===input.id);return {attachment:{id:input.id,name:upload.name,mime:'text/plain',size:15},revision:1,nextGuard:'next-guard'}};
 if(path==='/api/attachments/recoverable-upload'){window.uploads.push(input);if(window.holdUpload){window.holdUpload=false;await new Promise(resolve=>window.releaseUpload=resolve)}if(window.preflightFail){window.preflightFail=false;throw Error('Upload not dispatched')}if(window.uploadFail){window.uploadFail=false;throw Error('Upload response lost')}return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:15},revision:1}};
-if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};if(window.holdRead){await new Promise(resolve=>window.releaseRead=resolve)}return {attachment:[...window.files,...window.mediaFiles].find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:input.id==='audio'?btoa(String.fromCharCode(...wav)):btoa('Release notes')}};
+if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};if(window.holdRead){await new Promise(resolve=>window.releaseRead=resolve)}return {documentPreview:input.previewDocument&&input.id==='book'?'Chapter on mobile':undefined,attachment:[...window.files,...window.mediaFiles,notebook,book].find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:input.id==='audio'?btoa(String.fromCharCode(...wav)):input.id==='notebook'?notebookData:btoa('Release notes')}};
 function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=useState(0);window.refresh=()=>setRevision(value=>value+1);window.setFiles=setFiles;return <main data-revision={revision} style={{padding:12}}><MessageAttachments taskId="task" files={files} removable edit={async id=>{window.edited.push(id)}} attachText={async(text,name)=>{window.ocrAttached={text,name}}} remove={id=>setFiles(files=>files.filter(file=>file.id!==id))} disabled={window.disabled}/><textarea aria-label="Message" defaultValue="Keep my draft"/></main>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -79,12 +82,18 @@ export const Image=({source,accessibilityLabel,style})=><img src={source?.uri} a
     {
       path: '../../../runtime/connection/provider',
       importer: component,
-      contents: `import {Effect} from 'effect';const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>({connected:window.connected,profile:{id:'host',connection:{address:'host',token:'token'}},callEffect:request,readEffect:request,readRuntimeEffect:(_profile,path,input)=>request(path,input),refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{window.reviews=(window.reviews||0)+1},attachmentPendingEffect:()=>window.pendingReadFail?Effect.fail(Error('Storage unavailable')):Effect.succeed(!window.noPending),requestAttachmentEffect:(_profile,input)=>request('/api/attachments/recoverable-upload',input)});`,
+      contents: `import {Effect} from 'effect';const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>({connected:window.connected,snapshot:{documentAttachmentPreviewSupported:true},profile:{id:'host',connection:{address:'host',token:'token'}},callEffect:request,readEffect:request,readRuntimeEffect:(_profile,path,input)=>request(path,input),refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{window.reviews=(window.reviews||0)+1},attachmentPendingEffect:()=>window.pendingReadFail?Effect.fail(Error('Storage unavailable')):Effect.succeed(!window.noPending),requestAttachmentEffect:(_profile,input)=>request('/api/attachments/recoverable-upload',input)});`,
     },
     {
       path: '../../../ui/theme',
       importer: component,
       contents: `export const useTheme=()=>({colors:{text:'#eee',muted:'#aaa',surface:'#202020',border:'#333',selection:'#444'},styles:{screen:{flex:1,backgroundColor:'#111'},content:{padding:16,gap:12},text:{color:'#eee'},error:{color:'#f88'}}});`,
+    },
+    {
+      path: '../../../ui/content/markdown',
+      importer: component,
+      contents:
+        'export const Markdown=({text,taskId})=><div data-markdown-owner={taskId}>{text}</div>;',
     },
     {
       path: '../../../ui/content/text',
@@ -287,6 +296,16 @@ try {
     .waitFor()
   assert.equal(await share.isEnabled(), true)
   assert.equal(await page.evaluate(() => window.shareExports.has(window.shared.at(-1).uri)), false)
+  await close.click()
+  await page.evaluate(() =>
+    window.setFiles([...window.files.slice(0, 2), window.notebook, window.book]),
+  )
+  await rows.getByRole('button', { name: 'Preview results.ipynb' }).click()
+  await dialog.locator('[data-markdown-owner="task"]').getByText('**Notebook result**').waitFor()
+  await close.click()
+  await rows.getByRole('button', { name: 'Preview reader.epub' }).click()
+  await dialog.getByText('Chapter on mobile').waitFor()
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.previewDocument), true)
   await close.click()
   await page.evaluate(() => {
     window.fail = true

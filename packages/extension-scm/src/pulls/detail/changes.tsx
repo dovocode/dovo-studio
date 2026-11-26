@@ -10,6 +10,7 @@ import {
   createReviewFileLookup,
   orderReviewFiles,
   pullFileKind,
+  githubWithheldPatch,
   type FileKind,
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
@@ -311,6 +312,7 @@ export function PullChanges({
           const comments = commentsByPath.get(file.path) ?? []
           const fingerprint = fingerprints.get(file.path) ?? ''
           const state = fileState(file.path, fingerprint)
+          const withheld = detail.pull.provider === 'github' && githubWithheldPatch(file)
           return (
             <article
               key={file.path}
@@ -327,10 +329,10 @@ export function PullChanges({
                     {file.path}
                   </span>
                   <span className="text-xs">
-                    {file.additions !== null && (
+                    {!withheld && file.additions !== null && (
                       <span className="text-status-success">+{file.additions}</span>
                     )}{' '}
-                    {file.deletions !== null && (
+                    {!withheld && file.deletions !== null && (
                       <span className="text-status-error">−{file.deletions}</span>
                     )}
                   </span>

@@ -57,6 +57,53 @@ export type PullCommand = {
   target?: string
   repository?: string
 }
+const mergeValueOptions = new Set([
+  '-R',
+  '--repo',
+  '-t',
+  '--subject',
+  '-b',
+  '--body',
+  '-F',
+  '--body-file',
+  '--author-email',
+  '--match-head-commit',
+  '--sha',
+  '-m',
+  '--message',
+  '--squash-message',
+])
+const mergeSwitches = new Set([
+  '--admin',
+  '--auto',
+  '--disable-auto',
+  '--delete-branch',
+  '-d',
+  '--merge',
+  '-m',
+  '--rebase',
+  '-r',
+  '--squash',
+  '-s',
+  '--remove-source-branch',
+  '--yes',
+  '-y',
+])
+
+function mergeTarget(argv: string[], index: number, provider: ForgeProvider) {
+  while (index < argv.length) {
+    const word = argv[index++]
+    if (word === '--') return argv[index]
+    if (!word.startsWith('-')) return word
+    const option = word.split('=', 1)[0]!
+    // -m selects a GitHub merge strategy and takes a message for GitLab.
+    if (word === '-m' && provider === 'github') continue
+    if (mergeValueOptions.has(option)) {
+      if (word === option) index++
+    } else if (!mergeSwitches.has(word)) return undefined
+  }
+}
+
 function mutation(argv: string[]): PullCommand | undefined {
   const bin = executable(argv[0])
   const provider = bin === 'gh' ? 'github' : bin === 'glab' ? 'gitlab' : undefined
@@ -81,7 +128,12 @@ function mutation(argv: string[]): PullCommand | undefined {
     provider,
     action,
     repository,
-    target: first && !first.startsWith('-') ? first : undefined,
+    target:
+      action === 'merge'
+        ? mergeTarget(argv, index, provider)
+        : first && !first.startsWith('-')
+          ? first
+          : undefined,
   }
 }
 export function pullCommands(input: string): PullCommand[] {
@@ -116,7 +168,13 @@ export function createdPulls(input: string, output: string) {
         : undefined
     if (!creates.some((command) => command.provider === group)) continue
     const named = new RegExp(`(?:^|[\\s#/=("'])${reference.number}(?=$|[\\s);&|/"'])`)
-    if (other.some((argv) => named.test(argv.join(' ')))) continue
+    if (
+      other.some((argv) => {
+        const command = mutation(argv)
+        return named.test(command ? (command.target ?? '') : argv.join(' '))
+      })
+    )
+      continue
     candidates.set(reference.url, reference)
   }
   return candidates.size > creates.length ? [] : [...candidates.values()]

@@ -54,6 +54,12 @@ const stubs = [
     contents: `export const CodeBlock=({content})=><pre>{content}</pre>;`,
   },
   {
+    path: '../../ui/content/markdown',
+    importer: mobile + 'tasks/files/',
+    contents:
+      'export const Markdown=({text})=><pre aria-label="Formatted file preview">{text}</pre>;',
+  },
+  {
     path: '../../ui/content/syntax-highlighter',
     importer: mobile,
     contents: `export const fileLanguage=()=> 'text';`,
@@ -116,6 +122,19 @@ try {
   await writeFile(join(directory, 'src', 'hello.ts'), 'export const hello = 1\n')
   await writeFile(join(directory, 'empty.txt'), '')
   await writeFile(join(directory, 'data.csv'), 'Name,Value\nFirst table cell,42\n')
+  await writeFile(
+    join(directory, 'report.ipynb'),
+    JSON.stringify({
+      nbformat: 4,
+      cells: [
+        {
+          cell_type: 'code',
+          source: 'render()',
+          outputs: [{ data: { 'text/markdown': '**Notebook result**' } }],
+        },
+      ],
+    }),
+  )
   const longPrefix = 'x'.repeat(128 * 1024 - 1)
   await writeFile(join(directory, 'long.txt'), longPrefix + '😃 tail of one long line')
   await writeFile(
@@ -222,6 +241,14 @@ try {
   await page.getByRole('button', { name: 'Save file', exact: true }).click()
   await page.getByRole('button', { name: 'Table preview', exact: true }).waitFor()
   assert.equal(await readFile(join(directory, 'data.csv'), 'utf8'), 'Name,Value\nEdited CSV,43\n')
+  await browse.click()
+  await page.getByRole('button', { name: 'report.ipynb', exact: true }).click()
+  await page
+    .getByLabel('Formatted file preview')
+    .getByText('**Notebook result**', { exact: false })
+    .waitFor()
+  await page.getByRole('button', { name: 'Show source', exact: true }).click()
+  await page.getByText(/"nbformat":4/).waitFor()
   await page.getByRole('button', { name: 'Browse files', exact: true }).click()
 
   await writeFile(join(directory, 'new-file.txt'), 'created after opening files\n')

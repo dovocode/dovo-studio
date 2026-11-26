@@ -420,6 +420,8 @@ export const snapshotSchema = mutableStruct({
   runtimeDictationSupported: Schema.optional(Schema.Boolean),
   textGeneratorsSupported: Schema.optional(Schema.Boolean),
   modelMentionsSupported: Schema.optional(Schema.Boolean),
+  nativeSkillMentionsSupported: Schema.optional(Schema.Boolean),
+  documentAttachmentPreviewSupported: Schema.optional(Schema.Boolean),
   /** Messages and queue edits accept `plan`, enforced as a read-only turn. */
   planModeSupported: Schema.optional(Schema.Literal(true)),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
@@ -831,6 +833,7 @@ export const responses = {
     hasMore: Schema.optional(Schema.Boolean),
     cursor: Schema.optional(Schema.String),
     nextCursor: Schema.optional(Schema.String),
+    encoding: Schema.optional(Schema.Literal('gb18030')),
     document: Schema.optional(Schema.Array(Schema.Array(rtfSpan))),
   }),
   gitActionState: mutableStruct({

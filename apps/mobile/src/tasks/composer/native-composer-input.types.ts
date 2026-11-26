@@ -15,6 +15,7 @@ export type NativeComposerInputProps = Pick<
   focusKey?: string
   expanded: boolean
   onSelectionChange: (selection: DraftSelection) => void
+  onPasteCopiedImages?: (marker: string) => void
   inputRef?: Ref<ComposerInputHandle>
 }
 

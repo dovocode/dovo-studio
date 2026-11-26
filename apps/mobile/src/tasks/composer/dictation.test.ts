@@ -47,6 +47,8 @@ describe('native dictation lifecycle', () => {
     expect(resolveDictationLocale(['en-NL'], ['nl-NL', 'en-GB'])).toBe('en-GB')
     expect(resolveDictationLocale(['en-NL', 'en-GB'], ['en-AU', 'en-GB'])).toBe('en-GB')
     expect(resolveDictationLocale(['zh-Hant-HK'], ['zh-Hans-CN', 'zh-Hant-TW'])).toBe('zh-Hant-TW')
+    expect(resolveDictationLocale(['zh-CN'], ['zh-Hant-TW', 'cmn-Hans-CN'])).toBe('cmn-Hans-CN')
+    expect(resolveDictationLocale(['zh-Hans-CN'], ['zh-CN', 'zh-Hant-TW'])).toBe('zh-CN')
     expect(resolveDictationLocale(['zz-ZZ', 'nl-NL'], ['en-US', 'nl-NL'])).toBe('nl-NL')
     expect(resolveDictationLocale(['nl_NL-u-ca-gregory'], [])).toBe('nl-NL')
   })

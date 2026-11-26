@@ -1,5 +1,12 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { decode, nativeThreadPageSchema, type NativeThreadEntry } from '@dovo/protocol'
+import {
+  builtInAgentPresets,
+  decode,
+  nativeThreadPageSchema,
+  type NativeThreadEntry,
+} from '@dovo/protocol'
+import { mkdir, rename, symlink, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration } from '../testing/integration'
@@ -131,4 +138,101 @@ it('shows a background job saved output without opening an agent transcript', as
   expect(page.entries).toEqual([{ id: 'result', role: 'assistant', text: 'Five cycles passed' }])
   expect(page.notice).toContain('Background job')
   expect(reader).not.toHaveBeenCalled()
+})
+
+it('reads an owned Antigravity child transcript from the configured profile after the session closes', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    port: 0,
+    databasePath: ':memory:',
+    ownerToken: 'native-antigravity-test-owner-token-long-enough',
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  const preset = builtInAgentPresets().find((agent) => agent.id === 'dovo:antigravity')!
+  const profile = join(f.workspace.repositories[0].path, 'provider-profile')
+  const agent = { ...preset, id: 'antigravity-test', env: { GEMINI_HOME: profile } }
+  s.store.update(() => ({ ...f.workspace, agents: [agent] }))
+  const task = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: agent.id,
+    objective: '',
+  })
+  const child = {
+    id: 'child',
+    provider: 'acp' as const,
+    sessionId: 'parent',
+    name: 'Child',
+    status: 'completed' as const,
+    startedAt: 'now',
+    updatedAt: 'now',
+    result: 'Saved result',
+  }
+  s.store.updateTask(task.id, (current) => ({ ...current, subagents: [child] }))
+  const log = join(
+    profile,
+    'antigravity-acp',
+    'brain',
+    'child',
+    '.system_generated',
+    'logs',
+    'transcript.jsonl',
+  )
+  const descriptor = join(
+    profile,
+    'antigravity-acp',
+    'brain',
+    'parent',
+    '.system_generated',
+    'subagents',
+    'child.json',
+  )
+  await mkdir(dirname(log), { recursive: true })
+  await mkdir(dirname(descriptor), { recursive: true })
+  const contents =
+    [
+      {
+        step_index: 0,
+        type: 'SYSTEM_MESSAGE',
+        content:
+          '<SYSTEM_MESSAGE>\n[Message] sender=parent content=Check the fixture\n</SYSTEM_MESSAGE>',
+      },
+      {
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        thinking: 'Check inputs',
+        tool_calls: [{ name: 'read_file' }],
+      },
+      { step_index: 2, type: 'GENERIC', content: 'Fixture content' },
+      { step_index: 3, type: 'PLANNER_RESPONSE', content: 'Finished the check' },
+    ]
+      .map((step) => JSON.stringify(step))
+      .join('\n') + '\n{"partial":'
+  await writeFile(log, contents)
+  const read = () =>
+    s.tasks.nativeThread({
+      taskId: task.id,
+      id: child.id,
+      provider: child.provider,
+      sessionId: child.sessionId,
+    })
+  expect((await read()).entries[0]?.text).toBe('Saved result')
+  await writeFile(descriptor, JSON.stringify({ conversationId: 'other-child' }))
+  expect((await read()).entries[0]?.text).toBe('Saved result')
+  await writeFile(descriptor, JSON.stringify({ conversationId: 'child' }))
+  expect((await read()).entries).toMatchObject([
+    { role: 'user', text: 'Check the fixture' },
+    { role: 'reasoning', text: 'Check inputs' },
+    { role: 'tool', label: 'read_file', text: 'Fixture content' },
+    { role: 'assistant', text: 'Finished the check' },
+  ])
+  if (process.platform !== 'win32') {
+    await rename(log, `${log}.real`)
+    await symlink(`${log}.real`, log)
+  }
+  expect((await read()).entries[0]?.text).toBe(
+    process.platform === 'win32' ? 'Check the fixture' : 'Saved result',
+  )
 })

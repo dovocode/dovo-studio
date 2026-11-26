@@ -1,8 +1,9 @@
 # Agent workflows
 
 Workflows show a phased plan inside a thread. Open the thread's **Agents** view to see phases,
-member status, and links to member threads. Completed members stay in the workflow when **Hide
-finished** is on. The normal agent list keeps the existing stop and failure controls.
+member status, and links to member threads. Reply previews use the first prose sentence after
+headings, tables, and fenced code. Completed members stay in the workflow when **Hide finished** is
+on. The normal agent list keeps the existing stop and failure controls.
 
 Workflows use the regular `dovo_task` MCP bridge. They do not need Studio Tools enabled. They have
 no schedule. Scheduled jobs remain in Automations.

@@ -24,11 +24,14 @@ export function useHarnessAvailability(
   prefetch = false,
   /** The thread runs in a container sandbox: only harnesses that can run there are available. */
   sandboxed = false,
+  access?: { taskId?: string },
 ) {
   const { connection, connected, request, snapshot, activeRuntimeId } = useWorkspace()
   const visible = useCatalogVisible()
   const key = JSON.stringify([
     repositoryId,
+    !!access,
+    access?.taskId,
     harnessAvailabilityCandidates(agents, snapshot?.acpInstallations ?? [])
       .map(({ id, agent }) => [
         id,
@@ -62,7 +65,11 @@ export function useHarnessAvailability(
       .load(
         key,
         () =>
-          request('/api/agents/availability', { repositoryId, refresh }, harnessAvailabilitySchema),
+          request(
+            '/api/agents/availability',
+            { repositoryId, taskId: access?.taskId, checkAccess: !!access, refresh },
+            harnessAvailabilitySchema,
+          ),
         refresh,
       )
       .then(() => {
@@ -79,6 +86,11 @@ export function useHarnessAvailability(
     connected && (cache.isFresh(key) || (state.key === key && !state.loading && !state.error))
   const ready = (usable ? (choices ?? []) : []).filter((item) => item.available)
   return {
+    claudeAutoLimits: new Map(
+      ready.flatMap(({ id, claudeAutoDisabledBy }) =>
+        claudeAutoDisabledBy && !sandboxed ? [[id, claudeAutoDisabledBy] as const] : [],
+      ),
+    ),
     available: new Set(
       ready
         .filter((item) => !sandboxed || item.sandbox?.supported !== false)

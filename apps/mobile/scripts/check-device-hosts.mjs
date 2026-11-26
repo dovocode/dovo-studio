@@ -406,6 +406,25 @@ try {
   await button('Stop URL forward').click()
   await button('Close actions').click()
 
+  await page.evaluate(() => {
+    window.previewDevices.find(
+      (device) => device.platform === 'android' && device.kind !== 'physical',
+    ).state = 'booted'
+  })
+  await button('Refresh devices').click()
+  await button('Stop all simulators and emulators').click()
+  await page.waitForFunction(
+    () => window.operations.filter((op) => op.input?.action === 'shutdown').length === 2,
+  )
+  assert.deepEqual(
+    (
+      await page.evaluate(() =>
+        window.operations.filter((op) => op.input?.action === 'shutdown').map((op) => op.input.id),
+      )
+    ).sort(),
+    ['remote:host-android:android:avd', 'remote:host-ios:ios:uuid'],
+  )
+
   const discoveries = await page.evaluate(
     () => window.operations.filter((op) => op.path === '/api/previews/devices').length,
   )

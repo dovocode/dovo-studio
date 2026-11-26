@@ -63,6 +63,33 @@ import {
 } from './run-state.js'
 const startupRetryChanged =
   'Provider startup retry stopped because the task or retry setting changed. Review the run.'
+
+function automationMessageSource(run: StoredRun) {
+  return {
+    kind: 'automation' as const,
+    automationId: run.automationId,
+    runId: run.id,
+    title: run.flow.name.slice(0, 400).replace(/[\uD800-\uDBFF]$/u, ''),
+  }
+}
+
+const storedScheduleSchema = Schema.Struct({
+  schedule: Schema.String,
+  timezone: Schema.optional(Schema.String),
+})
+
+function equivalentSchedule(previous: string, next: { schedule: string; timezone?: string }) {
+  try {
+    const old = decode(storedScheduleSchema, JSON.parse(previous))
+    return (
+      old.timezone === next.timezone &&
+      CronExpressionParser.parse(old.schedule).stringify(true) ===
+        CronExpressionParser.parse(next.schedule).stringify(true)
+    )
+  } catch {
+    return false
+  }
+}
 const recordSchema = mutableStruct({
   value: Schema.String,
 })
@@ -1204,12 +1231,7 @@ export class Jobs {
           // someone paused on purpose stays paused, and the step reports it.
           !target.queuePaused || target.status === 'failed',
           undefined,
-          {
-            kind: 'automation',
-            automationId: run.automationId,
-            runId: run.id,
-            title: run.flow.name.slice(0, 400),
-          },
+          automationMessageSource(run),
         )
       }
       for (;;) {
@@ -1341,12 +1363,7 @@ export class Jobs {
               id: messageId,
               role: 'assistant',
               createdAt: new Date().toISOString(),
-              source: {
-                kind: 'automation',
-                automationId: run.automationId,
-                runId: run.id,
-                title: run.flow.name.slice(0, 400),
-              },
+              source: automationMessageSource(run),
               text: `Routine: ${run.flow.name}\nStatus: ${run.status}${run.error ? `\n${run.error}` : ''}\n\n${result}`,
             },
           ],
@@ -1440,12 +1457,7 @@ export class Jobs {
           ...stepResultInstructions(node.data.resultSchema),
         ].join('\n\n'),
         origin: run.automationId,
-        messageSource: {
-          kind: 'automation',
-          automationId: run.automationId,
-          runId: run.id,
-          title: run.flow.name.slice(0, 400),
-        },
+        messageSource: automationMessageSource(run),
       })
       if (files.length) {
         const attachments = this.botServices?.attachments
@@ -2228,12 +2240,15 @@ export class Jobs {
           validateAutomation(flow, this.store.get())
           next = {
             signature,
-            at: CronExpressionParser.parse(trigger.data.schedule, {
-              tz: trigger.data.timezone,
-              currentDate: new Date(now),
-            })
-              .next()
-              .getTime(),
+            at:
+              next && equivalentSchedule(next.signature, trigger.data)
+                ? next.at
+                : CronExpressionParser.parse(trigger.data.schedule, {
+                    tz: trigger.data.timezone,
+                    currentDate: new Date(now),
+                  })
+                    .next()
+                    .getTime(),
           }
           this.saveNext(flow.id, next)
         }

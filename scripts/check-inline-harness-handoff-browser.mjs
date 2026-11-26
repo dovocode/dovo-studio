@@ -57,7 +57,7 @@ try {
             path: '../../agents/use-harness-availability',
             importer: mobile,
             contents:
-              'export const useHarnessAvailability=()=>({available:new Set(["harness:codex","harness:claude"]),loading:false,sandboxNotes:[]});',
+              'export const useHarnessAvailability=()=>({claudeAutoLimits:new Map(),available:new Set(["harness:codex","harness:claude"]),loading:false,sandboxNotes:[]});',
           },
           {
             path: '../../agents/harness-model-picker',

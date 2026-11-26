@@ -61,6 +61,11 @@ it('renders file citations with source ranges and safely encoded paths', () => {
   const windows = ':codex-file-citation{path="C:\\work\\app.ts" line_range_start="1"}'
   expect(renderFileCitations(windows)).toContain('C:%5Cwork%5Capp.ts#L1')
 })
+it('keeps spaces at both ends of a cited file path', () => {
+  const text = ':codex-file-citation{path=" src/model.ts "}'
+  expect(renderFileCitations(text)).toContain('<%20src/model.ts%20>')
+  expect(richMarkdownPaths(text)).toEqual([' src/model.ts '])
+})
 it('leaves malformed citations, nested citations and examples literal', () => {
   for (const text of [
     ':codex-file-citation{}',

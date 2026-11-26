@@ -4,7 +4,7 @@ import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-po
 import { randomUUID } from 'node:crypto'
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
 import { claudeAuthenticated, claudeCommand } from '../../configuration/claude-command.js'
-import { decode, goalCommandText } from '@dovo/protocol'
+import { claudeAutoRestrictionText, decode, goalCommandText } from '@dovo/protocol'
 import { requireClaudeGoal } from './claude-goal.js'
 import { claudeMcpConfigFile, claudeMcpServers } from '../../configuration/mcp-settings.js'
 import { claudeInput, claudeMessage } from './claude-input.js'
@@ -22,6 +22,7 @@ import {
 import type { AgentAdapter, AgentRun, ApprovalScopes } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import {
+  claudeAutoDisabledBy,
   claudeEffectiveEnvironment,
   claudeSubscriptionEnvironment,
 } from '../../configuration/claude-settings.js'
@@ -86,12 +87,21 @@ function claudeToolDisposition(run: AgentRun, name: string) {
   )
 }
 
+function claudePermissionMode(agent: AgentRun['agent']): Options['permissionMode'] {
+  if (agent.permission === 'read-only' || agent.approvalPolicy === 'on-request') return 'default'
+  if (agent.approvalPolicy === 'never' || agent.permission === 'full-access')
+    return 'bypassPermissions'
+  if (agent.permission === 'auto') return 'auto'
+  return agent.permission === 'workspace-write' ? 'acceptEdits' : 'default'
+}
+
 function claudeOptions(
   run: AgentRun,
   controller: AbortController,
   binding: ClaudeBinding,
   command: string,
   mcpConfigPath?: string,
+  permissionMode = claudePermissionMode(run.agent),
 ): Options {
   return {
     spawnClaudeCodeProcess: (options) => {
@@ -173,18 +183,7 @@ function claudeOptions(
             preset: 'claude_code',
             append: run.agent.instructions,
           },
-    permissionMode:
-      run.agent.permission === 'read-only'
-        ? 'default'
-        : run.agent.approvalPolicy === 'on-request'
-          ? 'default'
-          : run.agent.approvalPolicy === 'never' || run.agent.permission === 'full-access'
-            ? 'bypassPermissions'
-            : run.agent.permission === 'auto'
-              ? 'auto'
-              : run.agent.permission === 'workspace-write'
-                ? 'acceptEdits'
-                : 'default',
+    permissionMode,
     ...((run.agent.approvalPolicy === 'never' && run.agent.permission !== 'read-only') ||
     (!run.agent.approvalPolicy && run.agent.permission === 'full-access')
       ? {
@@ -555,10 +554,14 @@ export function createClaudeAdapter(): AgentAdapter {
       'Claude is still handling a finished background task. Stop it, or send the message again when it finishes.',
     )
   }
-  const runWarm = async (run: AgentRun, command: string) => {
+  const runWarm = async (
+    run: AgentRun,
+    command: string,
+    permissionMode: Options['permissionMode'],
+  ) => {
     if (!run.taskId) throw new Error('Warm Claude turn needs a task')
     const config = JSON.stringify(
-      [run.agent, run.tools, run.linkedDirectories, run.claudePlugins],
+      [run.agent, run.tools, run.linkedDirectories, run.claudePlugins, permissionMode],
       (key, value: unknown) => (key === 'DOVO_TASK_RUN_ID' ? undefined : value),
     )
     const mcpServers = claudeMcpServers(run.agent.resources?.mcpServers ?? [])
@@ -654,7 +657,14 @@ export function createClaudeAdapter(): AgentAdapter {
       }
       run.signal.addEventListener('abort', abortStartup, { once: true })
       try {
-        const options = claudeOptions(run, controller, binding, command, configFile.path)
+        const options = claudeOptions(
+          run,
+          controller,
+          binding,
+          command,
+          configFile.path,
+          permissionMode,
+        )
         // Only an empty input queue is claimed. No prompt runs before MCP ownership is rebound.
         // A prewarmed spare runs on the host; a sandboxed thread always starts its own process.
         const claimed =
@@ -687,7 +697,14 @@ export function createClaudeAdapter(): AgentAdapter {
               capabilities: owner.capabilities,
             }
             return {
-              options: claudeOptions(run, new AbortController(), parked, command),
+              options: claudeOptions(
+                run,
+                new AbortController(),
+                parked,
+                command,
+                undefined,
+                permissionMode,
+              ),
               bind: (next) => {
                 next.child = parked.child
                 if (next.child) next.activeRun()?.onOwnedProcess?.(next.child)
@@ -1035,11 +1052,19 @@ export function createClaudeAdapter(): AgentAdapter {
     async run(run) {
       run = checkedPolicyRun(run, 'claude')
       if (run.goal) run = { ...run, prompt: goalCommandText(run.goal) }
+      const requestedMode = claudePermissionMode(run.agent)
+      const restriction =
+        requestedMode === 'auto' && run.tools !== 'none' && !run.sandbox
+          ? await claudeAutoDisabledBy(run.cwd, run.agent.env, run.agent.args, run.isolateSettings)
+          : undefined
+      run.signal.throwIfAborted()
+      if (restriction) run.onActivity(claudeAutoRestrictionText[restriction])
+      const permissionMode = restriction ? 'default' : requestedMode
       // Inside a sandbox the launcher maps `claude` to the Linux build installed with mise.
       const command = run.sandbox
         ? 'claude'
         : await claudeCommand(run.agent.endpoint, run.agent.env)
-      if (run.taskId && run.tools !== 'none') return runWarm(run, command)
+      if (run.taskId && run.tools !== 'none') return runWarm(run, command, permissionMode)
       const controller = new AbortController(),
         abort = () => controller.abort()
       run.signal.addEventListener('abort', abort, {
@@ -1058,7 +1083,14 @@ export function createClaudeAdapter(): AgentAdapter {
         run.onStartup?.(run.sessionId ? 'resuming-session' : 'opening-session')
         stream = query({
           prompt: goalInput ?? (run.attachments?.length ? claudeInput(run) : run.prompt),
-          options: claudeOptions(run, controller, binding, command, configFile.path),
+          options: claudeOptions(
+            run,
+            controller,
+            binding,
+            command,
+            configFile.path,
+            permissionMode,
+          ),
         })
         if (goalInput) {
           await requireClaudeGoal(stream, run)

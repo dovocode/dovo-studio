@@ -326,6 +326,10 @@ in the log lets Dovo report the failure promptly. If the log is unavailable, Dov
 response and the normal deadline. Subprocess tests cover both response paths and verify that an
 older error row and quoted error text do not end a new turn.
 
+Open a known Antigravity child in the thread's **Agents** panel to read its recent messages,
+reasoning and tool output. Dovo reads the transcript when the parent's profile records that child.
+The saved prompt and result remain available if the transcript or ownership record is missing.
+
 An idle Antigravity ACP v1 session can apply an advertised model and its reasoning level in the same
 process. Reuse requires the same thread, session, checkout, launch settings and permissions. The
 agent must have no working native children when the selection changes. It applies the model before

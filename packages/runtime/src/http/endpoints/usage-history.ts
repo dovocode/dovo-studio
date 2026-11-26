@@ -1,6 +1,7 @@
 import { Effect, Schema } from 'effect'
 import {
   decode,
+  builtInAgentPresets,
   mutableStruct,
   usagePriceSchema,
   usageRetentionSchema,
@@ -8,6 +9,7 @@ import {
   resolveTaskAgent,
   type Agent,
 } from '@dovo/protocol'
+import { acpPermissionProvider } from '../../agents/providers/acp/acp-permissions.js'
 import type { IncomingMessage } from 'node:http'
 import { RuntimeServices } from '../../runtime-services.js'
 import { body } from '../support/body.js'
@@ -90,10 +92,17 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
       'CODEX_HOME',
       'CLAUDE_CONFIG_DIR',
       'OPENCODE_DATA_DIR',
+      'GEMINI_HOME',
     ])
     const agents: Agent[] = []
     for (const agent of configuredAgents) {
-      if (!['codex', 'claude', 'opencode'].includes(agent.provider)) continue
+      const antigravity =
+        agent.provider === 'acp' &&
+        acpPermissionProvider(
+          { command: agent.executablePath || agent.endpoint, args: agent.args ?? [], env: {} },
+          agent,
+        ) === 'antigravity'
+      if (!antigravity && !['codex', 'claude', 'opencode'].includes(agent.provider)) continue
       const resolved = yield* serviceResult(
         s.agents.secretReferences
           .resolve(
@@ -107,7 +116,18 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
             }),
           )
           .then(
-            (agent) => ({ agent }),
+            (agent) => {
+              try {
+                const launch = antigravity ? s.agents.launch(agent) : undefined
+                return {
+                  agent: launch
+                    ? { ...agent, endpoint: launch.command, args: launch.args, env: launch.env }
+                    : agent,
+                }
+              } catch {
+                return { agent: undefined }
+              }
+            },
             () => ({ agent: undefined }),
           ),
       )
@@ -121,6 +141,7 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
       s.store.usageTranscripts.read(
         [
           ...agents,
+          ...builtInAgentPresets().filter((agent) => agent.id === 'dovo:antigravity'),
           ...(['codex', 'claude', 'opencode'] as const).map((provider) => ({
             id: `usage:${provider}`,
             name: provider,
@@ -142,6 +163,7 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
         s.store.usagePricing.price(record),
       ),
       notices: [...notices, ...external.notices],
+      transcriptNoticeSources: external.transcriptNoticeSources,
       pricingUpdatedAt: s.store.usagePricing.updatedAt,
       overrides: s.store.usagePricing.getOverrides(),
     }

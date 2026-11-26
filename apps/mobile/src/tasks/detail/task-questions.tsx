@@ -1,6 +1,7 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useQuestionRecovery } from '../composer/question-recovery'
-import { useState } from 'react'
+import { useContext, useState } from 'react'
+import { InlineThreadInputContext } from './inline-thread-input'
 import { Effect, Schema } from 'effect'
 import { mutableStruct, questionRecoveryDraft } from '@dovo/protocol'
 import { appendRuntimeDraft } from '../draft/runtime-drafts'
@@ -26,12 +27,20 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { QuestionForm } from '../composer/question-form'
 import { useConversationSelector } from '../conversation/state/provider'
-export function TaskQuestions({ taskId, questionId }: { taskId: string; questionId?: string }) {
+export function TaskQuestions({
+  taskId,
+  questionId: routeQuestionId,
+}: {
+  taskId: string
+  questionId?: string
+}) {
   const uiText = useInterfaceText()
 
   const { styles } = useTheme()
 
   const { snapshot, profile, connected } = useRuntime()
+  const inline = useContext(InlineThreadInputContext)
+  const questionId = inline ? inline.questionId : routeQuestionId
   const visible = useConversationSelector((conversation) => conversation.visible)
   const questions =
     snapshot?.questions.filter((q) => taskInputVisible(snapshot.workspace.tasks, taskId, q)) ?? []
@@ -65,7 +74,7 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
         <Action
           label={uiText('Show pending questions')}
           secondary
-          onPress={() => router.setParams({ questionId: undefined })}
+          onPress={inline?.clearQuestion ?? (() => router.setParams({ questionId: undefined }))}
         />
       </View>
     )

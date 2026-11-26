@@ -1,4 +1,12 @@
-import { useEffect, useRef, useSyncExternalStore, type RefObject } from 'react'
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react'
+import { createPortal } from 'react-dom'
 import { desktopDictationBridge } from '@dovo/protocol'
 import { composerRecoveryKey, useAppPreferences, useWorkspace } from '@dovo/studio-core'
 import { dictationSession } from '@dovo/studio-core/dictation-session'
@@ -8,6 +16,7 @@ import { Mic, Square, LoaderCircle } from 'lucide-react'
 import type { createComposerDraft } from './composer-draft'
 import { recordDictation, insertDictation } from './dictation-audio'
 import { composerSelection } from './composer-input'
+import { ConversationVisibilityContext } from '../conversation-visibility'
 
 export function ComposerDictation({
   controller,
@@ -16,6 +25,8 @@ export function ComposerDictation({
   disabled,
   onActive,
   transientId,
+  feedbackTarget,
+  hideTrigger = false,
 }: {
   taskId: string
   controller: ReturnType<typeof createComposerDraft>
@@ -23,7 +34,10 @@ export function ComposerDictation({
   disabled: boolean
   onActive: (active: boolean) => void
   transientId?: string
+  feedbackTarget?: HTMLElement | null
+  hideTrigger?: boolean
 }) {
+  const visible = useContext(ConversationVisibilityContext)
   const { request, connection, snapshot, workspace } = useWorkspace()
   const preferences = useAppPreferences()
   const threadScope = composerRecoveryKey(connection, taskId)
@@ -33,6 +47,7 @@ export function ComposerDictation({
   const remote = !!runtimeId && preferences.runtimeDictationIds.includes(runtimeId)
   const bridge = remote ? runtimeBridge : desktopDictationBridge(preferences.dictationProvider)
   const enabled = remote || preferences.dictationEnabled
+  const inline = visible && !!bridge && enabled
   const state = useSyncExternalStore(
     dictationSession.subscribe,
     dictationSession.read,
@@ -55,6 +70,9 @@ export function ComposerDictation({
   useEffect(() => {
     onActive(!!own && !!state && ['starting', 'recording', 'transcribing'].includes(state.phase))
   }, [own, state?.phase, onActive])
+  useLayoutEffect(() => {
+    if (inline && !transientId) return dictationSession.showInComposer(scope)
+  }, [inline, scope, transientId])
   if (!bridge || !enabled) return null
   const start = () => {
     if (disabled || state || (remote && !snapshot?.runtimeDictationSupported)) return
@@ -84,71 +102,96 @@ export function ComposerDictation({
       },
     })
   }
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <IconButton
-        type="button"
-        className="size-7"
-        label={
-          own && state?.phase === 'recording'
-            ? 'Stop dictation'
-            : state
-              ? 'Dictation in progress'
-              : transientId
-                ? 'Dictate comment'
-                : 'Dictate message'
-        }
-        disabled={
-          disabled ||
-          (!!state && !(own && state.phase === 'recording')) ||
-          (remote && !snapshot?.runtimeDictationSupported)
-        }
-        onClick={() =>
-          own && state?.phase === 'recording' ? void dictationSession.finish() : start()
-        }
-      >
-        {own && state?.phase === 'recording' ? (
-          <Square className="size-3.5 text-status-error" />
-        ) : state ? (
-          <LoaderCircle className="size-3.5 animate-spin" />
-        ) : (
-          <Mic className="size-3.5" />
-        )}
-      </IconButton>
-      {transientId && own && state?.preview && <output className="text-sm">{state.preview}</output>}
-      {transientId && own && state?.error && (
-        <div className="flex items-center gap-2">
-          <p role="alert" className="text-sm text-destructive">
-            {state.error}
-          </p>
+  const feedback = inline && own && (
+    <div aria-label="Composer dictation" className="space-y-1 px-3 pt-2 text-xs">
+      {state.phase === 'error' ? (
+        <p role="alert" className="text-destructive">
+          {state.error}
+        </p>
+      ) : (
+        <p role="status" className="text-muted-foreground">
+          {state.phase === 'starting'
+            ? 'Preparing microphone…'
+            : state.phase === 'recording'
+              ? 'Recording… Escape cancels.'
+              : state.phase === 'transcribing'
+                ? 'Transcribing…'
+                : 'Review transcript'}
+        </p>
+      )}
+      {(state.transcript || state.preview) && (
+        <textarea
+          aria-label={state.transcript ? 'Dictation transcript' : 'Live dictation preview'}
+          readOnly
+          value={state.transcript || state.preview}
+          rows={2}
+          className="w-full resize-y rounded border bg-background px-2 py-1"
+        />
+      )}
+      <div className="flex flex-wrap gap-2">
+        {state.transcript && (
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            onClick={() => void dictationSession.cancel()}
+            disabled={disabled}
+            onClick={() => {
+              const selection = composerSelection(input.current, controller.text.length)
+              controller.update(
+                insertDictation(controller.text, state.transcript, selection.start, selection.end),
+              )
+              controller.flush()
+              dictationSession.clear()
+              input.current?.focus()
+            }}
           >
-            Dismiss
+            Insert transcript
           </Button>
-        </div>
-      )}
-      {own && state?.transcript && (
+        )}
         <Button
           type="button"
           size="sm"
-          disabled={disabled}
-          onClick={() => {
-            const selection = composerSelection(input.current, controller.text.length)
-            controller.update(
-              insertDictation(controller.text, state.transcript, selection.start, selection.end),
-            )
-            controller.flush()
-            dictationSession.clear()
-            input.current?.focus()
-          }}
+          variant="outline"
+          onClick={() => void dictationSession.cancel()}
         >
-          Insert transcript
+          {transientId && state.phase === 'error' ? 'Dismiss' : 'Cancel dictation'}
         </Button>
-      )}
+      </div>
     </div>
+  )
+  return (
+    <>
+      {(!hideTrigger || own) && (
+        <IconButton
+          type="button"
+          className="size-7"
+          label={
+            own && state?.phase === 'recording'
+              ? 'Stop dictation'
+              : state
+                ? 'Dictation in progress'
+                : transientId
+                  ? 'Dictate comment'
+                  : 'Dictate message'
+          }
+          disabled={
+            disabled ||
+            (!!state && !(own && state.phase === 'recording')) ||
+            (remote && !snapshot?.runtimeDictationSupported)
+          }
+          onClick={() =>
+            own && state?.phase === 'recording' ? void dictationSession.finish() : start()
+          }
+        >
+          {own && state?.phase === 'recording' ? (
+            <Square className="size-3.5 text-status-error" />
+          ) : state ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : (
+            <Mic className="size-3.5" />
+          )}
+        </IconButton>
+      )}
+      {feedbackTarget ? createPortal(feedback, feedbackTarget) : feedback}
+    </>
   )
 }

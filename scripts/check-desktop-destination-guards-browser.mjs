@@ -18,7 +18,7 @@ import {CreatePull} from '${root}packages/extension-scm/src/pulls/list/create.ts
 import {useVerifiedRead} from '${root}packages/extension-scm/src/connections/verified-read.ts';
 import {Schema} from 'effect';
 window.requests=[];window.completed=[];window.currentDestination='old-destination';window.currentReader='same-account';
-window.pull={number:7,title:'PR',body:'Original description',base:'main',headSha:'same-sha',url:'https://github.com/team/project/pull/7',destination:'old-destination',provider:'github'};
+window.pull={number:7,title:'PR',body:'Original description\\n\\n- [ ] Verify change\\n- [x] Verify change',base:'main',headSha:'same-sha',url:'https://github.com/team/project/pull/7',destination:'old-destination',provider:'github'};
 window.options={destination:'old-destination',provider:'github',issues:true,issueTypes:['Issue'],issueStates:['open','closed'],labels:true,assignees:true,pipelines:true,pipelineActions:['run']};
 window.issue={id:'7',title:'Original issue',body:'Original issue body',state:'open',revision:'same-revision',assignees:[],labels:[],destination:'old-destination',url:'https://github.com/team/project/issues/7'};
 window.store={activeRuntimeId:'a',connection:{address:'http://a',token:'paired'},connected:true,runtimes:[{profile:{id:'a',name:'Build computer',nameIsCustom:true,connection:{address:'http://a',token:'paired'}}}],workspace:{repositories:[{id:'repo',name:'Project',branch:'feature',path:'/repo',gitIdentity:'github.com/team/project'}],jiraSources:[{id:'jira',name:'Team issues',site:'https://team.atlassian.net',project:'TEAM'}],tasks:[]},request:async(path,input,schema)=>{
@@ -101,6 +101,23 @@ try {
           : mode === 'create-pr'
             ? page.getByRole('textbox', { name: 'New PR description' })
             : page.getByLabel('Description')
+    if (mode === 'edit-pr') {
+      const checks = page.getByRole('checkbox', { name: 'Verify change', exact: true })
+      assert.equal(await checks.count(), 2)
+      assert.equal(await checks.first().isChecked(), false)
+      assert.equal(await checks.last().isChecked(), true)
+      await checks.first().check()
+      assert.equal(
+        await draft.inputValue(),
+        'Original description\n\n- [x] Verify change\n- [x] Verify change',
+      )
+      await checks.first().uncheck()
+      assert.equal(
+        await draft.inputValue(),
+        'Original description\n\n- [ ] Verify change\n- [x] Verify change',
+      )
+      assert.equal(await page.evaluate(() => window.requests.length), 0)
+    }
     if (mode === 'pipeline') {
       assert.equal(await draft.inputValue(), '{}')
       assert.equal(await page.getByLabel('Branch or ref', { exact: true }).inputValue(), 'main')
@@ -115,6 +132,11 @@ try {
         .waitFor()
       await draft.fill('{"preserve":"pipeline draft"}')
     } else await draft.fill('Keep this draft through destination rejection')
+    if (mode === 'edit-pr') {
+      await draft.press('Escape')
+      assert.equal(await draft.isVisible(), true)
+      assert.equal(await draft.inputValue(), 'Keep this draft through destination rejection')
+    }
     if (mode === 'create-pr') {
       await page.getByRole('textbox', { name: 'New PR title' }).fill('New guarded PR')
       await page.getByRole('textbox', { name: 'New PR base branch' }).fill('main')

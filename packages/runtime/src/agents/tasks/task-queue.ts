@@ -234,6 +234,7 @@ export class TaskQueue {
             ...(subagentResultId ? { subagentResultId } : {}),
             createdAt,
             ...(options.steering ? { steering: true } : {}),
+            ...(options.queueOnly ? { explicitQueue: true } : {}),
           },
         ],
       }),

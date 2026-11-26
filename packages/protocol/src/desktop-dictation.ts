@@ -8,6 +8,10 @@ export const dictationModel = {
   sha256: 'b94545b313b3223fda7b2857a52681da813935c2127643d1e9ff0c23d988089c',
   url: 'https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/53ce288f69326b415aeef030cfcb02a08a8096dd/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
 } as const
+export function dictationDownloadProgress(downloaded: number) {
+  return Math.max(0, Math.min(99, Math.floor((downloaded / dictationModel.bytes) * 100)))
+}
+
 export const dictationLanguages = [
   ['auto', 'Automatic'],
   ['nl-NL', 'Dutch'],

@@ -59,9 +59,11 @@ Package-specific checks can be run with `pnpm --filter @dovo/<package> typecheck
 `pnpm test:browser` for all registered browser suites, or an individual `test:*:browser` script for
 a focused check. Before running a focused browser check, run `pnpm exec playwright install chromium`
 (`--with-deps chromium` on Linux when system libraries are missing). CI runs the same registry in
-four shards. Register new browser checks in `package.json`; the runner rejects unregistered
-`check-*-browser.mjs` files. New browser fixtures should use `scripts/browser/harness.mjs`, which
-checks for unused stubs and requires an importer for relative module replacements.
+four shards. The local runner chooses up to four shards based on available CPUs. Use
+`pnpm test:browser --jobs 1` for serial execution or `--jobs 4` to run four shards on one machine.
+Register new browser checks in `package.json`. The runner rejects unregistered `check-*-browser.mjs`
+files. New browser fixtures should use `scripts/browser/harness.mjs`, which checks for unused stubs
+and requires an importer for relative module replacements.
 
 The pre-commit hook checks staged whitespace, changelog fragment headers, formatting and lint. Fix
 the reported files and stage them again. To push to `main`, use a clean checkout of the commit being
@@ -69,17 +71,19 @@ pushed. The pre-push hook runs `pnpm verify:push` there. It builds and typecheck
 runs the changelog, interface copy, packaging, runtime and browser checks for recent release
 regressions. You can run `pnpm verify:push` on any branch while you work. Run
 `pnpm exec vp hooks status` to check the current checkout and `pnpm exec vp hooks enable` to set up
-the hooks in a new worktree.
+the hooks in a new worktree. On machines with eight or more available CPUs, the hook runs the
+independent browser, runtime and CI script checks concurrently after workspace preparation.
 
 For full local verification, run `pnpm verify:ci` for typechecking, unit/integration tests,
 formatting/lint, builds, packaging/CI script regressions, runtime synchronization, Expo
 configuration, Metro module validation and every registered browser suite (including the complete
 design-system audit). Verification builds first, so generated package exports exist even in a fresh
-checkout. It uses the same checks as CI and installs Playwright's managed Chromium. On Linux,
-install missing browser dependencies first with `pnpm exec playwright install --with-deps chromium`.
-To reproduce one CI browser shard, run `node scripts/run-browser-suites.mjs 3 4` (zero-based shard).
-`pnpm test:ci:scripts` runs the same packaging, CI, changelog and proof script tests as the Check
-workflow.
+checkout. It installs Playwright's managed Chromium before the tests and reuses the workspace build
+for the browser suites. On Linux, install missing browser dependencies first with
+`pnpm exec playwright install --with-deps chromium`. The runtime browser tests require Chromium
+sandbox support on the host. To reproduce one CI browser shard, run
+`node scripts/run-browser-suites.mjs 3 4` (zero-based shard). `pnpm test:ci:scripts` runs the same
+packaging, CI, changelog and proof script tests as the Check workflow.
 
 `verify:ci` covers the portable checks. CI additionally runs platform-specific Windows/macOS process
 tests, Electron/media checks under a window manager, native mobile builds, bundled model inference

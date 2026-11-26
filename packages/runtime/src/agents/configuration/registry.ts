@@ -135,9 +135,21 @@ export class AgentRegistry {
         return yield* Effect.fail(runtimeFailure(new Error('Provider failed to activate')))
       const models = adapter.models
       const readNativeThread = adapter.readNativeThread
+      const nativeSkills = adapter.nativeSkills
       const recoveredSessionIdle = adapter.recoveredSessionIdle
       const cursorRunCheckpointed = adapter.cursorRunCheckpointed
       return {
+        ...(nativeSkills
+          ? {
+              nativeSkills: async (agent: Agent, cwd: string, signal: AbortSignal) => {
+                const resolved = await this.secretReferences.resolve(this.configure(agent), signal)
+                const launch = this.launch(resolved)
+                const blocked = await this.sandboxWritableCommand(resolved, launch)
+                if (blocked) throw new Error(sandboxWritableDetail(blocked))
+                return nativeSkills(resolved, cwd, signal)
+              },
+            }
+          : {}),
         ...(cursorRunCheckpointed
           ? {
               cursorRunCheckpointed: (
@@ -172,16 +184,24 @@ export class AgentRegistry {
           : {}),
         ...(readNativeThread
           ? {
-              readNativeThread: (
+              readNativeThread: async (
                 agent: Agent,
                 id: string,
                 sessionId: string | undefined,
                 cwd?: string,
                 sandbox?: SandboxSession,
-              ) =>
-                this.secretReferences
-                  .resolve(this.configure(agent))
-                  .then((resolved) => readNativeThread(resolved, id, sessionId, cwd, sandbox)),
+              ) => {
+                const configured = this.configure(agent)
+                const resolved = await this.secretReferences.resolve(configured)
+                let launch: AcpLaunch | undefined
+                try {
+                  launch = this.launch(resolved)
+                } catch {
+                  // A removed managed installation has no authoritative profile to read.
+                  return undefined
+                }
+                return readNativeThread(resolved, id, sessionId, cwd, sandbox, launch)
+              },
             }
           : {}),
         run: async (run) => {

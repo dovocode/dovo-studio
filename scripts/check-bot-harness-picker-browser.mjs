@@ -55,7 +55,7 @@ try {
             path: '../../agents/use-harness-availability',
             importer: mobile + 'tasks/detail/',
             contents:
-              'export const useHarnessAvailability=()=>({available:new Set(["harness:opencode","harness:claude","harness:codex"]),loading:false,sandboxNotes:[]});',
+              'export const useHarnessAvailability=()=>({claudeAutoLimits:new Map(),available:new Set(["harness:opencode","harness:claude","harness:codex"]),loading:false,sandboxNotes:[]});',
           },
           {
             path: './use-model-catalog',

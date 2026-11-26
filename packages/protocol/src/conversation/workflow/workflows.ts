@@ -2,6 +2,31 @@ import { Schema } from 'effect'
 import { mutableArray, mutableStruct, minValue, maxValue } from '../../shared/schema.js'
 import type { Subagent } from './subagents.js'
 import type { TaskMetadata } from '../../tasks/task-summary.js'
+import {
+  markdownNodeText,
+  parseSharedMarkdown,
+  type SharedMarkdownNode,
+} from '../presentation/rich-markdown.js'
+function firstProse(node: SharedMarkdownNode): string {
+  if (node.type === 'paragraph') return markdownNodeText(node).replace(/\s+/g, ' ').trim()
+  if (
+    node.type !== 'root' &&
+    node.type !== 'list' &&
+    node.type !== 'listItem' &&
+    node.type !== 'blockquote'
+  )
+    return ''
+  for (const child of node.children) {
+    const text = firstProse(child)
+    if (text) return text
+  }
+  return ''
+}
+export function workflowReplyPreview(result?: string, activity?: string) {
+  if (!result) return activity ?? ''
+  const prose = firstProse(parseSharedMarkdown(result))
+  return /^.*?[.!?](?=\s|$)/u.exec(prose)?.[0] || prose || activity || ''
+}
 
 const id = maxValue(minValue(Schema.String, 1), 200)
 export const workflowPhaseSchema = mutableStruct({

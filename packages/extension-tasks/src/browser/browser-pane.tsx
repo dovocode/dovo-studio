@@ -1501,20 +1501,25 @@ function BrowserContent({
                 ...incoming.filter((tab) => !next.some((item) => item.id === tab.id)),
               ]
             }
-            const additions = (state.createdTabs ?? []).filter(
-              (tab) =>
-                !tab.url ||
-                /^https?:\/\//i.test(tab.url) ||
-                /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
-            )
+            const kept = merge(remaining)
+            const knownKeys = new Set(kept.map((tab) => nativeKey(tab.id)))
+            const created = (state.createdTabs ?? []).filter(({ key }) => {
+              if (closedKeys.has(key) || knownKeys.has(key)) return false
+              knownKeys.add(key)
+              return true
+            })
+            const supported = ({ url }: (typeof created)[number]) =>
+              !url ||
+              /^https?:\/\//i.test(url) ||
+              /^chrome-extension:\/\/[a-p]{32}(?:[/?#]|$)/i.test(url)
+            const eligible = created.filter(supported)
+            const capacity = Math.max(0, 100 - kept.length)
+            const additions = eligible.slice(0, capacity)
             const asPreview = (tab: (typeof additions)[number]) =>
               (!tab.openAsTab && previewLinks.current && !!tab.openerKey) ||
               (browserPageOnly && tab.active !== false)
-            const capacity = Math.max(0, 100 - merge(remaining).length)
-            const identities = new Map(
-              additions.slice(0, capacity).map((tab) => [tab.key, randomUUID()]),
-            )
-            const adopted = additions.slice(0, capacity).map((tab) => {
+            const identities = new Map(additions.map((tab) => [tab.key, randomUUID()]))
+            const adopted = additions.map((tab) => {
               const id = identities.get(tab.key)!
               nativeTabKeys.set(`${scope}:${id}`, tab.key)
               return {
@@ -1533,14 +1538,13 @@ function BrowserContent({
                   : undefined,
               }
             })
-            const rejected = (state.createdTabs ?? []).filter(
-              (tab) => !additions.slice(0, capacity).includes(tab),
-            )
+            const rejected = created.filter((tab) => !identities.has(tab.key))
             for (const tab of rejected)
               void browser({ action: 'close', key: tab.key }).catch((cause) =>
-                setError(`Could not close an extra extension tab: ${String(cause)}`),
+                setError(`Could not close the tab opened by the browser: ${String(cause)}`),
               )
-            if (rejected.length) setError('Close a tab before opening more extension tabs.')
+            if (eligible.length > capacity) setError(browserTabLimitError)
+            else if (rejected.length) setError('The browser could not open a tab for this address.')
             if (
               closedKeys.size ||
               adopted.length ||
@@ -1559,7 +1563,7 @@ function BrowserContent({
               }
               const withLocalTab = (tabs: BrowserTab[]) =>
                 tabs.some((tab) => !tab.detached) ? tabs : [...tabs, fallback]
-              currentTabs.current = withLocalTab([...merge(remaining), ...adopted])
+              currentTabs.current = withLocalTab([...kept, ...adopted])
               setTabs((previous) => {
                 const kept = previous.filter((tab) => !closedIds.has(tab.id) && !placeholder(tab))
                 const next = [...merge(kept), ...adopted].slice(0, 100)
@@ -1572,7 +1576,7 @@ function BrowserContent({
                   ) ?? currentTabs.current.find((tab) => !tab.detached)!,
                 )
               let foreground = -1
-              additions.slice(0, capacity).forEach((tab, index) => {
+              additions.forEach((tab, index) => {
                 if (tab.active || asPreview(tab)) foreground = index
               })
               const foregroundTab = adopted[foreground]
@@ -1632,7 +1636,7 @@ function BrowserContent({
               incoming.length ||
               closedKeys.has(browserKey) ||
               state.lostTabs?.includes(browserKey) ||
-              additions.slice(0, capacity).some((tab) => tab.active || asPreview(tab))
+              additions.some((tab) => tab.active || asPreview(tab))
             )
               return
           }
@@ -1902,6 +1906,7 @@ function BrowserContent({
         {
           taskId,
           id: device.id,
+          hostId: device.hostId,
           action,
           url: input,
         },
@@ -1914,6 +1919,26 @@ function BrowserContent({
         if (action === 'screenshot' && !standaloneDevices) await screenshots.attach(result.image)
       }
       await loadDevices()
+    })
+  const stopDevices = (targets: PreviewDevice[]) =>
+    void act(async () => {
+      const results = await Promise.allSettled(
+        targets.map((device) =>
+          request(
+            '/api/previews/action',
+            { taskId, id: device.id, hostId: device.hostId, action: 'shutdown' },
+            previewResultSchema,
+          ),
+        ),
+      )
+      await loadDevices()
+      const failed = targets.filter((_, index) => results[index]?.status === 'rejected')
+      if (failed.length)
+        throw new Error(
+          uiText('Could not stop {value0}', {
+            value0: failed.map((device) => device.name).join(', '),
+          }),
+        )
     })
   const disposeTab = async (tab: BrowserTab) => {
     if (tab.kind === 'remote') {
@@ -4486,6 +4511,7 @@ function BrowserContent({
             connected={connected}
             onOpen={setLiveDevice}
             onAction={deviceAction}
+            onStopAll={stopDevices}
             onDeploy={standaloneDevices ? undefined : setDeploymentDevice}
           />
           {busy && (

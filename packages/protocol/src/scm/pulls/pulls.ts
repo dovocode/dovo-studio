@@ -330,6 +330,20 @@ export const pullTaskResponse = mutableStruct({
 export function pullFilePatch(file: Pick<PullDetail['files'][number], 'patch' | 'status'>) {
   return `--- ${file.status === 'added' ? '/dev/null' : 'a/file'}\n+++ ${file.status === 'removed' ? '/dev/null' : 'b/file'}\n${file.patch ?? ''}\n`
 }
+export function githubWithheldPatch(
+  file: Pick<
+    PullDetail['files'][number],
+    'patch' | 'patchOmitted' | 'status' | 'additions' | 'deletions'
+  >,
+) {
+  return (
+    !file.patch &&
+    !file.patchOmitted &&
+    file.status === 'modified' &&
+    file.additions === 0 &&
+    file.deletions === 0
+  )
+}
 export const pullLineCommentSchema = refine(
   mutableStruct({
     ...forgeDestinationGuardFields,

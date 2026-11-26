@@ -129,7 +129,7 @@ export const MessageResponse = memo(function MessageResponse({
                 : props.children}
             </a>
           )
-        const path = props.href ? markdownURLLocalPath(props.href) : undefined
+        const path = props.href ? markdownURLLocalPath(props.href, true) : undefined
         if (path !== undefined && localFiles)
           return (
             <button

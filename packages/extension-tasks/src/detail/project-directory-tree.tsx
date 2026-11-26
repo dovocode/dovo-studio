@@ -5,6 +5,9 @@ import { responses, useWorkspace } from '@dovo/studio-core'
 import type { ChangedFile, ProjectDirectory } from '@dovo/protocol'
 import { Button, FileChangeCounts, FileTypeIcon, IconButton } from '@dovo/studio-ui'
 import { ChevronRight, Folder, FolderOpen, PanelRightOpen } from 'lucide-react'
+import { Copy } from 'lucide-react'
+import { projectFilePath } from '@dovo/protocol'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { fileStats } from '../files/presentation'
 
 type Props = {
@@ -37,10 +40,12 @@ export function ProjectDirectoryTree({ directory = '', ...props }: Props & { dir
 }
 
 function Directory({ path, active, ...props }: BranchProps & { path: string; active: boolean }) {
+  const uiText = useInterfaceText()
   const { requestEffect, connected } = props
   const [result, setResult] = useState<ProjectDirectory>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [copyStatus, setCopyStatus] = useState('')
   const version = JSON.stringify([props.revision, props.refresh])
   const [page, setPage] = useState<{ version: string; cursor?: string }>({ version })
   const [retry, setRetry] = useState(0)
@@ -115,20 +120,39 @@ function Directory({ path, active, ...props }: BranchProps & { path: string; act
         entry.kind === 'directory' ? (
           <FolderEntry key={entry.path} {...props} path={entry.path} active={active} />
         ) : (
-          <button
-            key={entry.path}
-            type="button"
-            aria-label={entry.path}
-            aria-current={props.selected === entry.path ? 'true' : undefined}
-            disabled={props.disabled}
-            className={`flex w-full items-center gap-2 rounded-xl border border-transparent py-1.5 pl-6 pr-2 text-left text-xs hover:bg-accent disabled:opacity-50 ${props.selected === entry.path ? 'studio-selected-surface' : ''}`}
-            onClick={() => props.onSelect(entry.path)}
-          >
-            <FileTypeIcon path={entry.path} />
-            <span className="min-w-0 flex-1 truncate">{entry.path.split('/').at(-1)}</span>
-            <EntryStats path={entry.path} changed={props.changed} />
-          </button>
+          <div key={entry.path} className="group flex items-center">
+            <button
+              type="button"
+              aria-label={entry.path}
+              aria-current={props.selected === entry.path ? 'true' : undefined}
+              disabled={props.disabled}
+              className={`flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-transparent py-1.5 pl-6 pr-2 text-left text-xs hover:bg-accent disabled:opacity-50 ${props.selected === entry.path ? 'studio-selected-surface' : ''}`}
+              onClick={() => props.onSelect(entry.path)}
+            >
+              <FileTypeIcon path={entry.path} />
+              <span className="min-w-0 flex-1 truncate">{entry.path.split('/').at(-1)}</span>
+              <EntryStats path={entry.path} changed={props.changed} />
+            </button>
+            <IconButton
+              label={uiText(result.root ? 'Copy path' : 'Copy relative path')}
+              className="size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              onClick={() => {
+                setCopyStatus('')
+                void copyTextToClipboard(projectFilePath(result.root, entry.path)).then(
+                  () => setCopyStatus(uiText('Copied')),
+                  () => setCopyStatus(uiText('Could not copy')),
+                )
+              }}
+            >
+              <Copy size={13} aria-hidden="true" />
+            </IconButton>
+          </div>
         ),
+      )}
+      {copyStatus && (
+        <p role="status" className="px-2 text-xs text-muted-foreground">
+          {copyStatus}
+        </p>
       )}
       {!connected && !result && (
         <p className="p-2 text-xs text-muted-foreground">Reconnect to browse files.</p>

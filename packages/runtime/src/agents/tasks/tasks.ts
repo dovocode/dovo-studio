@@ -1721,7 +1721,7 @@ export class Tasks {
                 source,
                 draftIdentity,
                 reopenSettled: resumePaused,
-                unsnooze: true,
+                unsnooze: source?.kind !== 'automation',
                 clearCompletedTodos: resumePaused && !review,
                 plan,
               },
@@ -1809,6 +1809,21 @@ export class Tasks {
   ) {
     return runClientEffect(
       this.sendEffect(id, messageId, text, attachmentIds, false, false, undefined, source),
+    )
+  }
+  sendFromAgentEffect(id: string, messageId: string, text: string, source: MessageSource) {
+    return this.applySteeringEffect(
+      id,
+      messageId,
+      text,
+      [],
+      undefined,
+      false,
+      undefined,
+      undefined,
+      {
+        source,
+      },
     )
   }
   steerEffect(
@@ -1900,8 +1915,14 @@ export class Tasks {
       repositoryId?: string
     },
     draftIdentity?: string,
+    automatic?: { source: MessageSource },
   ) {
     const prepare = () => {
+      if (automatic) {
+        this.requireExecutionOwner(id)
+        if (this.deletionReservations.has(id))
+          throw new HttpError(409, 'This thread is being deleted.')
+      }
       if (
         !fromQueue &&
         this.queue.accepted(id, messageId, text, this.attachments.metadata(id, attachmentIds))
@@ -1914,11 +1935,29 @@ export class Tasks {
         this.store.providerActions.state(`steer:${expectedRunId}:${messageId}`)
       )
         return null
+      const run = this.running.get(id)
+      const task = this.store.taskSummary(id)
+      if (
+        automatic &&
+        (!run?.steer ||
+          run.controller.signal.aborted ||
+          task.runPhase !== 'provider' ||
+          task.status !== 'running' ||
+          task.activeRunId !== run.id ||
+          task.queuePaused ||
+          task.queue?.some((message) => !message.explicitQueue) ||
+          this.steering.has(id) ||
+          text.trim() === '/compact' ||
+          goalCommand(text) ||
+          this.approvals.list().some((approval) => approval.taskId === id) ||
+          this.questions.list().some((question) => question.taskId === id) ||
+          planModeRequested(this.store.task(id).messages))
+      )
+        return undefined
       if (this.steering.has(id))
         throw new HttpError(409, 'A steering request is already being applied')
       if (goalCommand(text))
         throw new HttpError(409, 'Queue /goal as a separate turn, or stop the current turn first.')
-      const run = this.running.get(id)
       if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
       if (expectedRunId !== undefined && run.id !== expectedRunId)
         throw new HttpError(409, 'This run ended. Send your instruction as a follow-up instead.')
@@ -1927,9 +1966,9 @@ export class Tasks {
       // Steered input would join the read-only plan turn instead of the access the user expects.
       if (planModeRequested(this.store.task(id).messages))
         throw new HttpError(409, 'The agent is planning read-only. Queue this message instead.')
-      const finalizing = this.store.taskSummary(id).runPhase === 'finalizing'
+      const finalizing = task.runPhase === 'finalizing'
       if (fromQueue) {
-        const queued = this.store.taskSummary(id).queue?.find((message) => message.id === messageId)
+        const queued = task.queue?.find((message) => message.id === messageId)
         if (
           !queued ||
           queued.text !== text ||
@@ -1942,10 +1981,10 @@ export class Tasks {
       if (
         !finalizing &&
         !nativeSteer &&
-        resolveTaskAgent(this.store.taskSummary(id), this.store.get().agents)?.provider === 'grok'
+        resolveTaskAgent(task, this.store.get().agents)?.provider === 'grok'
       )
         throw new HttpError(409, 'Grok is not ready for steering. Queue this message instead.')
-      const paused = this.store.taskSummary(id).queuePaused ?? false
+      const paused = task.queuePaused ?? false
       const parent = copies?.targets.length ? this.store.task(id) : undefined
       if (parent && parent.repositoryId !== copies?.repositoryId)
         throw new HttpError(409, 'The source project changed. Send the message again.')
@@ -1960,7 +1999,13 @@ export class Tasks {
           false,
           false,
           undefined,
-          { steering: true, unsnooze: true, clearCompletedTodos: true, draftIdentity },
+          {
+            steering: true,
+            unsnooze: true,
+            clearCompletedTodos: true,
+            draftIdentity,
+            source: automatic?.source,
+          },
         )
       )
         return null
@@ -1986,6 +2031,20 @@ export class Tasks {
     }
     return runtimeOperation(() => this.store.transaction(prepare)).pipe(
       Effect.flatMap((prepared) => {
+        if (prepared === undefined && automatic)
+          return this.sendEffect(
+            id,
+            messageId,
+            text,
+            [],
+            false,
+            true,
+            undefined,
+            automatic.source,
+            false,
+            false,
+            true,
+          )
         if (!prepared) return Effect.succeed({ ok: true })
         const { run, nativeSteer, paused, token, finalizing } = prepared
         const operation = nativeSteer

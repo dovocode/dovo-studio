@@ -9,9 +9,15 @@ import { opencodeNative } from './opencode-native.js'
 import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { waitForMcpConnection } from './mcp-readiness.js'
-import { OpenCode } from '@opencode/client'
+import { OpenCode, type SkillInfo } from '@opencode/client'
 import { opencodeHeaders, opencodeAddress } from './opencode-server.js'
-import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
+import {
+  decode,
+  isImageAttachment,
+  maskFileMentions,
+  mentionsSkill,
+  questionPromptSchema,
+} from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { OpenCodeClientCache } from './client-cache.js'
@@ -28,7 +34,21 @@ const client = (address: string, env?: Record<string, string>, active = false) =
     : { value: clients.get(key, create), release: () => {} }
 }
 
+function visibleSkills(skills: SkillInfo[]) {
+  return skills.filter(({ name }) => /^[\w.-]{1,120}$/.test(name))
+}
+
 export const opencodeV2Adapter = {
+  nativeSkills: async (agent, cwd, signal) => {
+    const api = client(agent.endpoint, agent.env).value
+    const { data } = await api.skill.list({ location: { directory: cwd } }, { signal })
+    return visibleSkills(data)
+      .slice(0, 200)
+      .map(({ name, description }) => ({
+        name,
+        ...(description ? { description: description.slice(0, 600) } : {}),
+      }))
+  },
   models: async (agent) => {
     const api = client(agent.endpoint, agent.env).value
     const [{ data }, preferred] = await Promise.all([
@@ -690,12 +710,31 @@ export const opencodeV2Adapter = {
           succeeded = true
           return
         }
+        const skillText = run.nativeSkillText && maskFileMentions(run.nativeSkillText)
+        const availableSkills =
+          skillText && !run.compact && run.tools !== 'none'
+            ? await api.skill.list({ location }, { signal: run.signal }).catch(() => undefined)
+            : undefined
+        run.signal.throwIfAborted()
+        const skills =
+          skillText && availableSkills
+            ? visibleSkills(availableSkills.data)
+                .filter(
+                  ({ name }) =>
+                    mentionsSkill(skillText, name) &&
+                    !run.agent.resources?.skills.some(
+                      (skill) => skill.name.toLowerCase() === name.toLowerCase(),
+                    ),
+                )
+                .map(({ id }) => ({ id }))
+            : []
         const task = run.compact
           ? api.session.compact({ sessionID }, { signal: run.signal })
           : api.session.prompt(
               {
                 sessionID,
                 text: run.prompt,
+                ...(skills.length ? { skills } : {}),
                 files: (run.attachments ?? []).filter(isImageAttachment).map((file) => ({
                   uri: `data:${file.mime};base64,${file.data}`,
                   name: file.name,

@@ -1,5 +1,12 @@
 import { Schema } from 'effect'
-import { maxValue, minValue, mutableArray, mutableStruct, uuidSchema } from './schema.js'
+import {
+  isoDateTime,
+  maxValue,
+  minValue,
+  mutableArray,
+  mutableStruct,
+  uuidSchema,
+} from './schema.js'
 
 export const ATTACHMENT_ARCHIVE_MAX_ENTRIES = 512
 export const ATTACHMENT_ARCHIVE_MAX_EXPANDED_BYTES = 20 * 1024 * 1024
@@ -16,6 +23,8 @@ export const attachmentArchiveEntrySchema = mutableStruct({
   path: maxValue(minValue(Schema.String, 1), 1024),
   size: archiveSize,
   directory: Schema.Boolean,
+  /** ZIP DOS timestamps store a wall time. UTC serves as a lossless transport for that value. */
+  modifiedAt: Schema.optional(isoDateTime(Schema.String)),
 })
 export const attachmentArchiveListSchema = mutableStruct({
   entries: maxValue(mutableArray(attachmentArchiveEntrySchema), ATTACHMENT_ARCHIVE_MAX_ENTRIES),

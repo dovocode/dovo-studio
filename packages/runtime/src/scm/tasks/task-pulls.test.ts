@@ -71,6 +71,12 @@ it('follows a task’s pull request by branch and archives it on merge only when
   // Status is metadata: it neither reorders the list nor counts as activity.
   expect(s.store.task(task.id).updatedAt).toBe(updatedAt)
 
+  const unchanged = s.store.task(task.id).pullStatus
+  const revision = s.store.version()
+  await watcher.refresh()
+  expect(s.store.task(task.id).pullStatus).toEqual(unchanged)
+  expect(s.store.version()).toBe(revision)
+
   list.mockResolvedValue({ pulls: [pull('open', 'FAILURE')], hasMore: false, page: 1 })
   detail.mockResolvedValue({
     pull: { ...pull('open', 'FAILURE') },

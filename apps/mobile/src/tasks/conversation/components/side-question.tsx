@@ -17,12 +17,15 @@ import { useTheme } from '../../../ui/theme'
 import { useTaskConversation } from '../state/provider'
 import type { DraftPersistence } from '../../../runtime/state/detail-drafts'
 import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
+import type { OpenThreadInInspector } from '../../../shell/task-route'
 const savedSchema = mutableStruct({ id: Schema.String })
 const answerSchema = mutableStruct({ answer: Schema.String })
 type SideQuestionProps = {
   task: Task
+  inline?: boolean
   selectedChatId?: string
   onClose: () => void
+  onOpenChild?: OpenThreadInInspector
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
   draftPersistence?: DraftPersistence
@@ -37,7 +40,9 @@ export function SideQuestion(props: SideQuestionProps) {
   ) : (
     <AgentSideChats
       task={props.task}
+      inline={props.inline}
       onClose={props.onClose}
+      onOpenChild={props.onOpenChild}
       onReadOnly={() => setReadOnly(true)}
     />
   )
@@ -50,14 +55,9 @@ function ReadOnlySideQuestion({
   selectedChatId,
   onAgents,
   draftPersistence,
-}: {
-  task: Task
-  selectedChatId?: string
-  onClose: () => void
-  drafts: Record<string, string>
-  setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  inline,
+}: SideQuestionProps & {
   onAgents: () => void
-  draftPersistence?: DraftPersistence
 }) {
   const uiText = useInterfaceText()
 
@@ -106,6 +106,7 @@ function ReadOnlySideQuestion({
   }
   return (
     <Sheet
+      presentation={inline ? 'inline' : 'sheet'}
       title={uiText('Read-only chat')}
       onClose={onClose}
       busy={busy}

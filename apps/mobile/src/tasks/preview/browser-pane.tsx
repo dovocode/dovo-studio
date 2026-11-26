@@ -15,6 +15,7 @@ import {
   previewResultSchema,
   previewUrl,
   previewPresets,
+  runningVirtualDevices,
   type PreviewDevice,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -364,6 +365,29 @@ function BrowserContent({
         yield* nativeEffect(() => load())
       }),
     )
+  const running = runningVirtualDevices(devices)
+  const stopDevices = () =>
+    act(async () => {
+      const results = await Promise.allSettled(
+        running.map((device) =>
+          runClientEffect(
+            callEffect(
+              '/api/previews/action',
+              { taskId, id: device.id, hostId: device.hostId, action: 'shutdown' },
+              previewResultSchema,
+            ),
+          ),
+        ),
+      )
+      await load()
+      const failed = running.filter((_, index) => results[index]?.status === 'rejected')
+      if (failed.length)
+        throw new Error(
+          uiText('Could not stop {value0}', {
+            value0: failed.map((device) => device.name).join(', '),
+          }),
+        )
+    })
   const actions = actionDevice ? (
     <DeviceActions
       key={actionDevice.id}
@@ -652,6 +676,14 @@ function BrowserContent({
             disabled={!connected || busy}
             onPress={() => act(load)}
           />
+          {running.length > 1 && (
+            <Action
+              secondary
+              label={uiText('Stop all simulators and emulators')}
+              disabled={!connected || busy}
+              onPress={stopDevices}
+            />
+          )}
           {diagnostics.map((d) => (
             <Text key={d} style={styles.muted}>
               {deviceHostMessage(d, profiles)}

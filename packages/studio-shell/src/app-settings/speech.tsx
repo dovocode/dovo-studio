@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   decode,
   desktopDictationBridge,
+  dictationDownloadProgress,
   dictationLanguages,
   dictationLanguageSchema,
   dictationModel,
@@ -154,12 +155,7 @@ export function SpeechSettings() {
               {downloading ? (
                 <>
                   <span role="status" className="text-xs text-muted-foreground">
-                    Downloading…{' '}
-                    {Math.min(
-                      100,
-                      Math.floor(((status?.downloaded ?? 0) / dictationModel.bytes) * 100),
-                    )}
-                    %
+                    Downloading… {dictationDownloadProgress(status?.downloaded ?? 0)}%
                   </span>
                   {downloadInFlight && (
                     <Button

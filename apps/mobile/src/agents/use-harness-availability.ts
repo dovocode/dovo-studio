@@ -22,11 +22,14 @@ export function useHarnessAvailability(
   agents: readonly Agent[],
   /** The thread runs in a container sandbox: only harnesses that can run there are available. */
   sandboxed = false,
+  access?: { taskId?: string },
 ) {
   const { profile, connected, readRuntime, snapshot } = useRuntime()
   const foreground = useAppActive()
   const key = JSON.stringify([
     repositoryId,
+    !!access,
+    access?.taskId,
     harnessAvailabilityCandidates(agents, snapshot?.acpInstallations ?? [])
       .map(({ id, agent }) => [
         id,
@@ -53,7 +56,7 @@ export function useHarnessAvailability(
         readRuntime(
           profile,
           '/api/agents/availability',
-          { repositoryId },
+          { repositoryId, taskId: access?.taskId, checkAccess: !!access },
           harnessAvailabilitySchema,
         ),
       )
@@ -71,6 +74,11 @@ export function useHarnessAvailability(
     connected && (cache.isFresh(key) || (state.key === key && !state.loading && !state.error))
   const ready = (usable ? (choices ?? []) : []).filter((item) => item.available)
   return {
+    claudeAutoLimits: new Map(
+      ready.flatMap(({ id, claudeAutoDisabledBy }) =>
+        claudeAutoDisabledBy && !sandboxed ? [[id, claudeAutoDisabledBy] as const] : [],
+      ),
+    ),
     available: new Set(
       ready
         .filter((item) => !sandboxed || item.sandbox?.supported !== false)

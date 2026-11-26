@@ -53,6 +53,15 @@ it('recognizes completed references with UTF-16 source offsets, without changing
     ['model', 'gpt/exact', '`model:harness%3Acodex/gpt%2Fexact`'],
   ])
 })
+it('renders a saved model reference with its separator inside inline code', () => {
+  const token = '`model:harness%3Aclaude/opus `'
+  const source = `🚀 ${token}`
+  expect(composerReferences(source, resources)).toEqual([
+    { start: 3, end: source.length, kind: 'model', label: 'opus', provider: 'claude' },
+  ])
+  expect(messageReferences(source, resources)).toEqual(composerReferences(source, resources))
+  expect(composerReferences('`model:harness%3Aclaude/opus other text`', resources)).toEqual([])
+})
 it('leaves typing, email, unknown names, code, links and malformed models as text', () => {
   expect(composerTextReferences('@src/file.ts', resources)).toEqual([])
   for (const text of [

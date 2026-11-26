@@ -1,8 +1,8 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useFilePages } from '@dovo/studio-core/file-pages'
 import { ProjectSpreadsheet } from './project-spreadsheet'
-import { isSpreadsheet, type RtfSpan } from '@dovo/protocol'
-import { useEffect, useRef, useState } from 'react'
+import { isSpreadsheet, notebookMarkdown, type RtfSpan } from '@dovo/protocol'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Image, ScrollView, View, useWindowDimensions } from 'react-native'
 import { filePreviewSchema, markdownMediaKind, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -10,6 +10,7 @@ import { ProjectFileBrowser } from './project-file-browser'
 import { CodeBlock } from '../../ui/content/code-block'
 import { fileLanguage } from '../../ui/content/syntax-highlighter'
 import { Text } from '../../ui/content/text'
+import { Markdown } from '../../ui/content/markdown'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
@@ -33,6 +34,7 @@ type FileResult = {
   hasMore?: boolean
   cursor?: string
   nextCursor?: string
+  encoding?: 'gb18030'
   document?: readonly (readonly RtfSpan[])[]
   image?: string
   notice?: string
@@ -198,6 +200,7 @@ export function TaskFiles({
       readOnly ||
       file?.complete !== true ||
       file.truncated !== false ||
+      file.encoding !== undefined ||
       file.startLine !== 1 ||
       file.size === undefined ||
       file.size > 1024 * 1024
@@ -241,10 +244,21 @@ export function TaskFiles({
   const editLimit =
     file?.complete !== true ||
     file.truncated !== false ||
+    file.encoding !== undefined ||
     file.startLine !== 1 ||
     file.size === undefined ||
     file.size > 1024 * 1024
   const visibleContents = file?.contents ?? ''
+  const isNotebook = /\.ipynb$/i.test(selected)
+  const [textPreview, setTextPreview] = useState<{ key: string; enabled: boolean }>()
+  const formattedText = useMemo(() => {
+    if (file?.complete !== true || editing || focusedLine) return undefined
+    if (isNotebook) return notebookMarkdown(visibleContents)
+    return /\.(?:md|markdown)$/i.test(selected) ? visibleContents : undefined
+  }, [editing, file?.complete, focusedLine, isNotebook, selected, visibleContents])
+  const formatted =
+    formattedText !== undefined &&
+    (textPreview?.key === tableKey ? textPreview.enabled : isNotebook)
   return (
     <View style={{ flex: 1 }}>
       <View style={{ padding: 12, gap: 8 }}>
@@ -364,6 +378,13 @@ export function TaskFiles({
                 onPress={() => setTablePreviewKey(sheetPreview ? '' : tableKey)}
               />
             )}
+            {formattedText !== undefined && (
+              <Action
+                secondary
+                label={formatted ? uiText('Show source') : uiText('Show formatted preview')}
+                onPress={() => setTextPreview({ key: tableKey, enabled: !formatted })}
+              />
+            )}
             {!!file?.error && (
               <Text accessibilityRole="alert" style={styles.error}>
                 {file.error}
@@ -428,6 +449,8 @@ export function TaskFiles({
                 path={selected}
                 revision={revision}
               />
+            ) : formatted ? (
+              <Markdown text={formattedText ?? ''} taskId={task.id} />
             ) : document ? (
               <>
                 {document.length > 1 && (
@@ -490,13 +513,16 @@ export function TaskFiles({
                             })}
                       </Text>
                     )}
-                    {editLimit && file.size !== undefined && file.size <= 1024 * 1024 && (
-                      <Action
-                        secondary
-                        label={uiText('Load complete file to edit')}
-                        onPress={() => setFullRead(true)}
-                      />
-                    )}
+                    {editLimit &&
+                      !file.encoding &&
+                      file.size !== undefined &&
+                      file.size <= 1024 * 1024 && (
+                        <Action
+                          secondary
+                          label={uiText('Load complete file to edit')}
+                          onPress={() => setFullRead(true)}
+                        />
+                      )}
                     {pagingSupported && pages.hasPrevious && (
                       <Action
                         secondary

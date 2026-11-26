@@ -54,6 +54,9 @@ Schedules support common presets or a custom cron expression and time zone. The 
 controls the schedule even when the phone travels. Webhook credentials are configured on the host
 desktop; paired phones do not gain access to owner-only credentials.
 
+Equivalent cron expressions keep the next scheduled time. A change to when the schedule runs
+calculates a new next time. Messages sent by an automation preserve an existing thread snooze.
+
 New automations have automatic triggers paused. Save and run one manually before enabling its
 schedule or webhook. Editing an existing automation updates future runs; an active or failed run
 keeps the step definitions it started with. Mobile edits use compare-and-set writes: conflicting

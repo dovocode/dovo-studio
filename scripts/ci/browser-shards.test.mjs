@@ -46,16 +46,26 @@ await test('measured shard plan covers the complete current browser registry exa
       .reduce((sum, name) => sum + (durations[name] ?? 10), 0),
   )
   assert.ok(Math.max(...shards.map((shard) => shard.seconds)) < Math.max(...alphabetical))
+  const mobile = JSON.parse(
+    readFileSync(new URL('../../apps/mobile/package.json', import.meta.url), 'utf8'),
+  )
+  const generatedByBuild = mobile.scripts['prepare:assets'].replaceAll('../../', '').split(' && ')
+  assert.match(mobile.scripts.build, /(?:^| && )pnpm run prepare:assets(?:$| && )/)
   for (const suite of suites) {
     const commands = scripts[suite].split(' && ')
-    const checks = commands.filter((command) => /\bnode\s/.test(command))
-    assert.ok(checks.length, `${suite} must still run checks`)
-    const prepared = browserChecks(scripts[suite])
-    for (const check of checks) assert.ok(prepared.includes(check), `${suite}: ${check}`)
+    const prepared = browserChecks(scripts[suite]).split(' && ')
+    assert.ok(
+      prepared.some((command) => /^node /.test(command)),
+      `${suite} must still run checks`,
+    )
+    for (const command of commands.filter((command) => /^node /.test(command))) {
+      if (!prepared.includes(command))
+        assert.ok(generatedByBuild.includes(command), `${suite} lost ${command}`)
+    }
   }
 })
 
-await test('prepared suites keep checks, generators and unfamiliar commands intact', () => {
+await test('prepared suites keep checks and skip only known workspace builds and generators', () => {
   assert.equal(
     browserChecks(
       'pnpm --filter @dovo/runtime... --filter @dovo/connect-server... -r build && node scripts/check.mjs',
@@ -64,9 +74,9 @@ await test('prepared suites keep checks, generators and unfamiliar commands inta
   )
   assert.equal(
     browserChecks(
-      'pnpm --filter @dovo/desktop build && node scripts/build-mobile-terminal.mjs && node scripts/check.mjs',
+      'pnpm --filter @dovo/desktop build && node scripts/build-mobile-terminal.mjs && node scripts/build-image-editor.mjs --check && node scripts/check.mjs',
     ),
-    'node scripts/build-mobile-terminal.mjs && node scripts/check.mjs',
+    'node scripts/build-image-editor.mjs --check && node scripts/check.mjs',
   )
   assert.equal(
     browserChecks('pnpm design:build && node scripts/check-design-system-browser.mjs'),
@@ -105,17 +115,25 @@ await test('detects package-local browser regressions missing from scheduled sui
 })
 
 await test(
-  'browser shard retries just the failed check and reports every attempt',
+  'browser runner retries failed checks and propagates a shard failure after one workspace build',
   { skip: process.platform === 'win32' },
   () => {
     const root = mkdtempSync(join(tmpdir(), 'dovo-browser-shard-'))
     try {
       for (const name of ['apps', 'packages', 'scripts/ci'])
         mkdirSync(join(root, name), { recursive: true })
-      for (const name of ['run-browser-suites.mjs', 'retry-browser.mjs', 'ci/browser-shards.mjs'])
+      for (const name of [
+        'run-browser-suites.mjs',
+        'retry-browser.mjs',
+        'ci/browser-shards.mjs',
+        'ci/run-check.mjs',
+      ])
         copyFileSync(new URL(`../${name}`, import.meta.url), join(root, 'scripts', name))
       writeFileSync(join(root, 'scripts/ci/browser-durations.json'), '{"seconds":{}}')
-      writeFileSync(join(root, 'scripts/ci/workspace-task.mjs'), '')
+      writeFileSync(
+        join(root, 'scripts/ci/workspace-task.mjs'),
+        "import { appendFileSync } from 'node:fs'; appendFileSync('builds', 'build\\n')",
+      )
       writeFileSync(
         join(root, 'package.json'),
         JSON.stringify({
@@ -141,7 +159,7 @@ fi
       const timings = join(root, 'timings.json')
       const run = (alwaysFail) => {
         writeFileSync(calls, '')
-        const result = spawnSync(process.execPath, ['scripts/run-browser-suites.mjs'], {
+        const result = spawnSync(process.execPath, ['scripts/run-browser-suites.mjs', '0', '1'], {
           cwd: root,
           encoding: 'utf8',
           env: {
@@ -183,6 +201,63 @@ fi
       assert.deepEqual(failed.invocations, ['node first.mjs', 'node second.mjs', 'node second.mjs'])
       assert.equal(failed.suite.status, 'failure')
       assert.equal(failed.suite.checks[1].status, 'failure')
+
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            'test:alpha:browser': 'node first.mjs',
+            'test:beta:browser': 'node second.mjs && node third.mjs',
+          },
+        }),
+      )
+      writeFileSync(calls, '')
+      writeFileSync(join(root, 'builds'), '')
+      const runParallel = (prepared) =>
+        spawnSync(
+          process.execPath,
+          ['scripts/run-browser-suites.mjs', '--jobs', '2', ...(prepared ? ['--prepared'] : [])],
+          {
+            cwd: root,
+            encoding: 'utf8',
+            env: {
+              PATH: `${root}:${process.env.PATH}`,
+              DOVO_BROWSER_TIMINGS: timings,
+              DOVO_BROWSER_ATTEMPTS: '1',
+              CALLS: calls,
+              FAIL_EVERY_TIME: prepared ? 'no' : 'yes',
+            },
+          },
+        )
+      const parallel = runParallel(false)
+      assert.equal(parallel.status, 7, parallel.stderr)
+      assert.equal(readFileSync(join(root, 'builds'), 'utf8'), 'build\n')
+      assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n').sort(), [
+        'node first.mjs',
+        'node second.mjs',
+      ])
+      for (const [shard, name, status] of [
+        [0, 'test:alpha:browser', 'success'],
+        [1, 'test:beta:browser', 'failure'],
+      ]) {
+        const report = JSON.parse(readFileSync(join(root, `timings-${shard}.json`), 'utf8'))
+        assert.equal(report.shard, shard)
+        assert.equal(report.count, 2)
+        assert.deepEqual(
+          report.suites.map((suite) => [suite.name, suite.status]),
+          [[name, status]],
+        )
+      }
+
+      writeFileSync(calls, '')
+      const reused = runParallel(true)
+      assert.equal(reused.status, 0, reused.stderr)
+      assert.equal(readFileSync(join(root, 'builds'), 'utf8'), 'build\n')
+      assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n').sort(), [
+        'node first.mjs',
+        'node second.mjs',
+        'node third.mjs',
+      ])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

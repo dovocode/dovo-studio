@@ -627,6 +627,15 @@ export async function studioTool(
           },
         )
       }
+      if (!external)
+        return runClientEffect(
+          s.tasks.sendFromAgentEffect(
+            command.id,
+            command.messageId,
+            command.text,
+            agentMessageSource(s, caller),
+          ),
+        )
       return runClientEffect(
         s.tasks.sendEffect(
           command.id,
@@ -636,7 +645,7 @@ export async function studioTool(
           undefined,
           true,
           undefined,
-          external?.source ?? agentMessageSource(s, caller),
+          external.source,
         ),
       )
     }

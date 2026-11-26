@@ -57,6 +57,12 @@ type Session = {
 // The native recognizer is shared. Wait for its end event before accepting another owner.
 const owners = new WeakMap<DictationDriver, Session>()
 const normalizeLocale = (value: string) => value.replaceAll('_', '-').toLowerCase()
+function speechLocaleKey(value: string) {
+  const locale = normalizeLocale(value)
+  if (/^(?:zh|cmn)-(?:hans(?:-|$)|(?:cn|sg)$)/.test(locale)) return 'zh-hans'
+  if (/^(?:zh|cmn)-(?:hant(?:-|$)|(?:hk|mo|tw)$)/.test(locale)) return 'zh-hant'
+  return locale
+}
 
 /** Speech services accept language tags, not date/calendar formatting extensions. */
 export function resolveDictationLocale(preferred: readonly string[], supported: readonly string[]) {
@@ -70,7 +76,9 @@ export function resolveDictationLocale(preferred: readonly string[], supported: 
   }
   const available = supported.flatMap((tag) => {
     const locale = canonical(tag)
-    return locale ? [locale] : []
+    // Some Android services advertise Mandarin under cmn and expect that exact tag on start.
+    const serviceTag = tag.replaceAll('_', '-').split(/-[a-z0-9]-/i)[0]
+    return locale ? [/^cmn-/i.test(serviceTag) ? serviceTag : locale] : []
   })
   const preferences = preferred.flatMap((tag) => {
     const locale = canonical(tag)
@@ -79,6 +87,10 @@ export function resolveDictationLocale(preferred: readonly string[], supported: 
   for (const preference of preferences) {
     const exact = available.find((locale) => locale === preference)
     if (exact) return exact
+    const equivalent = available.find(
+      (locale) => speechLocaleKey(locale) === speechLocaleKey(preference),
+    )
+    if (equivalent) return equivalent
     const [language, script] = preference.split('-')
     const sameLanguage = available.filter((locale) => {
       const parts = locale.split('-')
@@ -188,7 +200,7 @@ export function createDictation(
           ? false
           : result?.installedLocales
             ? result.installedLocales.some(
-                (item) => normalizeLocale(item) === normalizeLocale(locale),
+                (item) => speechLocaleKey(item) === speechLocaleKey(locale),
               )
             : null
         update({

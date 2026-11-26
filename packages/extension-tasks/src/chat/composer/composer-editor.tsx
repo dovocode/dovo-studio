@@ -288,6 +288,7 @@ export const ComposerEditor = memo(function ComposerEditor({
     rich: rich ? richHandle : null,
     resources,
     provider,
+    visible: !hidden && !disabled && !submitBusy,
     prompts,
     onCommand,
     onSideChat,

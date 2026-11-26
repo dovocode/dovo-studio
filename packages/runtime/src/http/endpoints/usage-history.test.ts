@@ -1,5 +1,10 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
+import Database from 'better-sqlite3'
+import protobuf from 'protobufjs'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { builtInAgentPresets } from '@dovo/protocol'
 import { startRuntime } from '../../index.js'
 import { fixture } from '../../testing/fixture.js'
 
@@ -99,5 +104,114 @@ it('exports stored records beyond the chart range without scanning transcripts a
   } finally {
     vi.restoreAllMocks()
     await runtime.close()
+  }
+})
+
+it('imports external Antigravity usage once and retains it after removing the configured agent', async () => {
+  const f = await fixture()
+  const token = randomBytes(32).toString('base64url')
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  try {
+    const s = runtime.services
+    const root = join(f.workspace.repositories[0].path, 'agy-profile')
+    for (const variable of ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'OPENCODE_DATA_DIR'])
+      vi.stubEnv(variable, join(root, 'unused', variable))
+    vi.stubEnv('GEMINI_HOME', join(root, 'unused-default'))
+    const preset = builtInAgentPresets().find((agent) => agent.id === 'dovo:antigravity')!
+    const agent = { ...preset, id: 'custom-agy', env: { GEMINI_HOME: root } }
+    s.store.update(() => ({ ...f.workspace, agents: [agent] }))
+    vi.spyOn(s.store.usagePricing, 'refresh').mockResolvedValue(undefined)
+    const directory = join(root, 'antigravity-acp', 'conversations')
+    await mkdir(directory, { recursive: true })
+    const timestamp = protobuf.Writer.create()
+      .uint32(8)
+      .uint64(Math.floor(Date.now() / 1000))
+      .finish()
+    const tally = protobuf.Writer.create()
+      .uint32(16)
+      .uint32(100)
+      .uint32(24)
+      .uint32(7)
+      .uint32(90)
+      .string('same-request')
+      .finish()
+    const generation = protobuf.Writer.create()
+      .uint32(250)
+      .bytes(Buffer.alloc(360000))
+      .uint32(34)
+      .bytes(tally)
+      .uint32(154)
+      .string('Gemini-4-Neon (High)')
+      .finish()
+    const step = protobuf.Writer.create()
+      .uint32(66)
+      .bytes(timestamp)
+      .uint32(74)
+      .bytes(tally)
+      .finish()
+    for (const session of ['cli-session', 'owned-session']) {
+      const db = new Database(join(directory, `${session}.db`))
+      try {
+        db.exec(
+          'CREATE TABLE steps (idx INTEGER, metadata BLOB); CREATE TABLE gen_metadata (id INTEGER PRIMARY KEY, idx INTEGER, data BLOB)',
+        )
+        db.prepare('INSERT INTO steps VALUES (?, ?)').run(9, Buffer.from(step))
+        db.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(
+          7,
+          Buffer.from(protobuf.Writer.create().uint32(10).bytes(generation).finish()),
+        )
+      } finally {
+        db.close()
+      }
+    }
+    const now = new Date().toISOString()
+    s.store.usage.recordExternal([
+      {
+        taskId: 'owned',
+        title: 'Dovo turn',
+        sessionId: 'owned-session',
+        origin: 'dovo',
+        turn: {
+          id: 'owned',
+          assistantId: 'owned',
+          provider: 'acp',
+          agentId: agent.id,
+          model: 'gemini-4-neon',
+          status: 'completed',
+          startedAt: now,
+          tokens: 8,
+        },
+      },
+    ])
+    const refresh = async () => {
+      const response = await fetch(`http://127.0.0.1:${runtime.port}/api/usage/history/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ since: new Date(Date.now() - 86400000).toISOString(), force: true }),
+      })
+      expect(response.status).toBe(200)
+      const { records } = await response.json()
+      return records.filter((record: { title: string }) => record.title === 'Antigravity CLI')
+    }
+    const history = await refresh()
+    expect(history).toMatchObject([
+      {
+        sessionId: 'cli-session',
+        origin: 'cli',
+        turn: {
+          model: 'gemini-4-neon',
+          tokens: 107,
+          tokenUsage: { input: 100, output: 7 },
+        },
+      },
+    ])
+    expect(await refresh()).toEqual(history)
+    s.store.update((workspace) => ({ ...workspace, agents: [] }))
+    expect(await refresh()).toEqual(history)
+  } finally {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+    await runtime.close()
+    await f.cleanup()
   }
 })

@@ -91,6 +91,10 @@ export const previewDeviceSchema = mutableStruct({
   runtime: Schema.String,
 })
 export type PreviewDevice = Schema.Schema.Type<typeof previewDeviceSchema>
+
+export function runningVirtualDevices(devices: readonly PreviewDevice[]) {
+  return devices.filter((device) => device.kind !== 'physical' && device.state === 'booted')
+}
 export const previewDevicesSchema = mutableStruct({
   host: Schema.String,
   devices: mutableArray(previewDeviceSchema),

@@ -5,6 +5,14 @@ Desktop/web uses the existing rich editor. Native iOS and Android use a local Ex
 module. The saved draft and sent message remain Markdown text. Chips add no new saved format and do
 not change the selected model or runtime.
 
+Open `$` or `/` in an OpenCode v2 thread to read its current native skills. The list comes from the
+thread’s runtime and checkout. Studio checks for changes every five seconds while the mention menu
+stays open. Studio passes the selected skill to OpenCode with the prompt. If the same name is
+configured in Studio, that setting takes precedence.
+
+In Dovo Studio on Android, copying a message with images keeps them available for pasting into a
+Studio composer while the source computer is reachable. Other apps receive the message text.
+
 Chips show an icon and name, with no type prefix. File chips use the file tree's code, data, text,
 image, config, terminal or generic file icon. Skills use a sparkles icon. MCP servers use a plug
 icon. Model chips use the referenced harness icon. Custom agent references use that agent's harness.
@@ -13,6 +21,9 @@ those settings arrive or change, without a draft edit. ACP installation referenc
 Unknown or removed harnesses use a generic model icon. Native inputs use bundled images from the
 same Lucide and harness icon data and keep brand colors or apply the current text color as
 appropriate.
+
+Selecting a model in the rich composer inserts its chip and a space for continued typing. Saved
+drafts with a space inside the model reference also render as chips and keep their original source.
 
 Type `@` to find Bots and agents. Bot results include paired computers. Agent results use the
 current computer and project settings. The picker and the inserted chip show the agent's harness

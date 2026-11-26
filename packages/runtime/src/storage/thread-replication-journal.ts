@@ -648,6 +648,9 @@ export class ThreadReplicationJournal {
     )
     const originalText =
       /[\ud800-\udfff]/u.test(needle) || needle.includes('\ufffd') || needle.includes('\0')
+    const searchText = terms.some((term) => term.includes(' '))
+      ? "replace(search.search_text, char(13), ' ')"
+      : 'search.search_text'
     for (const task of tasks) {
       if (!task.replica) continue
       const { ownerRuntimeId, threadId } = task.replica
@@ -669,7 +672,7 @@ export class ThreadReplicationJournal {
         WHERE json_extract(entry.value,'$.value.ownerRuntimeId')=? AND json_extract(entry.value,'$.value.threadId')=?
           AND json_extract(entry.value,'$.value.kind')='message'
           AND (json_extract(entry.value,'$.value.position'),json_extract(entry.value,'$.value.messageId')) < (?,?)
-          ${originalText ? '' : 'AND NOT EXISTS (SELECT 1 FROM json_each(?) AS term WHERE instr(search.search_text, term.value)=0)'}
+          ${originalText ? '' : `AND NOT EXISTS (SELECT 1 FROM json_each(?) AS term WHERE instr(${searchText}, term.value)=0)`}
         ORDER BY json_extract(entry.value,'$.value.position') DESC,json_extract(entry.value,'$.value.messageId') DESC
         ${originalText ? '' : 'LIMIT ?'}`)
         .iterate(

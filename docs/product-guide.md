@@ -621,6 +621,12 @@ creation/editing, comments, reviews, reviewer requests/removal, supported thread
 and close/reopen actions. Provider/version capabilities control which actions appear. See
 [Source control connections](source-control.md) for setup and limits.
 
+In **Edit pull request**, use **Description checklist** to toggle tasks in the draft. Save to update
+the pull request. Each checkbox edits its own Markdown marker, including when two tasks have the
+same label.
+
+GitHub.com issue details load the issue and each comment page with one GraphQL query.
+
 To use different GitHub users for different projects, add a named connection in **Settings → Source
 control**, then link it in the project's source-control settings. **GitHub CLI account** selects a
 user already signed in with `gh auth login`; it retrieves that user's token without changing the
@@ -949,7 +955,8 @@ web rule. Commands, file changes, read-only restrictions and policy review retai
 - Claude uses native `default`, `acceptEdits`, `auto`, and `bypassPermissions` modes. Auto delegates
   approval decisions to its classifier; it does not blindly accept approval callbacks. The harness
   can still require input for special actions, and account/model/administrator policy can restrict
-  mode availability.
+  mode availability. When Claude settings for the computer or checkout disable Auto, the access
+  picker explains the restriction. Saved Auto selections use Supervised access there.
 - OpenCode supports Supervised, Auto-accept edits, Read only, and Full access through its permission
   rules. This integration does not expose harness Auto review. ACP currently supports Supervised and
   advertised Read only modes; unsupported selections are disabled and rejected before running.
@@ -1283,6 +1290,13 @@ web, and mobile. Earlier runs without captured subagent data are not reconstruct
 harnesses and unreported metrics remain empty; offline or ended runs do not show stale agents as
 currently working.
 
+On wide Android layouts, **Side chats**, **Agents**, **Browser**, and **Devices** can open beside
+the conversation. Open a child thread from **Side chats** or **Agents** to read and reply in the
+inspector while the parent conversation stays visible. Android Back returns from the child to the
+inspector. In landscape, the keyboard leaves the composer in the conversation. Use **Close
+inspector** to return to the conversation. Previews can still expand to fill the thread area.
+Compact layouts open these tools in their usual views.
+
 ### Connection and credential editing
 
 In desktop **Devices & runtime**, choose **Connect your phone** for a QR code and manual
@@ -1369,6 +1383,22 @@ Fenced `mermaid` blocks render as diagrams on desktop and mobile. Desktop diagra
 download, fullscreen and pan/zoom controls. Mobile renders completed fences offline; unfinished
 streaming fences stay as source. Invalid diagrams keep their readable source instead of breaking the
 message. Diagram rendering loads only when needed and uses Mermaid's strict security mode.
+
+### Project file previews
+
+Open a source link with `:line` or `#Lline` to start its read-only text preview at that line. Use
+**Copy path** beside a file in the desktop file tree to copy the path on the thread's computer. With
+an older runtime the action copies the path relative to the selected checkout.
+
+Markdown files offer **Show formatted preview**. Supported notebooks show code cells and text and
+Markdown outputs without running any cells. Use **Show source** to see the underlying file. GB18030
+and GBK files can be read and paged as text. The file editor saves UTF-8 files.
+
+Opening a notebook attachment also shows the Markdown output and code cells. EPUB and DOCX
+attachments show a plain-text preview. Use Download or Share to open the original document.
+
+The mobile ZIP viewer shows the archived modification time and preserves filenames recorded in the
+legacy ZIP encoding.
 
 ### Rich thread rendering
 

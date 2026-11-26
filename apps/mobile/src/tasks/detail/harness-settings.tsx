@@ -26,6 +26,7 @@ import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   selectableAccessModes,
+  claudeAutoRestrictionText,
   defaultTaskHarness,
   canChangeTaskProvider,
   lockedTaskProvider,
@@ -154,7 +155,23 @@ export function HarnessSettings({
         snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
       ),
     ),
+    { taskId: task.id },
   )
+  const autoLimit =
+    agent.provider === 'claude'
+      ? availability.claudeAutoLimits.get(task.agentId ? `agent:${task.agentId}` : 'harness:claude')
+      : undefined
+  const accessItems = selectableAccessModes(
+    agent.permission,
+    agent.provider,
+    agent.acpInstallationId,
+  )
+    .filter((mode) => supportsAccess(agent.provider, mode.id))
+    .map((mode) => ({
+      id: mode.id,
+      name: uiText(mode.name),
+      disabled: mode.id === 'auto' && !!autoLimit,
+    }))
   const choices = taskHarnessChoices(
     pickerTask,
     agents,
@@ -464,13 +481,7 @@ export function HarnessSettings({
                     value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                     selectedLabel={uiText(permissionPolicyLabel(agent))}
                     disabled={controlsDisabled || !selectionAllowed}
-                    items={selectableAccessModes(
-                      agent.permission,
-                      agent.provider,
-                      agent.acpInstallationId,
-                    )
-                      .filter((mode) => supportsAccess(agent.provider, mode.id))
-                      .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
+                    items={accessItems}
                     onChange={(value) =>
                       save(
                         selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)),
@@ -480,6 +491,9 @@ export function HarnessSettings({
                 }
                 onChange={(value, next) => save(next, value)}
               />
+              {autoLimit && (
+                <Text style={styles.muted}>{uiText(claudeAutoRestrictionText[autoLimit])}</Text>
+              )}
               {availability.sandboxNotes.map((item) => (
                 <Text
                   key={item.id}
@@ -549,28 +563,19 @@ export function HarnessSettings({
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                 selectedLabel={uiText(permissionPolicyLabel(agent))}
                 disabled={controlsDisabled || !selectionAllowed}
-                items={selectableAccessModes(
-                  agent.permission,
-                  agent.provider,
-                  agent.acpInstallationId,
-                )
-                  .filter((mode) => supportsAccess(agent.provider, mode.id))
-                  .map((mode) => ({
-                    id: mode.id,
-                    name: uiText(mode.name),
-                  }))}
+                items={accessItems}
                 onChange={(value) =>
                   save(selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)))
                 }
               />
               <Text style={styles.muted}>
-                {
-                  selectableAccessModes(
-                    agent.permission,
-                    agent.provider,
-                    agent.acpInstallationId,
-                  ).find((mode) => mode.id === agent.permission)?.description
-                }
+                {autoLimit
+                  ? uiText(claudeAutoRestrictionText[autoLimit])
+                  : selectableAccessModes(
+                      agent.permission,
+                      agent.provider,
+                      agent.acpInstallationId,
+                    ).find((mode) => mode.id === agent.permission)?.description}
               </Text>
               <PermissionPolicyControls
                 value={agent}

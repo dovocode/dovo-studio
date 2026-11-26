@@ -411,6 +411,7 @@ export function useDetailDraft<A, Key extends string>(
   const settle = () => cache.settled?.(key) ?? Promise.resolve(undefined)
   return {
     draft: value,
+    read: latest,
     setField,
     initializeField,
     clear: () => cache.remove(key),

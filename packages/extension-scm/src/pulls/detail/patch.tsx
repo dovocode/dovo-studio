@@ -9,6 +9,7 @@ import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
 import { forgeLabels, pullFilePatch, type ForgeProvider } from '@dovo/studio-core'
+import { githubWithheldPatch } from '@dovo/protocol'
 import type { PullCommentStatus } from '@dovo/protocol'
 import { emptyPullLineDraft, type PullLineDraft, type PullLineSelection } from './line-drafts'
 
@@ -275,9 +276,9 @@ export function PullPatch({
         {recovery}
         {recoveredText}
         <p className="p-4 text-xs text-muted-foreground">
-          {forgeLabels[provider]} has no text patch for this file (binary, large, or rename-only).
-          Open the PR on
-          {forgeLabels[provider]} for the full file.
+          {provider === 'github' && githubWithheldPatch(draftFile)
+            ? 'GitHub withheld this file’s patch. Open the PR on GitHub for the full file.'
+            : `${forgeLabels[provider]} has no text patch for this file (binary, large, or rename-only). Open the PR on ${forgeLabels[provider]} for the full file.`}
         </p>
       </>
     )

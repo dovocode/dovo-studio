@@ -2039,7 +2039,8 @@ it('validates encoded Studio and plan metadata before HTTP dispatch', async () =
   const http = createServer(async (request, response) => {
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
-    requests.push(JSON.parse(Buffer.concat(chunks).toString()))
+    const body = Buffer.concat(chunks).toString()
+    requests.push(body ? JSON.parse(body) : null)
     response.setHeader('content-type', 'application/json')
     response.end(JSON.stringify({ ok: true }))
   })

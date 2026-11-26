@@ -56,6 +56,24 @@ it('inserts only when the original draft accepts the transcript', async () => {
   expect(dictationSession.read()).toBeUndefined()
   expect(f.recorder.stop).toHaveBeenCalledTimes(1)
 })
+it('hands feedback between the background notice and a visible composer for the same scope', async () => {
+  const f = fixture()
+  const other = dictationSession.showInComposer('computer-b:thread-a')
+  const primary = dictationSession.showInComposer(f.options.scope)
+  const secondary = dictationSession.showInComposer(f.options.scope)
+  try {
+    await dictationSession.start(f.options)
+    expect(dictationSession.readBackground()).toBeUndefined()
+    primary()
+    expect(dictationSession.readBackground()).toBeUndefined()
+    secondary()
+    expect(dictationSession.readBackground()).toBe(dictationSession.read())
+    await dictationSession.finish()
+    expect(dictationSession.readBackground()?.transcript).toBe('Original transcript')
+  } finally {
+    other()
+  }
+})
 it('ignores a late transcription after explicit cancellation', async () => {
   const f = fixture()
   let resolve!: (text: string) => void

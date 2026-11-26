@@ -28,7 +28,7 @@ export type TaskSearchScope = Schema.Schema.Type<typeof taskSearchScopeSchema>
 export type TaskSearchHit = TaskSearchResult['hits'][number]
 /** Case- and accent-folded query. Double quotes keep a literal phrase together. */
 export function taskSearchNeedle(query: string) {
-  return taskSearchText(query.trim())
+  return taskSearchText(query.trim()).replaceAll('\r', ' ')
 }
 export function taskSearchText(text: string) {
   return text
@@ -55,7 +55,7 @@ export function taskSearchTerms(needle: string) {
 export function taskSearchMatch(text: string, needle: string) {
   const terms = taskSearchTerms(needle)
   if (!terms.length) return undefined
-  const folded = taskSearchText(text)
+  const folded = taskSearchText(text).replaceAll('\r', ' ')
   let first = folded.length
   let last = 0
   for (const term of terms) {

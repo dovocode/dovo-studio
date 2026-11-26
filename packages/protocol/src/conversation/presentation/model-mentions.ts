@@ -43,28 +43,43 @@ export function insertModelMention(text: string, start: number, caret: number, r
   return insertPrompt(text, start, caret, `\`${reference}\` `)
 }
 
+// Older rich composers saved the separator inside the closing backtick.
+const modelMentionToken = /model:([^`\s/]{1,600})\/([^`\s]{1,1000}) */.source
+const exactModelMention = new RegExp(`^${modelMentionToken}$`)
+const inlineModelMentions = new RegExp('`' + modelMentionToken + '`', 'g')
+
+function decodeModelMention(encodedHarness: string, encodedModel: string) {
+  try {
+    const harness = decodeURIComponent(encodedHarness)
+    const model = decodeURIComponent(encodedModel)
+    if (
+      (harness + model).split('').some((character) => {
+        const code = character.charCodeAt(0)
+        return code < 32 || code === 127
+      })
+    )
+      return
+    return { harness, model }
+  } catch {
+    return
+  }
+}
+
+export function parseModelMention(text: string) {
+  const match = exactModelMention.exec(text)
+  if (match) return decodeModelMention(match[1], match[2])
+}
+
 /** Decode only explicit inline references. Plain @ names remain normal prose. */
 export function modelMentionContext(text: string) {
-  const references = new Map<string, { harness: string; model: string }>()
-  for (const match of maskFileMentions(text).matchAll(
-    /`model:([^`\s/]{1,600})\/([^`\s]{1,1000})`/g,
-  )) {
-    try {
-      const harness = decodeURIComponent(match[1]),
-        model = decodeURIComponent(match[2])
-      if (
-        !harness ||
-        !model ||
-        (harness + model).split('').some((character) => character.charCodeAt(0) < 32)
-      )
-        continue
-      references.set(match[0], { harness, model })
-      if (references.size === 20) break
-    } catch {
-      /* A malformed user reference stays visible as ordinary message text. */
-    }
+  const references = new Set<string>()
+  for (const match of maskFileMentions(text).matchAll(inlineModelMentions)) {
+    const reference = decodeModelMention(match[1], match[2])
+    if (!reference) continue
+    references.add(JSON.stringify(reference))
+    if (references.size === 20) break
   }
   return references.size
-    ? `User model references (these do not switch this thread’s model):\n${[...references.values()].map((reference) => JSON.stringify(reference)).join('\n')}`
+    ? `User model references (these do not switch this thread’s model):\n${[...references].join('\n')}`
     : ''
 }

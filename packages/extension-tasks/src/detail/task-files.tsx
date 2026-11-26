@@ -3,12 +3,20 @@ import type { RightPaneFile } from './right-pane-tabs'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useFilePages } from '@dovo/studio-core/file-pages'
 import { ProjectSpreadsheet } from './project-spreadsheet'
-import { isSpreadsheet, type RtfSpan } from '@dovo/protocol'
+import { isSpreadsheet, notebookMarkdown, type RtfSpan } from '@dovo/protocol'
 import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
 import { ProjectImagePreview } from './project-image-preview'
 import { ProjectFileBrowser } from './project-file-browser'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { getFiletypeFromFileName } from '@pierre/diffs'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
@@ -20,7 +28,7 @@ import {
 } from '@pierre/diffs/react'
 import { RefreshCw, FolderOpen, FileText, ListTree, Maximize2, Minimize2, X } from 'lucide-react'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
-import { Button, IconButton } from '@dovo/studio-ui'
+import { Button, IconButton, MessageResponse } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
 import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
@@ -31,6 +39,35 @@ let nextEditorOwner = 0
 
 const setDraft = drafts.set.bind(drafts)
 const lineSelectionHint = 'Drag line numbers or Shift-click for a range · Click + for one line'
+const formattedFileViews = new Map<string, { scrollTop?: number; formatted?: boolean }>()
+function rememberFormattedFile(scope: string, view: { scrollTop?: number; formatted?: boolean }) {
+  const next = { ...formattedFileViews.get(scope), ...view }
+  formattedFileViews.delete(scope)
+  formattedFileViews.set(scope, next)
+  if (formattedFileViews.size > 64) {
+    const oldest = formattedFileViews.keys().next().value
+    if (oldest !== undefined) formattedFileViews.delete(oldest)
+  }
+}
+
+function FormattedFile({ scope, text }: { scope: string; text: string }) {
+  const node = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (node.current) node.current.scrollTop = formattedFileViews.get(scope)?.scrollTop ?? 0
+  }, [scope])
+  return (
+    <div
+      ref={node}
+      data-formatted-file
+      className="min-h-0 flex-1 overflow-auto px-4 py-3"
+      onScroll={(event) =>
+        rememberFormattedFile(scope, { scrollTop: event.currentTarget.scrollTop })
+      }
+    >
+      <MessageResponse>{text}</MessageResponse>
+    </div>
+  )
+}
 
 function HighlightedFile({
   draftKey,
@@ -390,8 +427,10 @@ export function TaskFiles({
     initialFile?.checkoutId,
   )
   const [preview, setPreview] = useApplicationState<{
+    key: string
     size?: number
     complete: boolean
+    legacyEncoding?: boolean
     startLine: number
     hasMore: boolean
     cursor?: string
@@ -404,6 +443,9 @@ export function TaskFiles({
     undefined,
   )
   const [documentPage, setDocumentPage] = useApplicationState(0)
+  const [textPreview, setTextPreview] = useApplicationState<
+    { key: string; enabled: boolean } | undefined
+  >(undefined)
   useEffect(() => {
     if (!reveal) return
     setCheckoutId(reveal.checkoutId)
@@ -435,6 +477,13 @@ export function TaskFiles({
     task.delegation?.checkoutId,
   ])
   const draftKey = JSON.stringify([draftScope, selected])
+  const fileViewKey = JSON.stringify([
+    connection?.runtimeId ?? connection?.address,
+    task.id,
+    task.repositoryId,
+    checkoutId,
+    selected,
+  ])
   const delimitedText = /\.(csv|tsv)$/i.test(selected)
   const sheetPreview = isSpreadsheet(selected) && (!delimitedText || tablePreviewKey === draftKey)
   useSyncExternalStore(drafts.subscribe, drafts.snapshot, drafts.snapshot)
@@ -454,6 +503,18 @@ export function TaskFiles({
     [],
   )
   const [contents, setContents] = useApplicationState('')
+  const isNotebook = /\.ipynb$/i.test(selected)
+  const formattedText = useMemo(() => {
+    if (preview?.key !== draftKey || !preview.complete || focusedLine || drafts.get(draftKey))
+      return undefined
+    if (isNotebook) return notebookMarkdown(contents)
+    return /\.(?:md|markdown)$/i.test(selected) ? contents : undefined
+  }, [contents, draftKey, focusedLine, isNotebook, preview, selected])
+  const formatted =
+    formattedText !== undefined &&
+    (textPreview?.key === fileViewKey
+      ? textPreview.enabled
+      : (formattedFileViews.get(fileViewKey)?.formatted ?? isNotebook))
   const linked = task.linkedCheckouts?.find((link) => link.id === checkoutId)
   const readOnly =
     !preview?.complete || (checkoutId !== undefined && linked?.access !== 'edit') || !!task.example
@@ -541,6 +602,7 @@ export function TaskFiles({
         const complete =
           result.complete === true &&
           result.truncated === false &&
+          result.encoding === undefined &&
           result.startLine === 1 &&
           result.size !== undefined &&
           result.size <= 1024 * 1024
@@ -549,8 +611,10 @@ export function TaskFiles({
         )
         setRtfPages(result.document)
         setPreview({
+          key: draftKey,
           size: result.size,
           complete,
+          legacyEncoding: result.encoding !== undefined,
           startLine: result.startLine ?? 1,
           hasMore: result.hasMore === true,
           cursor: snapshot?.projectFilePagingSupported ? result.cursor : undefined,
@@ -760,6 +824,20 @@ export function TaskFiles({
                   </Button>
                 </div>
               )}
+              {formattedText !== undefined && !drafts.get(draftKey) && (
+                <div className="flex border-b p-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      rememberFormattedFile(fileViewKey, { formatted: !formatted })
+                      setTextPreview({ key: fileViewKey, enabled: !formatted })
+                    }}
+                  >
+                    {formatted ? uiText('Show source') : uiText('Show formatted preview')}
+                  </Button>
+                </div>
+              )}
               {readError && !drafts.get(draftKey) ? (
                 <div role="alert" className="space-y-3 p-4 text-sm">
                   <p>{readError}</p>
@@ -797,6 +875,8 @@ export function TaskFiles({
                   onOpenOriginal={openOriginal}
                   refreshRevision={revision}
                 />
+              ) : formatted && !drafts.get(draftKey) ? (
+                <FormattedFile scope={fileViewKey} text={formattedText ?? ''} />
               ) : rtfPreview && rtfPages ? (
                 <div
                   className="min-h-0 flex-1 overflow-auto px-4 py-3"
@@ -855,11 +935,13 @@ export function TaskFiles({
                           !contents.includes('\n') &&
                           ' Update the runtime to page through this file.'}
                       </span>
-                      {preview.size !== undefined && preview.size <= 1024 * 1024 && (
-                        <Button size="sm" variant="outline" onClick={() => setFullRead(true)}>
-                          Load complete file to edit
-                        </Button>
-                      )}
+                      {!preview.legacyEncoding &&
+                        preview.size !== undefined &&
+                        preview.size <= 1024 * 1024 && (
+                          <Button size="sm" variant="outline" onClick={() => setFullRead(true)}>
+                            Load complete file to edit
+                          </Button>
+                        )}
                       {pages.hasPrevious && (
                         <Button
                           size="sm"

@@ -5,7 +5,33 @@ import {
   browserCommandSchema,
   desktopBrowserHostSchema,
   isBrowserLoopbackAddress,
+  runningVirtualDevices,
+  type PreviewDevice,
 } from './previews'
+
+it('includes only booted simulators and emulators in bulk shutdown', () => {
+  const device = (
+    id: string,
+    platform: PreviewDevice['platform'],
+    fields: Partial<PreviewDevice> = {},
+  ): PreviewDevice => ({
+    id,
+    name: id,
+    platform,
+    state: 'booted',
+    runtime: 'fixture',
+    ...fields,
+  })
+  expect(
+    runningVirtualDevices([
+      device('ios-simulator', 'ios'),
+      device('android-emulator', 'android'),
+      device('physical-android', 'android', { kind: 'physical' }),
+      device('starting-ios', 'ios', { state: 'starting' }),
+      device('stopped-android', 'android', { state: 'stopped' }),
+    ]).map((value) => value.id),
+  ).toEqual(['ios-simulator', 'android-emulator'])
+})
 describe('preview addresses', () => {
   it.each([
     ['http://localhost:3000/page', true],

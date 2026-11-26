@@ -38,6 +38,7 @@ type InputProps = ViewProps & {
   chipColor: string
   linkColor?: string
   onLink?: (event: { nativeEvent: { url: string } }) => void
+  onPasteCopiedImages?: (event: { nativeEvent: { marker: string } }) => void
   onTextChange: (event: { nativeEvent: { text: string; eventCount: number } }) => void
   onSourceSelection: (event: { nativeEvent: { start: number; end: number } }) => void
   onSize: (event: { nativeEvent: { height: number } }) => void
@@ -48,6 +49,7 @@ const nativeModule = requireOptionalNativeModule<{
   blur: () => Promise<void>
   supportsReferenceMessages?: boolean
   supportsDraftSnapshot?: boolean
+  copyWithImages?: (text: string, marker: string) => Promise<void>
 }>('DovoComposerInput')
 const Input: ComponentType<InputProps> | null = nativeModule
   ? requireNativeView('DovoComposerInput')
@@ -144,6 +146,7 @@ export function NativeComposerInput({
   expanded,
   onChangeText,
   onSelectionChange,
+  onPasteCopiedImages,
   inputRef,
   ...props
 }: NativeComposerInputProps) {
@@ -208,6 +211,9 @@ export function NativeComposerInput({
         onChangeText?.(nativeEvent.text)
       }}
       onSourceSelection={({ nativeEvent }) => onSelectionChange(nativeEvent)}
+      {...(nativeModule?.copyWithImages && onPasteCopiedImages
+        ? { onPasteCopiedImages: ({ nativeEvent }) => onPasteCopiedImages(nativeEvent.marker) }
+        : {})}
       onSize={({ nativeEvent }) => setHeight(nativeEvent.height)}
       style={{ height: Math.max(expanded ? 64 : 44, Math.min(144, height)) }}
     />

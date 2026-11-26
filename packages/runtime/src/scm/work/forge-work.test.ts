@@ -71,6 +71,83 @@ it('searches beyond the loaded GitHub issues with a fixed repository scope', asy
   )
   expect(url.searchParams.get('sort')).toBe('updated')
 })
+it('reads a GitHub issue and each comment page in one query, with REST cursors still usable', async () => {
+  const graphIssue = {
+    __typename: 'Issue',
+    title: issue.title,
+    body: issue.body,
+    state: 'OPEN',
+    url: issue.html_url,
+    author: null,
+    updatedAt: issue.updated_at,
+    assignees: { nodes: [{ login: 'worker' }, null] },
+    labels: { nodes: [{ name: 'bug' }] },
+    comments: {
+      nodes: [
+        {
+          id: 'C_7',
+          databaseId: 7,
+          body: 'Comment',
+          author: null,
+          createdAt: issue.updated_at,
+          url: issue.html_url + '#issuecomment-7',
+        },
+      ],
+      pageInfo: { hasNextPage: true, endCursor: 'next-page' },
+    },
+  }
+  const json = vi
+    .fn<WorkHttp['json']>()
+    .mockResolvedValueOnce({ data: { repository: { item: graphIssue } } })
+    .mockResolvedValueOnce({
+      data: {
+        repository: {
+          item: {
+            ...graphIssue,
+            comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+          },
+        },
+      },
+    })
+    .mockResolvedValueOnce(issue)
+    .mockResolvedValueOnce([])
+  const provider = new GitForgeWork({ json }, 'github', 'me/app', true)
+  const first = await provider.issue('1')
+  expect(first.issue).toMatchObject({
+    id: '1',
+    state: 'open',
+    assignees: ['worker'],
+    labels: ['bug'],
+    revision: issue.updated_at,
+  })
+  expect(first.comments).toMatchObject([{ id: '7', body: 'Comment', author: 'Deleted user' }])
+  expect(json).toHaveBeenCalledExactlyOnceWith('graphql', {
+    method: 'POST',
+    body: {
+      query: expect.stringContaining('issueOrPullRequest'),
+      variables: { owner: 'me', repo: 'app', number: 1, after: null },
+    },
+  })
+  expect((await provider.issue('1', first.next)).next).toBeUndefined()
+  expect(json.mock.calls[1]).toMatchObject([
+    'graphql',
+    { body: { variables: { after: 'next-page' } } },
+  ])
+  await provider.issue('1', '2')
+  expect(json.mock.calls.slice(2)).toEqual([
+    ['repos/me/app/issues/1', undefined],
+    ['repos/me/app/issues/1/comments?per_page=50&page=2', undefined],
+  ])
+})
+it('does not open a GitHub pull request as an issue', async () => {
+  const json = vi.fn<WorkHttp['json']>().mockResolvedValue({
+    data: { repository: { item: { __typename: 'PullRequest' } } },
+  })
+  await expect(new GitForgeWork({ json }, 'github', 'me/app', true).issue('1')).rejects.toThrow(
+    'Use the PR view',
+  )
+  expect(json).toHaveBeenCalledTimes(1)
+})
 it('passes literal search text through the Gitea repository issue endpoint', async () => {
   const json = vi.fn<WorkHttp['json']>().mockResolvedValue([issue])
   await new GitForgeWork(

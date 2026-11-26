@@ -106,6 +106,30 @@ it('validates ACP/MCP forms using JSON Schema and returns typed values', async (
   expect(content).toEqual({ count: 2, enabled: false, target: 'main', checks: ['types', 'tests'] })
 })
 
+it('omits skipped ACP fields while preserving explicit false and zero', async () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      enabled: { type: 'boolean' },
+      count: { type: 'integer' },
+      target: { type: 'string', enum: ['main', 'next'] },
+      ratio: { type: 'number' },
+    },
+  }
+  const content = await formQuestions(
+    'Optional settings',
+    schema,
+    run(async (prompt, _, validate) => {
+      expect(prompt.questions.every((question) => !question.required)).toBe(true)
+      const answers = { '0': ['false'], '1': ['0'], '2': [], '3': [] }
+      expect(questionAnswerError(prompt.questions, answers)).toBeUndefined()
+      validate?.(answers)
+      return answers
+    }),
+  )
+  expect(content).toEqual({ enabled: false, count: 0 })
+})
+
 it.each([true, false, undefined])(
   'preserves Codex blocking=%s and accepts free text alongside choice forms',
   async (isBlocking) => {

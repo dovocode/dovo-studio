@@ -1092,23 +1092,16 @@ export class TaskTurnRunner {
 
           // $skill, a leading /skill and @server in this turn's messages. A disabled skill
           // joins this prompt only, so the agent's session (and its settings) stay the same.
-          const mentioned = mentionedResources(
-            messages
-              .filter((message) => message.role === 'user' && pendingIds.has(message.id))
-              .map((message) => message.text)
-              .join('\n'),
-            resources,
-          )
+          const userInput = messages
+            .filter((message) => message.role === 'user' && pendingIds.has(message.id))
+            .map((message) => message.text)
+            .join('\n')
+          const mentioned = mentionedResources(userInput, resources)
           mentioned.skills = yield* runtimeOperation(() =>
             this.sharedSkills.materialize(mentioned.skills),
           )
           const mentionContext = [
-            modelMentionContext(
-              messages
-                .filter((message) => message.role === 'user' && pendingIds.has(message.id))
-                .map((message) => message.text)
-                .join('\n'),
-            ),
+            modelMentionContext(userInput),
             mentioned.skills.length
               ? `The user referenced these skills; follow them for this request:\n\n${mentioned.skills
                   .map((skill) =>
@@ -1367,6 +1360,9 @@ export class TaskTurnRunner {
                     }
                   : {}),
                 prompt: goal ? goalCommandText(goal) : compact ? '/compact' : prompt,
+                ...(agent.provider === 'opencode' && /(^[ \t]*\/|(?:^|\s)\$)[\w.-]/m.test(userInput)
+                  ? { nativeSkillText: userInput }
+                  : {}),
                 compact,
                 goal,
                 attachments,

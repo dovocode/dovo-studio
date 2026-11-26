@@ -70,6 +70,8 @@ export function TurnModelControls({
   return (
     <>
       <ComposerSettingsControls
+        taskId={task.id}
+        accessAgentId={task.agentId}
         renderControls={
           renderControls
             ? ({ model, access }) =>

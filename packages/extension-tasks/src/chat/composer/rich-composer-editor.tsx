@@ -327,7 +327,7 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
           : editor.state.tr.replaceRange(begin, from, plainTextSlice(text))
         // Markdown parsing trims the separator after an inserted reference.
         if (parsed?.supported && text.endsWith(' ') && !parsed.value.doc.textContent.endsWith(' '))
-          tr.insertText(' ')
+          tr.replaceSelectionWith(richSchema.text(' '), false)
         editor.dispatch(tr.scrollIntoView())
         editor.focus()
       },

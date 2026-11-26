@@ -1,5 +1,10 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { isFastServiceTier, selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import {
+  claudeAutoRestrictionText,
+  isFastServiceTier,
+  selectPermissionPreset,
+  permissionPolicyLabel,
+} from '@dovo/protocol'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import {
   Check,
@@ -30,6 +35,7 @@ import { Button } from './components/ui/button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ComposerModelPicker } from './composer-model-picker'
 import { useHarnessCatalog } from './harness-catalog'
+import { useHarnessAvailability } from './use-harness-availability'
 import {
   ComposerEffortColumn,
   ComposerPickerDaybreak,
@@ -51,10 +57,14 @@ export function ComposerSettingsControls({
   modelSelectionDifficulty,
   onSelectDifficulty,
   modelOnly = false,
+  taskId,
+  accessAgentId,
   renderControls,
   ...pickerProps
 }: ComponentProps<typeof ComposerModelPicker> & {
   modelOnly?: boolean
+  taskId?: string
+  accessAgentId?: string
   renderControls?: (controls: ComposerControlSlots) => ReactNode
   modelSelectionDifficulty?: string
   onSelectDifficulty?: (reasoning: string) => Promise<boolean>
@@ -67,6 +77,19 @@ export function ComposerSettingsControls({
   const policy = effectivePermissionPolicy(value)
   const policyIssue = permissionPolicyIssue(value)
   const [open, setOpen] = useState(false)
+  const { claudeAutoLimits } = useHarnessAvailability(
+    pickerProps.repositoryId,
+    open && !modelOnly && value.provider === 'claude',
+    pickerProps.agents,
+    false,
+    pickerProps.sandboxed,
+    { taskId },
+  )
+  const agentId = accessAgentId ?? pickerProps.selectedAgent?.id
+  const autoLimit =
+    value.provider === 'claude'
+      ? claudeAutoLimits.get(agentId ? `agent:${agentId}` : 'harness:claude')
+      : undefined
   const { catalog, loading, error: catalogError } = useHarnessCatalog(value, !disabled)
   const selected =
     catalog?.models.find((model) => model.id === value.model) ??
@@ -130,7 +153,10 @@ export function ComposerSettingsControls({
                       key={mode.id}
                       value={mode.id}
                       data-value={mode.id}
-                      disabled={!supportsAccess(value.provider, mode.id)}
+                      disabled={
+                        !supportsAccess(value.provider, mode.id) ||
+                        (mode.id === 'auto' && !!autoLimit)
+                      }
                       className={itemClass}
                     >
                       <span>
@@ -139,7 +165,9 @@ export function ComposerSettingsControls({
                           {mode.name}
                         </span>
                         <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {mode.description}
+                          {mode.id === 'auto' && autoLimit
+                            ? uiText(claudeAutoRestrictionText[autoLimit])
+                            : mode.description}
                         </span>
                       </span>
                       <DropdownMenu.ItemIndicator className="absolute right-3">

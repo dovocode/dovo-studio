@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vite-plus/test'
-import { claudeEffectiveEnvironment, claudeSubscriptionEnvironment } from './claude-settings.js'
+import {
+  claudeAutoDisabledBy,
+  claudeEffectiveEnvironment,
+  claudeSubscriptionEnvironment,
+} from './claude-settings.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -17,6 +21,32 @@ function fixture() {
   mkdirSync(join(cwd, '.claude'), { recursive: true })
   return { home, config, cwd }
 }
+it('resolves Claude Auto restrictions for the launch directory and settings sources', async () => {
+  const { home, config, cwd } = fixture()
+  const env = { HOME: home, CLAUDE_CONFIG_DIR: config }
+  writeFileSync(
+    join(cwd, '.claude', 'settings.json'),
+    '{"permissions":{"disableAutoMode":"disable"}}',
+  )
+  expect(await claudeAutoDisabledBy(cwd, env)).toBe('project')
+  expect(await claudeAutoDisabledBy(cwd, env, ['--setting-sources=user'])).toBeUndefined()
+  expect(await claudeAutoDisabledBy(cwd, env, undefined, true)).toBeUndefined()
+  expect(await claudeAutoDisabledBy(home, env)).toBeUndefined()
+  writeFileSync(join(config, 'settings.json'), '{"disableAutoMode":"disable"}')
+  expect(await claudeAutoDisabledBy(cwd, env)).toBe('user')
+  writeFileSync(join(config, 'remote-settings.json'), '{"disableAutoMode":"disable"}')
+  expect(await claudeAutoDisabledBy(cwd, env)).toBe('managed')
+})
+
+it('recognizes Claude Auto disabled in launch settings without returning the settings', async () => {
+  const { home, config, cwd } = fixture()
+  const env = { HOME: home, CLAUDE_CONFIG_DIR: config }
+  const path = join(cwd, 'claude-settings.json')
+  const settings = '{"disableAutoMode":"disable","env":{"TOKEN":"fixture-secret"}}'
+  writeFileSync(path, settings)
+  expect(await claudeAutoDisabledBy(cwd, env, ['--settings=claude-settings.json'])).toBe('user')
+  expect(await claudeAutoDisabledBy(cwd, env, [`--settings=${settings}`])).toBe('user')
+})
 it('applies user, project and local connection env over launch env without copying unrelated settings', () => {
   const { home, config, cwd } = fixture()
   writeFileSync(

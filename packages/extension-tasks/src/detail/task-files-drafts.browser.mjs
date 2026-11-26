@@ -11,7 +11,7 @@ const bundle = await bundleBrowser(
       contents: `
     import {createRoot} from 'react-dom/client';import {useState} from 'react';
     import {TaskFiles} from '${detail}task-files.tsx';import {fileDrafts} from '${detail}file-drafts.ts';
-    window.drafts=fileDrafts;window.writes=[];window.files={'a.txt':'original','b.txt':'second','data.csv':'Name,Value'};
+    window.drafts=fileDrafts;window.writes=[];window.files={'a.txt':'original','b.txt':'second','data.csv':'Name,Value','guide.md':'# Guide\\n'.repeat(100)};
     const request=async(path,input)=>{
       if(path.endsWith('/directory'))return {entries:Object.keys(window.files).map(path=>({path,kind:'file'})),truncated:false};
       if(path.endsWith('/spreadsheet'))return {sheets:['Data'],sheet:'Data',rows:[['Name','Value']],truncated:false};
@@ -48,7 +48,7 @@ const bundle = await bundleBrowser(
     {
       path: '@dovo/studio-ui',
       contents:
-        'export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>',
+        'export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const MessageResponse=({children})=><div>{children}</div>',
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -98,6 +98,34 @@ try {
   await page.goto('http://studio.test/')
   await boot()
   const button = (name) => page.getByRole('button', { name, exact: true })
+  await page.addStyleTag({
+    content: '[data-formatted-file]{height:120px;overflow:auto;white-space:pre-line}',
+  })
+  await button('guide.md').click()
+  await button('Show formatted preview').click()
+  const formatted = page.locator('[data-formatted-file]')
+  await formatted.evaluate((element) => {
+    element.scrollTop = 240
+    element.dispatchEvent(new Event('scroll', { bubbles: true }))
+  })
+  await button('b.txt').click()
+  await page.getByText('second', { exact: true }).waitFor()
+  await button('guide.md').click()
+  await page.evaluate(() => {
+    window.files['b.txt'] = 'Saved by another client'
+  })
+  await button('b.txt').click()
+  await page.getByText('Saved by another client', { exact: true }).waitFor()
+  await button('guide.md').click()
+  assert.equal(await formatted.evaluate((element) => element.scrollTop), 240)
+  await button('thread').click()
+  await button('guide.md').click()
+  await button('Show formatted preview').click()
+  assert.equal(await formatted.evaluate((element) => element.scrollTop), 0)
+  await button('thread').click()
+  await button('guide.md').click()
+  assert.equal(await formatted.evaluate((element) => element.scrollTop), 240)
+
   await button('data.csv').click()
   await button('Edit').waitFor()
   await button('Table preview').click()

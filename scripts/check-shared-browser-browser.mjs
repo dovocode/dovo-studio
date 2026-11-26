@@ -3108,6 +3108,44 @@ try {
     await window.pollBrowser()
   })
   await optionsTab.waitFor({ state: 'hidden' })
+  await page.evaluate(async () => {
+    window.createdTabs.push(
+      {
+        key: 'native-extension-origin',
+        active: true,
+        url: 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        profileId: 'local-work',
+      },
+      {
+        key: 'native-extension-closed-early',
+        active: false,
+        url: 'https://example.test/closed-early',
+        profileId: 'local-work',
+      },
+    )
+    window.closedTabs.push('native-extension-closed-early')
+    await window.pollBrowser()
+  })
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) => call.action === 'close' && call.key === 'native-extension-origin',
+      ),
+    ),
+    false,
+    'A valid extension origin must open even when it has no slash after the extension ID',
+  )
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'show' && call.key === 'native-extension-origin'),
+  )
+  assert.equal(
+    (await persisted()).tabs.some((tab) => tab.url === 'https://example.test/closed-early'),
+    false,
+  )
+  await page.evaluate(async () => {
+    window.closedTabs.push('native-extension-origin')
+    await window.pollBrowser()
+  })
   await recent.getByRole('button', { name: /^localhost:3000\/extension-opened Local/ }).click()
   await page.evaluate(async () => {
     window.closedTabs.push('native-extension-tab')

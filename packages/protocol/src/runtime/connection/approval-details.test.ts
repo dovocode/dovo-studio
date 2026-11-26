@@ -1,5 +1,16 @@
 import { expect, it } from 'vite-plus/test'
-import { approvalDetails } from './approval-details.js'
+import { approvalDetails, approvalVisibleText } from './approval-details.js'
+
+it('shows invisible and direction-changing characters while preserving the original input', () => {
+  const command = 'echo one\u202Etxt\r\t\u200B\nnext'
+  const detail = JSON.stringify({ command })
+  const result = approvalDetails(detail)
+  expect(approvalVisibleText(result.fields[0].text!)).toBe(
+    'echo one⟦U+202E⟧txt⟦U+000D⟧⟦U+0009⟧⟦U+200B⟧\nnext',
+  )
+  expect(result.fields[0].text).toBe(command)
+  expect(result.raw).toBe(detail)
+})
 
 it('puts the reason and exact command before metadata and preserves the full payload', () => {
   const input = {

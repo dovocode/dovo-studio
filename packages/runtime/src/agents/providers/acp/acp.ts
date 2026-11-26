@@ -48,6 +48,7 @@ import { acpClientTools } from './acp-client-tools.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { watchAntigravityOutcome } from './antigravity-outcome.js'
+import { readAntigravityTranscript } from './antigravity-transcript.js'
 import { providerFailureKind } from '../../execution/provider-failure.js'
 type AcpConnection = ReturnType<typeof openAcpConnection>
 type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
@@ -91,6 +92,15 @@ export function createAcpAdapter(): AgentAdapter {
       await v2.releaseTask(taskId)
     },
     models: acpModels,
+    async readNativeThread(agent, id, sessionId, _cwd, sandbox, managed) {
+      if (sandbox) return
+      const launch = managed ?? {
+        ...legacyAcpLaunch(agent.endpoint, agent.args),
+        env: agent.env ?? {},
+      }
+      if (acpPermissionProvider(launch, agent) === 'antigravity')
+        return readAntigravityTranscript(launch, id, sessionId)
+    },
     probe: async (agent, launch) => ({
       provider: 'acp',
       available:
@@ -521,6 +531,9 @@ export function createAcpAdapter(): AgentAdapter {
         run.onSession(id)
         run.onNativeSession?.(
           {
+            ...(antigravity && !launch.sandbox
+              ? { readThread: (childId: string) => readAntigravityTranscript(launch, childId, id) }
+              : {}),
             stop: async (childId) => {
               const selected = state.agents.filter(
                 (agent) => nativeAgentWorking(agent) && (!childId || agent.id === childId),

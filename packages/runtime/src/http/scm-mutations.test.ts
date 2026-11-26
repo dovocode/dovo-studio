@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
@@ -228,6 +228,26 @@ it('rejects save, stage, unstage and commit during exclusive checkout operations
   expect(await f.s.git.command(f.cwd, ['show', 'HEAD:hello.txt'])).toBe('edited\n')
   expect(await f.s.git.command(f.cwd, ['rev-parse', 'HEAD'])).not.toBe(head)
 })
+
+it.skipIf(process.platform === 'win32')(
+  'keeps excluded files out of the index after a failed commit and retry',
+  async () => {
+    const f = await setup()
+    await writeFile(join(f.cwd, 'hello.txt'), 'included\n')
+    await writeFile(join(f.cwd, 'excluded.txt'), 'excluded\n')
+    expect((await f.request('stage', { paths: ['hello.txt'] })).status).toBe(200)
+    const hook = join(f.cwd, '.git/hooks/pre-commit')
+    await writeFile(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    expect((await f.request('commit', { message: 'Try again after the hook' })).ok).toBe(false)
+    expect(await f.s.git.command(f.cwd, ['diff', '--cached', '--name-only'])).toBe('hello.txt\n')
+    expect(await readFile(join(f.cwd, 'excluded.txt'), 'utf8')).toBe('excluded\n')
+    await rm(hook)
+    expect((await f.request('commit', { message: 'Commit the selected change' })).status).toBe(200)
+    expect(await f.s.git.command(f.cwd, ['show', '--format=', '--name-only', 'HEAD'])).toBe(
+      'hello.txt\n',
+    )
+  },
+)
 
 it('unstages a partially staged path before the first commit without touching other index or working contents', async () => {
   const f = await setup()

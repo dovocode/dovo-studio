@@ -12,12 +12,14 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import React, {useState} from 'react';
+import {Effect} from 'effect';
 import {createRoot} from 'react-dom/client';
 import {FileMentions} from '${mobile}src/tasks/conversation/components/file-mentions.tsx';
 window.requests=[];
 const call=(path,input)=>new Promise((resolve,reject)=>window.requests.push({path,input,resolve,reject}));
+const readEffect=(path,input)=>Effect.promise(signal=>new Promise((resolve,reject)=>window.requests.push({path,input,resolve,reject,signal})));
 function App(){
-  const [state,setState]=useState({text:'@file:old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},agents:[],call});
+  const [state,setState]=useState({text:'@file:old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},agents:[],call,readEffect});
   window.update=changes=>setState(previous=>({...previous,...changes}));
   window.runtime=state;
   return <FileMentions provider={state.provider} taskId={state.taskId} repositoryId={state.repositoryId} agents={state.agents} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
@@ -129,7 +131,37 @@ try {
     'Skill · this message only · Review security',
   )
   assert.equal(await empty.locator('span').nth(1).innerText(), 'Skill')
-  await update({ text: '@review' })
+  await page.clock.install()
+  const nativeCount = () =>
+    page.evaluate(
+      () => window.requests.filter(({ path }) => path === '/api/tasks/native-skills').length,
+    )
+  const replyWithSkills = (names) =>
+    page.evaluate((names) => window.requests.at(-1).resolve(names.map((name) => ({ name }))), names)
+  const nativeSkill = (name) => page.getByRole('button', { name: `Mention skill ${name}` })
+  const startNative = await page.evaluate(() => window.requests.length)
+  await update({
+    text: '$',
+    provider: 'opencode',
+    snapshot: { nativeSkillMentionsSupported: true, workspace: { tasks: [] } },
+  })
+  await waitRequests(startNative + 1)
+  await replyWithSkills(['first-native'])
+  await nativeSkill('first-native').waitFor()
+  await page.clock.runFor(5_000)
+  await waitRequests(startNative + 2)
+  await replyWithSkills(['updated-native'])
+  await nativeSkill('updated-native').waitFor()
+  assert.equal(await nativeSkill('first-native').count(), 0)
+  await page.clock.runFor(5_000)
+  await waitRequests(startNative + 3)
+  await update({ text: 'closed' })
+  await page.waitForFunction(() => window.requests.at(-1).signal?.aborted)
+  await replyWithSkills(['late-native'])
+  await page.clock.runFor(10_000)
+  assert.equal(await nativeCount(), 3)
+  assert.equal(await nativeSkill('late-native').count(), 0)
+  await update({ text: '@review', snapshot: undefined })
   const server = page.getByRole('button', { name: 'Mention MCP server review-server' })
   await server.waitFor()
   assert.equal(await server.locator('span').nth(1).innerText(), 'MCP server')

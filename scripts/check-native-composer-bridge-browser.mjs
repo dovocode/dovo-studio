@@ -177,6 +177,16 @@ try {
         eventCount: 9,
         references: [],
       })
+      const savedModel = '`model:harness%3Aclaude/opus `'
+      await page.evaluate((source) => window.external(source), savedModel)
+      const restored = await page.evaluate(() => window.nativeProps.content)
+      assert.equal(restored.text, savedModel)
+      const [chip] = restored.references
+      assert.equal(chip.kind, 'model')
+      assert.equal(chip.label, 'opus')
+      assert.equal(chip.provider, 'claude')
+      assert.equal(chip.end, savedModel.length)
+      assert.ok(chip.icon.startsWith('iVBOR'))
       await page.evaluate(() =>
         window.external(
           'Ask @Dory (' +

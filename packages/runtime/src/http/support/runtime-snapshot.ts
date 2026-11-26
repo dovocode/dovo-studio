@@ -434,6 +434,8 @@ export function runtimeSnapshot(
       runtimeDictationSupported: true,
       textGeneratorsSupported: true,
       modelMentionsSupported: true,
+      nativeSkillMentionsSupported: true,
+      documentAttachmentPreviewSupported: true,
       planModeSupported: true,
       persistentTurnModelsSupported: true,
       projectTransfersSupported: true,

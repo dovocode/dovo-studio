@@ -69,6 +69,11 @@ its response includes compact history. Older paired runtimes still return the fu
 combined browser state. Use `studio_discover` on that computer to check for
 `capabilities.compactToolResults`.
 
+An agent's `send` can join an active turn when the provider supports live steering. A paused queue,
+an earlier ordinary send, or pending input keeps the follow-up in the queue. Prompts that were
+explicitly queued for later stay queued when steering happens after a queue is resumed. Retry a send
+with the same `messageId` to avoid delivering it twice.
+
 Delegated completion reads the saved assistant message for the completed turn. A newer notice or a
 reply outside the visible history page does not replace that result. The parent can read the saved
 completion after the child computer goes offline.

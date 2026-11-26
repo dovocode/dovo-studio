@@ -568,6 +568,7 @@ export const queuedMessageSchema = mutableStruct({
     createdAt: Schema.String,
     steering: Schema.optional(Schema.Boolean),
     paused: Schema.optional(Schema.Boolean),
+    explicitQueue: Schema.optional(Schema.Boolean),
   },
 })
 export const linkedCheckpointSchema = mutableStruct({

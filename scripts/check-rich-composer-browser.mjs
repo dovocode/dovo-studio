@@ -70,7 +70,7 @@ const listeners = new Set(); let preferences = { sendWith: 'enter', richTextComp
 export const readAppPreferences = () => preferences;
 export const updateAppPreferences = changes => { preferences = { ...preferences, ...changes }; listeners.forEach(listener => listener()) };
 export const useAppPreferences = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => preferences);
-const workspace = { workspace: {tasks:[{id:'review-bot',title:'Release helper',bot:{role:'review',state:'active'}},{id:'ordinary',title:'Release helper'}], agents:[{id:'custom-reviewer',name:'Release helper',provider:'codex'}], repositories:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files'){window.fileQueries=(window.fileQueries??0)+1;return window.filesTruncated?{files:[],truncated:true}:{files:['docs/Review Notes.md']};} if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
+const workspace = { workspace: {tasks:[{id:'review-bot',title:'Release helper',bot:{role:'review',state:'active'}},{id:'ordinary',title:'Release helper'}], agents:[{id:'custom-reviewer',name:'Release helper',provider:'codex'}], repositories:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files'){window.fileQueries=(window.fileQueries??0)+1;return window.filesTruncated?{files:[],truncated:true}:{files:['docs/Review Notes.md']};} if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'},{name:'Claude Opus',provider:'Claude',model:'opus',reference:'model:harness%3Aclaude/opus'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
 export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
@@ -493,6 +493,26 @@ try {
   await editor.locator('svg[data-harness="opencode"]').waitFor()
   assert.equal(await editor.locator('[data-reference-kind="model"]').count(), 3)
   assert.equal(await text(), harnessDraft)
+  await page.evaluate(() => {
+    window.failCatalog = false
+  })
+  await setDraft('')
+  await editor.pressSequentially('@opus')
+  await page.getByRole('option').filter({ hasText: 'Claude Opus' }).click()
+  const opus = editor.locator('[data-reference-kind="model"]')
+  const opusSource = '`model:harness%3Aclaude/opus` '
+  assert.equal(await text(), opusSource)
+  await opus.locator('svg[data-harness="claude"]').waitFor({ timeout: 3000 })
+  assert.equal(await opus.innerText(), 'opus')
+  await editor.pressSequentially('compare this')
+  assert.equal(await text(), opusSource + 'compare this')
+  assert.equal(await opus.innerText(), 'opus')
+  const savedOpus = '`model:harness%3Aclaude/opus `'
+  await setDraft(savedOpus)
+  await opus.locator('svg[data-harness="claude"]').waitFor()
+  assert.equal(await opus.innerText(), 'opus')
+  await editor.press('ControlOrMeta+Shift+m')
+  assert.equal(await source.inputValue(), savedOpus)
   assert.deepEqual(errors, [])
   console.log('Rich composer browser checks passed')
 } finally {

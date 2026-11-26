@@ -1,9 +1,38 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { availableParallelism } from 'node:os'
+import { extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { parseArgs } from 'node:util'
 import { browserAttemptLimit, runBrowserCheck } from './retry-browser.mjs'
 import { browserChecks, browserShards, unregisteredBrowserChecks } from './ci/browser-shards.mjs'
+import { runCheck } from './ci/run-check.mjs'
 
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: {
+    jobs: { type: 'string' },
+    list: { type: 'boolean' },
+    prepared: { type: 'boolean' },
+  },
+})
+const defaultJobs = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 4)))
+const [shardText = '0', countText = '1'] = positionals
+const shard = Number(shardText)
+const runAll = positionals.length === 0 && !values.list
+const count = Number(runAll ? (values.jobs ?? defaultJobs) : countText)
+if (
+  positionals.length > 2 ||
+  (values.jobs !== undefined && !runAll) ||
+  !Number.isSafeInteger(shard) ||
+  !Number.isSafeInteger(count) ||
+  count < 1 ||
+  (runAll && count > 4) ||
+  shard < 0 ||
+  shard >= count
+)
+  throw new Error(
+    'Usage: node scripts/run-browser-suites.mjs [--jobs 1–4 | [shard] [count] [--list]] [--prepared]',
+  )
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const suites = Object.keys(manifest.scripts)
   .filter((name) => /^test:.+:browser$/.test(name))
@@ -14,27 +43,32 @@ const missing = unregisteredBrowserChecks(
 )
 if (missing.length)
   throw new Error(`Browser suites are not registered in package.json: ${missing.join(', ')}`)
-const [shardText = '0', countText = '1', mode] = process.argv.slice(2)
-const shard = Number(shardText),
-  count = Number(countText)
-if (
-  !Number.isInteger(shard) ||
-  !Number.isInteger(count) ||
-  count < 1 ||
-  shard < 0 ||
-  shard >= count ||
-  (mode !== undefined && mode !== '--list')
-)
-  throw new Error('Usage: node scripts/run-browser-suites.mjs [shard] [count] [--list]')
+const timingsPath = process.env.DOVO_BROWSER_TIMINGS
+if (!values.list && !values.prepared) {
+  const code = await runCheck(process.execPath, ['scripts/ci/workspace-task.mjs', 'build'])
+  if (code !== 0) process.exit(code)
+}
+if (runAll && count > 1) {
+  const extension = timingsPath ? extname(timingsPath) : ''
+  const results = await Promise.all(
+    Array.from({ length: count }, (_, index) => {
+      const args = [process.argv[1], String(index), String(count), '--prepared']
+      const env = timingsPath
+        ? {
+            ...process.env,
+            DOVO_BROWSER_TIMINGS: `${timingsPath.slice(0, timingsPath.length - extension.length)}-${index}${extension}`,
+          }
+        : process.env
+      return runCheck(process.execPath, args, env)
+    }),
+  )
+  process.exit(results.find((code) => code !== 0) ?? 0)
+}
 const durations = JSON.parse(
   readFileSync(new URL('./ci/browser-durations.json', import.meta.url), 'utf8'),
 ).seconds
 const selected = browserShards(suites, count, durations)[shard]
-if (mode !== '--list') {
-  const result = spawnSync(process.execPath, ['scripts/ci/workspace-task.mjs', 'build'], {
-    stdio: 'inherit',
-  })
-  if (result.status !== 0) process.exit(result.status ?? 1)
+if (!values.list) {
   console.log(
     `Shard ${shard + 1}/${count}: ${selected.suites.length} suites, estimated ${Math.round(selected.seconds)} seconds.`,
   )
@@ -46,8 +80,8 @@ const shell = windows ? (process.env.ComSpec ?? 'cmd.exe') : 'sh'
 const shellArgs = (command) => (windows ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command])
 const summary = process.env.GITHUB_STEP_SUMMARY
 for (const suite of selected.suites) {
-  console.log(suite)
-  if (mode === '--list') continue
+  console.log(values.list || count === 1 ? suite : `Shard ${shard + 1}/${count}: ${suite}`)
+  if (values.list) continue
   const started = performance.now()
   const prepared = browserChecks(manifest.scripts[suite])
   if (!prepared) throw new Error(`Browser suite has no checks: ${suite}`)
@@ -69,9 +103,9 @@ for (const suite of selected.suites) {
             : 'incomplete',
       checks,
     }
-    if (process.env.DOVO_BROWSER_TIMINGS)
+    if (timingsPath)
       writeFileSync(
-        process.env.DOVO_BROWSER_TIMINGS,
+        timingsPath,
         JSON.stringify({ shard, count, suites: [...timings, report] }, null, 2) + '\n',
       )
     if (summary && status !== 'success')

@@ -17,6 +17,7 @@
     "./linked-thread": "./src/use-linked-thread.ts",
     "./automation-subject-runs": "./src/use-automation-subject-runs.ts",
     "./native-thread-history": "./src/native-thread-history.ts",
+    "./native-skills": "./src/use-native-skills.ts",
     "./harness-instructions": "./src/use-harness-instructions.ts",
     "./state": "./src/runtime/application-state.ts",
     "./scoped-error": "./src/use-scoped-error.ts",

@@ -1,6 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   taskModelSelectionDifficultySchema,
+  claudeAutoRestrictionText,
   selectPermissionPreset,
   permissionPolicyLabel,
   modelDisplayName,
@@ -154,7 +155,13 @@ export function TaskLauncherControls({
   const task = createLauncherTask(snapshot, repository, selection, '', 'launcher-selection')
   const agents = resolveScopedAgents(snapshot.defaults, repository, snapshot.workspace.agents)
   const agent = { ...harness, id: selection.agentId ?? 'launcher', name: selection.name }
-  const availability = useHarnessAvailability(repository.id, agents)
+  const availability = useHarnessAvailability(repository.id, agents, false, {})
+  const autoLimit =
+    agent.provider === 'claude'
+      ? availability.claudeAutoLimits.get(
+          selection.agentId ? `agent:${selection.agentId}` : 'harness:claude',
+        )
+      : undefined
   return (
     <View style={{ gap: 12 }}>
       {/* The selection mode decides whether the picker below applies, so it leads. */}
@@ -209,7 +216,11 @@ export function TaskLauncherControls({
                   agent.acpInstallationId,
                 )
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
-                  .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
+                  .map((mode) => ({
+                    id: mode.id,
+                    name: uiText(mode.name),
+                    disabled: mode.id === 'auto' && !!autoLimit,
+                  }))}
                 onChange={(permission) => {
                   const mode = selectableAccessModes(
                     agent.permission,
@@ -295,7 +306,11 @@ export function TaskLauncherControls({
             disabled={disabled}
             items={selectableAccessModes(agent.permission, agent.provider, agent.acpInstallationId)
               .filter((mode) => supportsAccess(agent.provider, mode.id))
-              .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
+              .map((mode) => ({
+                id: mode.id,
+                name: uiText(mode.name),
+                disabled: mode.id === 'auto' && !!autoLimit,
+              }))}
             onChange={(permission) => {
               const mode = selectableAccessModes(
                 agent.permission,
@@ -315,6 +330,9 @@ export function TaskLauncherControls({
             }}
           />
         </>
+      )}
+      {autoLimit && (
+        <Text style={styles.muted}>{uiText(claudeAutoRestrictionText[autoLimit])}</Text>
       )}
     </View>
   )

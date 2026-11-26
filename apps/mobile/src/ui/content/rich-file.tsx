@@ -4,6 +4,7 @@ import { Alert, AppState, Pressable, View } from 'react-native'
 import WebView from 'react-native-webview'
 import {
   taskFileShareSchema,
+  localMarkdownLine,
   localMarkdownPath,
   markdownFileName,
   artifactTemplatePrompt,
@@ -144,7 +145,10 @@ export function RichFile({
   }, [local, video, opened, taskId, path, read, connected, connection, key, revision])
   const current = result?.key === key ? result : undefined
   const url = local ? current?.url : path
-  const previewUrl = url && current?.bridgeId ? `${url}#dovo-pdf=${current.bridgeId}` : url
+  const line = local ? localMarkdownLine(path) : undefined
+  const previewUrl =
+    url &&
+    (line ? `${url}#L${line}` : current?.bridgeId ? `${url}#dovo-pdf=${current.bridgeId}` : url)
   const sendRestore = () => {
     if (!current?.bridgeId || currentKey.current !== key) return
     const message = {

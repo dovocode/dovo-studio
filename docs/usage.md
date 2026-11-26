@@ -18,6 +18,11 @@ imports so they are counted once. CLI records represent requests, while Dovo rec
 turns. CLI history does not supply Dovo's elapsed agent time. Copied request records and multiple
 aliases for a runtime are deduplicated.
 
+Antigravity ACP usage is read from local conversation databases in the default or configured Gemini
+profile. Imported records follow Dovo's existing retention setting and remain visible after the
+configured agent is removed. In the all-computers view, Windows and WSL warnings for the same
+provider and mapped transcript directory on one Windows host appear once.
+
 Only provider-reported tokens are counted. Input, output, cache read, and cache creation are
 retained for new turns. Older turns may have only a total; missing tokens and unpriced records
 remain visibly incomplete rather than being assumed to be zero. Mixed-model turns without a reliable

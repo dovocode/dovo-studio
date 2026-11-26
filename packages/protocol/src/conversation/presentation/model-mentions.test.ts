@@ -33,3 +33,13 @@ it('matches model family prefixes and keeps provider instance identities distinc
 it('ignores inline model IDs inside explicit filenames', () => {
   expect(modelMentionContext('@file:"notes/`model:harness%3Acodex/gpt` summary"')).toBe('')
 })
+
+it('passes a model from a saved draft with its separator inside inline code', () => {
+  const normal = '`model:harness%3Aclaude/opus`'
+  const saved = '`model:harness%3Aclaude/opus `'
+  const context = modelMentionContext(saved)
+  expect(context).toContain('{"harness":"harness:claude","model":"opus"}')
+  expect(modelMentionContext(`${normal} and ${saved}`)).toBe(context)
+  expect(modelMentionContext('`model:harness%3Aclaude/opus other text`')).toBe('')
+  expect(modelMentionContext('model:harness%3Aclaude/opus')).toBe('')
+})

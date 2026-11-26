@@ -1,6 +1,9 @@
 package expo.modules.dovocomposerinput
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.os.PersistableBundle
 import android.graphics.Canvas
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -37,6 +40,8 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
+private const val copiedImagesMarker = "com.dovo.studio.copied-images"
+
 class ComposerReferenceRecord : Record {
   @Field var start: Int = 0
   @Field var end: Int = 0
@@ -61,12 +66,19 @@ class DovoComposerInputModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("DovoComposerInput")
     Constants("supportsReferenceMessages" to true, "supportsDraftSnapshot" to true)
+    AsyncFunction("copyWithImages") { text: String, marker: String ->
+      val context = appContext.reactContext ?: error("Clipboard is unavailable")
+      val clipboard = context.getSystemService(ClipboardManager::class.java) ?: error("Clipboard is unavailable")
+      val clip = ClipData.newPlainText("Dovo message", text)
+      clip.description.extras = PersistableBundle().apply { putString(copiedImagesMarker, marker) }
+      clipboard.setPrimaryClip(clip)
+    }
     AsyncFunction("blur") {
       DovoComposerInputView.active?.get()?.let { view -> view.post { view.blur() } }
     }
     View(DovoComposerInputView::class) {
       AsyncFunction("readText") { view: DovoComposerInputView -> view.readText() }
-      Events("onTextChange", "onSourceSelection", "onFocus", "onBlur", "onSize", "onLink")
+      Events("onTextChange", "onSourceSelection", "onFocus", "onBlur", "onSize", "onLink", "onPasteCopiedImages")
       Prop("content") { view: DovoComposerInputView, content: ComposerContentRecord -> view.receive(content) }
       Prop("editable") { view: DovoComposerInputView, value: Boolean -> view.setEditable(value) }
       Prop("displayOnly") { view: DovoComposerInputView, value: Boolean -> view.setDisplayOnly(value) }
@@ -114,6 +126,16 @@ class ReferenceSpan(private val title: String, private val background: Int, priv
 
 class ComposerEditText(context: Context) : EditText(context) {
   var selectionChanged: (() -> Unit)? = null
+  var copiedImagesPasted: ((String) -> Unit)? = null
+  override fun onTextContextMenuItem(id: Int): Boolean {
+    val marker = if (keyListener != null && (id == android.R.id.paste || id == android.R.id.pasteAsPlainText)) {
+      context.getSystemService(ClipboardManager::class.java)?.primaryClipDescription
+        ?.extras?.getString(copiedImagesMarker)
+    } else null
+    val handled = super.onTextContextMenuItem(id)
+    if (handled && marker != null) copiedImagesPasted?.invoke(marker)
+    return handled
+  }
   private var editingKeyListener: android.text.method.KeyListener? = null
   fun displayMessage(value: Boolean) {
     if (value && keyListener != null) editingKeyListener = keyListener
@@ -170,6 +192,7 @@ class ComposerEditText(context: Context) : EditText(context) {
   override fun onCreateInputConnection(info: EditorInfo): InputConnection? {
     if (keyListener == null) return null
     val connection = super.onCreateInputConnection(info) ?: return null
+    info.imeOptions = info.imeOptions or EditorInfo.IME_FLAG_NO_FULLSCREEN
     return object : InputConnectionWrapper(connection, true) {
       override fun deleteSurroundingText(before: Int, after: Int): Boolean {
         if (before == 1 && after == 0 && deleteReference(true)) return true
@@ -200,6 +223,7 @@ class DovoComposerInputView(context: Context, appContext: AppContext) : ExpoView
   private val onBlur by EventDispatcher()
   private val onSize by EventDispatcher()
   private val onLink by EventDispatcher()
+  private val onPasteCopiedImages by EventDispatcher()
   private var displayOnly = false
   var messageFontSize = 17f
   var messageLineHeight = 25f
@@ -222,6 +246,7 @@ class DovoComposerInputView(context: Context, appContext: AppContext) : ExpoView
   private var lastHeight = 0
   private val density = resources.displayMetrics.density
   init {
+    input.copiedImagesPasted = { marker -> onPasteCopiedImages(mapOf("marker" to marker)) }
     input.background = null
     input.textSize = 17f
     input.gravity = Gravity.TOP or Gravity.START

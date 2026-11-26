@@ -278,7 +278,11 @@ try {
               const entry = JSON.parse(cursor.value).value
               if (
                 entry?.snapshot?.runtimeId === runtimeId &&
-                entry.snapshot.detailTaskIds?.includes('same-thread-id')
+                entry.snapshot.detailTaskIds?.includes('same-thread-id') &&
+                entry.snapshot.workspace.tasks.some(
+                  (task) =>
+                    task.id === 'same-thread-id' && task.draft === 'Draft on the second computer',
+                )
               )
                 value = entry
             }
@@ -290,7 +294,7 @@ try {
         if (cached) return cached
         await new Promise((resolve) => setTimeout(resolve, 100))
       } while (Date.now() < deadline)
-      throw new Error('The second computer conversation was not cached')
+      throw new Error('The second computer conversation and edited draft were not cached')
     } finally {
       database.close()
     }
@@ -304,7 +308,7 @@ try {
   await page.reload()
   try {
     await thread(page, second, 'Second computer')
-    assert.match(await composer.textContent(), /Draft on the second computer/)
+    await composer.filter({ hasText: 'Draft on the second computer' }).waitFor()
   } catch (error) {
     throw new Error('Offline thread did not open: ' + (await page.locator('body').innerText()), {
       cause: error,

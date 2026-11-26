@@ -1,10 +1,10 @@
 import Database from 'better-sqlite3'
 import { lstatSync, realpathSync, type Stats } from 'node:fs'
-import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import { Schema } from 'effect'
 import { decode, mutableStruct } from '@dovo/protocol'
 import type { AcpLaunch } from '../../execution/types.js'
+import { antigravityProfile, antigravitySessionId } from './antigravity-profile.js'
 import {
   ProviderFailure,
   providerFailureKind,
@@ -27,12 +27,8 @@ const lastStep = mutableStruct({ step_type: Schema.Number, payload: Schema.Unkno
 
 /** Only inspect an owned ACP session, and only rows that this prompt added. The log format is optional. */
 export function watchAntigravityOutcome(launch: AcpLaunch, sessionId: string) {
-  if (launch.sandbox || !/^[\w-]{1,128}$/.test(sessionId)) return
-  const profile =
-    launch.env.GEMINI_HOME ??
-    process.env.GEMINI_HOME ??
-    join(launch.env.HOME ?? homedir(), '.gemini')
-  if (!isAbsolute(profile)) return
+  const profile = antigravityProfile(launch)
+  if (!profile || !antigravitySessionId.test(sessionId)) return
   try {
     const root = realpathSync(profile)
     const parent = join(root, 'antigravity-acp', 'conversations')

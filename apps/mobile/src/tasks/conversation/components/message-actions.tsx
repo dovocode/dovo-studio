@@ -23,6 +23,7 @@ import {
   modelDisplayName,
   codeBlockLabel,
   fencedCodeBlocks,
+  isImageAttachment,
   responses,
   shellCommand,
   type CodeBlock,
@@ -294,7 +295,16 @@ export function MessageActions({
     return () => clearTimeout(timer)
   }, [feedback])
   const copy = (value: string, kind: Exclude<Feedback, ''>) =>
-    void copyText(value).then(
+    void copyText(
+      value,
+      kind === 'message' && snapshot?.runtimeId && message?.attachments
+        ? {
+            runtimeId: snapshot.runtimeId,
+            taskId: task.id,
+            ids: message.attachments.filter(isImageAttachment).map(({ id }) => id),
+          }
+        : undefined,
+    ).then(
       (result) => {
         if (result !== 'copied') return
         setFeedback(kind)

@@ -116,6 +116,34 @@ it('keeps a saved webhook review paused while policy blocks its resumption', asy
   runtime.services.jobs.approve(id, true)
   await waitForJob(() => expect(runtime.services.jobs.detail(id).status).toBe('completed'))
 })
+it('keeps automation names well-formed in the worker message source', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  const prefix = 'a'.repeat(399)
+  const flow = { ...createFlow(), name: `${prefix}🚀` }
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  const id = s.jobs.start(flow.id)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('waiting'))
+  const [worker] = s.jobs.detail(id).taskIds
+  expect(s.store.task(worker).messages[0].source).toEqual({
+    kind: 'automation',
+    automationId: flow.id,
+    runId: id,
+    title: prefix,
+  })
+  expect(s.jobs.detail(id).flow.name).toBe(flow.name)
+})
 it(
   'persists review gates across restart and deduplicates external deliveries',
   {
@@ -347,6 +375,17 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
   const now = Date.parse('2026-09-07T12:00:00Z')
   s.jobs.tick(now)
   expect(s.jobs.list()).toHaveLength(0)
+  s.store.update((workspace) => ({
+    ...workspace,
+    automations: workspace.automations.map((automation) => ({
+      ...automation,
+      nodes: automation.nodes.map((node) =>
+        node.data.kind === 'trigger'
+          ? { ...node, data: { ...node.data, schedule: '0 * * * * *' } }
+          : node,
+      ),
+    })),
+  }))
   s.jobs.tick(now + 60000)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   s.jobs.approve(s.jobs.list()[0].id, true)

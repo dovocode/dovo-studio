@@ -131,9 +131,9 @@ it('searches full replica histories with Unicode, paging, edits, rollback and in
       kind: 'message',
       messageId: 'm1',
       position: 1,
-      message: { id: 'm1', role: 'user', text: 'Updated searchable text' },
+      message: { id: 'm1', role: 'user', text: 'Updated\rsearchable text' },
     })
-    expect(reopened.search('updated searchable').hits.map((hit) => hit.messageId)).toEqual(['m1'])
+    expect(reopened.search('"updated searchable"').hits.map((hit) => hit.messageId)).toEqual(['m1'])
     reopened.record({
       ...identity,
       kind: 'thread',

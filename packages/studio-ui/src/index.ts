@@ -69,6 +69,7 @@ export {
 export { useHarnessCatalog, useModelLabel } from './harness-catalog'
 
 export { HarnessFields } from './harness-fields'
+export { useHarnessAvailability } from './use-harness-availability'
 
 export * from './settings-scope-page'
 

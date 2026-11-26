@@ -231,6 +231,7 @@ export function Composer({
   const asideRequest = useRef<'saving' | null>(null)
   const asideAttempt = useRef<{ text: string; childId: string } | null>(null)
   const [dictating, setDictating] = useState(false)
+  const [dictationFeedback, setDictationFeedback] = useState<HTMLDivElement | null>(null)
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
   const composerDraft = useComposerDraft(task, temporary, editing?.controller)
@@ -968,6 +969,8 @@ export function Composer({
       composerDraft.flush()
       attempt.current.draftCheckpoint = composerDraft.checkpoint()
       await flush(task.id)
+      if (firstMessage && mode === 'queue' && !background)
+        setComposingDuringSend({ text, revision: submittedRevision })
       if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {
         const selected = await request(
           '/api/tasks/projects/select',
@@ -1495,15 +1498,15 @@ export function Composer({
         actions={
           <>
             <ContextMeter task={task} />
-            {!pendingQuestion && (
-              <ComposerDictation
-                taskId={task.id}
-                controller={composerDraft.controller}
-                input={input}
-                disabled={submitBusy || machineMoving || asideCreating || !!task.archivedAt}
-                onActive={setDictating}
-              />
-            )}
+            <ComposerDictation
+              taskId={task.id}
+              controller={composerDraft.controller}
+              input={input}
+              disabled={submitBusy || machineMoving || asideCreating || !!task.archivedAt}
+              hideTrigger={!!pendingQuestion}
+              onActive={setDictating}
+              feedbackTarget={dictationFeedback}
+            />
             {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
               <div
                 className="composer-send-group flex shrink-0 items-center gap-1"
@@ -1881,6 +1884,7 @@ export function Composer({
             onDiscard={composerDraft.discardRecovery}
           />
         )}
+        <div ref={setDictationFeedback} />
         <ComposerEditor
           onAlternativeSubmit={
             hasBackgroundAction

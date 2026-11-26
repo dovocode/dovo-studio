@@ -755,7 +755,7 @@ it('searches stored history with the in-memory ordering, snippets and complete t
     const tie = {
       ...second,
       id: 'tie',
-      messages: [{ id: 't0', role: 'user' as const, text: 'NEEDLE' }],
+      messages: [{ id: 't0', role: 'user' as const, text: 'NEEDLE\rbetween lines' }],
     }
     store.update((current) => ({ ...current, tasks: [task, second, busy, tie] }))
     for (const query of ['needle', '  NEEDLE ', 'message', 'ÄRGER', 'message 1', 'absent', '   '])
@@ -766,6 +766,9 @@ it('searches stored history with the in-memory ordering, snippets and complete t
         ),
       )
     expect(store.searchHistory('needle').taskIds).toEqual(['busy', 'tie'])
+    expect(
+      new WorkspaceStore(db).searchHistory('"needle between"').hits.map((hit) => hit.messageId),
+    ).toEqual(['t0'])
     expect(store.searchHistory('needle').hits).toHaveLength(50)
     expect(store.searchHistory('message', 'second')).toEqual(
       searchTaskMessages([store.task('second')], 'message'),

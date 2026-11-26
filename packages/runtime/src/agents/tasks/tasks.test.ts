@@ -1,4 +1,8 @@
-import { runtimeIntegration, waitForRuntime as waitForTask } from '../../testing/integration'
+import {
+  deferred,
+  runtimeIntegration,
+  waitForRuntime as waitForTask,
+} from '../../testing/integration'
 import {
   decode,
   questionPromptSchema,
@@ -740,7 +744,10 @@ it('queues a new follow-up during Stop and starts it after the stopped provider 
     objective: 'First request',
   })
   const execution = await s.tasks.start(task.id)
-  const stopped = expect(execution.done).rejects.toThrow('Cancelled by user')
+  const stopped = execution.done.then(
+    () => undefined,
+    (error: unknown) => error,
+  )
   try {
     await waitForTask(() => expect(run).toHaveBeenCalledOnce())
     s.tasks.cancel(task.id)
@@ -755,12 +762,84 @@ it('queues a new follow-up during Stop and starts it after the stopped provider 
   } finally {
     release()
   }
-  await stopped
+  expect(await stopped).toMatchObject({ message: 'Cancelled by user' })
   await waitForTask(() => expect(s.store.task(task.id).status).toBe('review'))
   expect(run).toHaveBeenCalledTimes(2)
   expect(run.mock.calls[1]?.[0].prompt).toContain('Follow up after stopping')
   expect(s.store.task(task.id).messages.filter(({ id }) => id === 'after-stop')).toHaveLength(1)
 })
+
+it('keeps an automation message in a snoozed thread without waking it', async () => {
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Snoozed',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const snoozedUntil = '2099-01-01T00:00:00Z'
+  s.store.updateTask(task.id, (current) => ({ ...current, snoozedUntil, queuePaused: true }))
+  await s.tasks.send(task.id, 'routine', 'Scheduled follow-up', [], {
+    kind: 'automation',
+    automationId: 'flow',
+    runId: 'run',
+    title: 'Daily',
+  })
+  expect(s.store.task(task.id)).toMatchObject({
+    snoozedUntil,
+    queue: [{ id: 'routine' }],
+  })
+  await s.tasks.send(task.id, 'human', 'Explicit follow-up')
+  expect(s.store.task(task.id).snoozedUntil).toBeNull()
+})
+
+it.each(['codex', 'opencode', 'cursor'] as const)(
+  'retains an unaccepted %s prompt when stopped and uses it on explicit continuation',
+  async (provider) => {
+    const s = await setup()
+    s.store.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.map((agent) => ({ ...agent, provider, permission: 'read-only' })),
+    }))
+    const gate = deferred<void>()
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      input.onSession('early-stop')
+      if (run.mock.calls.length === 1) {
+        await gate.promise
+        input.signal.throwIfAborted()
+      }
+      input.onText('Done')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const task = s.tasks.create({
+      title: 'Early stop',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Keep my first request',
+    })
+    const execution = await s.tasks.start(task.id)
+    const stopped = execution.done.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    try {
+      await waitForTask(() => expect(run).toHaveBeenCalledOnce())
+      s.tasks.cancel(task.id)
+    } finally {
+      gate.resolve()
+    }
+    expect(await stopped).toMatchObject({ message: 'Cancelled by user' })
+    expect(run).toHaveBeenCalledOnce()
+    expect(s.store.task(task.id).runAttempt?.promptAccepted).toBe(false)
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    expect(run.mock.calls[1]?.[0].prompt).toContain('Keep my first request')
+    expect(
+      s.store.task(task.id).messages.filter((message) => message.role === 'user'),
+    ).toHaveLength(1)
+  },
+)
 
 it('pauses remaining input on cancellation and retains failed input on resume', async () => {
   const s = await setup()

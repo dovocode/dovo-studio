@@ -1,0 +1,27 @@
+diff --git a/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt b/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
+--- a/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
++++ b/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
+@@ -30,3 +30,5 @@
+ import java.io.Serializable
+ import java.util.Random
+ import java.util.concurrent.CountDownLatch
++import java.util.concurrent.ExecutionException
++import java.util.concurrent.FutureTask
+@@ -223,5 +225,17 @@
+     return object : AppContextActivityResultLauncher<I, O>() {
+       override fun launch(input: I, callback: ActivityResultCallback<O>) {
++        // Expo modules may call launch from an IO dispatcher. Registry and Activity
++        // state both belong to the main thread, including launch during menu dismissal.
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++          val pending = FutureTask<Unit> { launch(input, callback) }
++          check(Handler(Looper.getMainLooper()).post(pending)) { "The Activity main thread is no longer available" }
++          try {
++            pending.get()
++          } catch (e: ExecutionException) {
++            throw (e.cause ?: e)
++          }
++          return
++        }
+         val requestCode = keyToRequestCode[key]
+           ?: reregister(key, contract, fallbackCallback)
+           ?: throw IllegalStateException("Attempting to launch an unregistered ActivityResultLauncher with contract $contract and input $input. You must ensure the ActivityResultLauncher is registered before calling launch()")

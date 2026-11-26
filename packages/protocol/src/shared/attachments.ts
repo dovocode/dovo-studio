@@ -2,8 +2,10 @@ import { uuidSchema } from './schema.js'
 import { mutableStruct, mutableArray } from './schema.js'
 import { minValue, maxValue, refine } from './schema.js'
 import { Schema } from 'effect'
+import { notebookMarkdown } from '../scm/repositories/notebook-preview.js'
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 export const MAX_ATTACHMENTS = 5
+export const ATTACHMENT_PREVIEW_CHARS = 32000
 export const attachmentSchema = mutableStruct({
   id: uuidSchema,
   name: maxValue(minValue(Schema.String, 1), 250),
@@ -37,10 +39,10 @@ export const attachmentMutationSchema = mutableStruct({
 })
 export const attachmentReadSchema = mutableStruct({
   ...attachmentResultSchema.fields,
-  ...{
-    data: Schema.String,
-  },
+  data: Schema.String,
+  documentPreview: Schema.optional(maxValue(Schema.String, ATTACHMENT_PREVIEW_CHARS + 20)),
 })
+export type AttachmentRead = Schema.Schema.Type<typeof attachmentReadSchema>
 export const attachmentOcrRequestSchema = mutableStruct({
   taskId: minValue(Schema.String, 1),
   id: uuidSchema,
@@ -73,4 +75,28 @@ export const attachmentPreparedSchema = mutableStruct({ missing: attachmentIdsSc
 export type Attachment = Schema.Schema.Type<typeof attachmentSchema>
 export function isImageAttachment(file: Attachment) {
   return ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mime)
+}
+
+export function attachmentDocumentKind(name: string) {
+  if (/\.docx$/i.test(name)) return 'docx'
+  if (/\.epub$/i.test(name)) return 'epub'
+}
+
+export function attachmentTextPreview(name: string, data: string) {
+  try {
+    const source = new TextDecoder('utf-8', { fatal: true }).decode(
+      Uint8Array.from(atob(data), (character) => character.charCodeAt(0)),
+    )
+    if (source.includes('\0')) return
+    const markdown = /\.ipynb$/i.test(name) ? notebookMarkdown(source) : undefined
+    const text = markdown ?? source
+    return {
+      markdown: markdown !== undefined,
+      text:
+        text.slice(0, ATTACHMENT_PREVIEW_CHARS) +
+        (text.length > ATTACHMENT_PREVIEW_CHARS ? '\n… Preview truncated' : ''),
+    }
+  } catch {
+    return
+  }
 }

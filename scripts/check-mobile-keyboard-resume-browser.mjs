@@ -33,11 +33,13 @@ const root=createRoot(document.getElementById('app'));root.render(<App/>);window
       path: 'react-native',
       contents: `
 const listeners=new Map();let metrics;
+export const Platform={OS:'android'};
 export const AppState={currentState:'active',addEventListener:(name,fn)=>listen('app:'+name,fn)};
 export const Keyboard={metrics:()=>metrics,addListener:listen};
 function listen(name,fn){const set=listeners.get(name)??new Set();set.add(fn);listeners.set(name,set);return {remove:()=>set.delete(fn)}}
 window.appState=state=>{AppState.currentState=state;listeners.get('app:change')?.forEach(fn=>fn(state))};
 window.keyboard=(name,height=0)=>{if(name==='keyboardDidShow')metrics={height};if(name==='keyboardDidHide')metrics=undefined;listeners.get(name)?.forEach(fn=>fn({endCoordinates:{height}}))};
+window.restoreActivity=height=>{metrics=height?{height}:undefined;listeners.get('app:focus')?.forEach(fn=>fn())};
 window.listenerCount=()=>[...listeners.values()].reduce((sum,set)=>sum+set.size,0);`,
     },
   ],
@@ -76,6 +78,10 @@ try {
     window.keyboard('keyboardDidShow', 0)
     window.appState('active')
   })
+  await enabled(false)
+  await page.evaluate(() => window.keyboard('keyboardDidShow', 360))
+  await enabled(true)
+  await page.evaluate(() => window.restoreActivity(0))
   await enabled(false)
   await page.evaluate(() => window.unmount())
   assert.equal(await page.evaluate(() => window.listenerCount()), 0)

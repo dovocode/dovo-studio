@@ -345,9 +345,10 @@ desktop pairing has not been verified; general Chrome extension parity is not cl
 APIs/permissions and load errors are reported by the extension manager. Extension-created tabs
 retain their native identity and profile. The browser selects a new tab unless the extension
 requests a background tab. The extension can also select an existing tab in the same profile. Native
-close events remove tabs from the list. If the browser releases an inactive extension page to save
-memory, select its tab to reload the page in the same profile while the extension is loaded.
-Extension URL pages are available only in the current app session.
+close events remove tabs from the list, including pages closed before they reach the tab list. A
+window can hold up to 100 tabs. If the browser releases an inactive extension page to save memory,
+select its tab to reload the page in the same profile while the extension is loaded. Extension URL
+pages are available only in the current app session.
 
 Run `pnpm exec playwright install chromium` and `node scripts/check-browser-extensions-browser.mjs`
 after building the desktop app to check the extension manager. Run

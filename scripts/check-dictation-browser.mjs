@@ -25,8 +25,8 @@ const built = await build({
         subscribe:(id,listener)=>{listeners.set(id,listener);return()=>listeners.delete(id)},
         cancel:async(id)=>{window.cancelled.push(id);if(window.downloading)window.rejectInstall(Error('Download cancelled'))}
       }};
-      function Editor({id}){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const[quoting,setQuoting]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} readOnly={active} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId={"task-"+id} controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button><button onClick={()=>setQuoting(true)}>Quote selection</button>{quoting&&<QuoteSelection taskId={"task-"+id} messageId="reply-1" text="Use an explicit quote." onClose={()=>setQuoting(false)} onQuote={reply=>controller.update(controller.text+'\\n\\n'+reply)}/>}</>}
-      function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><SpeechSettings/><DictationNotice/><Editor key={key} id={key}/></TooltipProvider>};
+      function Editor({id}){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const[feedback,setFeedback]=useState(null);const[quoting,setQuoting]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <section aria-label="Active composer"><div ref={setFeedback}/><textarea ref={input} aria-label="Message" value={text} readOnly={active} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId={"task-"+id} controller={controller} input={input} disabled={false} onActive={setActive} feedbackTarget={feedback}/><button disabled={active}>Send</button><button onClick={()=>setQuoting(true)}>Quote selection</button>{quoting&&<QuoteSelection taskId={"task-"+id} messageId="reply-1" text="Use an explicit quote." onClose={()=>setQuoting(false)} onQuote={reply=>controller.update(controller.text+'\\n\\n'+reply)}/>}</section>}
+      function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);window.navigateThread=id=>setKey(Number(id.replace('task-','')));return <TooltipProvider><SpeechSettings/><DictationNotice/><Editor key={key} id={key}/></TooltipProvider>};
       createRoot(document.getElementById('app')).render(<App/>);
     `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -41,7 +41,7 @@ const built = await build({
           namespace: 'speech-workspace',
         }))
         builder.onLoad({ filter: /.*/, namespace: 'speech-workspace' }, () => ({
-          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({navigate:()=>{}});export const useWorkspace=()=>({workspace:{tasks:[]},snapshot:{},connection:null,request:async()=>{throw Error('Unexpected runtime request')}});`,
+          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({navigate:target=>window.navigateThread(target.entityId)});export const useWorkspace=()=>({workspace:{tasks:[]},snapshot:{},connection:null,request:async()=>{throw Error('Unexpected runtime request')}});`,
           loader: 'tsx',
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
         }))
@@ -76,6 +76,8 @@ try {
   await page.goto('https://dovo.test/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const mic = page.getByRole('button', { name: 'Dictate message', exact: true })
+  const composer = page.getByRole('region', { name: 'Active composer' })
+  const notice = page.getByRole('complementary', { name: 'Dictation', exact: true })
   const recording = page.getByRole('button', { name: 'Stop dictation', exact: true }).first()
   const download = page.getByRole('button', { name: 'Download & enable dictation', exact: true })
   const enabled = page.getByRole('switch', { name: 'Enable dictation', exact: true })
@@ -125,9 +127,10 @@ try {
   const record = async () => {
     await mic.click()
     await recording.waitFor()
+    assert.equal(await notice.count(), 0, 'the visible composer owns the recording controls')
     assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true)
     // Wait for actual worklet PCM rather than calling a mocked recording implementation.
-    await page.getByRole('textbox', { name: 'Live dictation preview', exact: true }).waitFor()
+    await composer.getByRole('textbox', { name: 'Live dictation preview', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.language), 'nl-NL')
     await recording.click()
     await page.waitForFunction(() => window.complete && window.audioBytes > 320)
@@ -160,11 +163,20 @@ try {
   })
   await record()
   await page.evaluate(() => window.complete())
-  await page.getByRole('alert').filter({ hasText: 'Transcription failed' }).waitFor()
+  await composer.getByRole('alert').filter({ hasText: 'Transcription failed' }).waitFor()
+  assert.equal(await notice.count(), 0)
   assert.equal(await input.inputValue(), 'Typed while transcribing Fix de desktop app.')
   await page.getByRole('button', { name: 'Cancel dictation', exact: true }).click()
   await page.evaluate(() => {
     window.failTranscribe = false
+    window.complete = null
+  })
+  await record()
+  await page.evaluate(() => window.resolveLate(''))
+  await composer.getByRole('alert').filter({ hasText: 'No speech was detected' }).waitFor()
+  assert.equal(await notice.count(), 0)
+  await composer.getByRole('button', { name: 'Cancel dictation', exact: true }).click()
+  await page.evaluate(() => {
     window.complete = null
   })
 
@@ -177,6 +189,7 @@ try {
   })
   await record()
   await page.evaluate(() => window.switchThread())
+  await notice.getByRole('button', { name: 'Return to thread' }).waitFor()
   await page.evaluate(() => window.resolveLate('WRONG THREAD'))
   await page.waitForFunction(() => window.text() === 'Existing text.')
   await page.getByRole('textbox', { name: 'Dictation transcript', exact: true }).waitFor()
@@ -184,7 +197,10 @@ try {
     await page.getByRole('button', { name: 'Insert transcript', exact: true }).count(),
     0,
   )
-  await page.getByRole('button', { name: 'Cancel dictation', exact: true }).click()
+  await notice.getByRole('button', { name: 'Return to thread' }).click()
+  await composer.getByRole('textbox', { name: 'Dictation transcript', exact: true }).waitFor()
+  assert.equal(await notice.count(), 0)
+  await composer.getByRole('button', { name: 'Cancel dictation', exact: true }).click()
   await mic.click()
   await recording.waitFor()
   await page.keyboard.press('Escape')

@@ -18,6 +18,7 @@ it.each([undefined, 'on-request', 'never'] as const)(
     let childFinished = false
     let mcpRemovedBeforeChild = false
     let mcpReads = 0
+    let skills: Array<{ id: string; name: string; description: string }> = []
     const server = createServer((request, response) => {
       const path = new URL(request.url ?? '/', 'http://localhost').pathname
       if (path === '/api/event') {
@@ -50,6 +51,8 @@ it.each([undefined, 'on-request', 'never'] as const)(
           )
         }
         if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+        if (path === '/api/skill')
+          return response.end(JSON.stringify({ location: { directory: '/tmp' }, data: skills }))
         if (path === '/api/session/active')
           return response.end(JSON.stringify({ data: childFinished ? {} : { 'native-child': {} } }))
         if (path.endsWith('/session') && request.method === 'POST') {
@@ -127,17 +130,28 @@ it.each([undefined, 'on-request', 'never'] as const)(
     const text: string[] = []
     const eventNames: string[] = []
     try {
+      const endpoint = `http://127.0.0.1:${address.port}`
+      const agent = {
+        id: 'agent',
+        name: 'Test',
+        provider: 'opencode' as const,
+        endpoint,
+        model: 'openai/test',
+        permission: approvalPolicy ? ('full-access' as const) : ('read-only' as const),
+        approvalPolicy,
+        instructions: '',
+      }
+      expect(
+        await opencodeAdapter.nativeSkills?.(agent, '/tmp', AbortSignal.timeout(5000)),
+      ).toEqual([])
+      skills = [{ id: 'native-review', name: 'review-fixture', description: 'New native skill' }]
+      expect(
+        await opencodeAdapter.nativeSkills?.(agent, '/tmp', AbortSignal.timeout(5000)),
+      ).toEqual([{ name: 'review-fixture', description: 'New native skill' }])
       await opencodeAdapter.run({
         ephemeral: true,
         agent: {
-          id: 'agent',
-          name: 'Test',
-          provider: 'opencode',
-          endpoint: `http://127.0.0.1:${address.port}`,
-          model: 'openai/test',
-          permission: approvalPolicy ? 'full-access' : 'read-only',
-          approvalPolicy,
-          instructions: '',
+          ...agent,
           resources: {
             skills: [],
             mcpServers: [
@@ -153,6 +167,7 @@ it.each([undefined, 'on-request', 'never'] as const)(
         },
         cwd: '/tmp',
         prompt: 'Hi',
+        nativeSkillText: '/review-fixture',
         signal: AbortSignal.timeout(5000),
         onSession: () => {},
         onText: (part) => text.push(part),
@@ -181,6 +196,9 @@ it.each([undefined, 'on-request', 'never'] as const)(
       expect(mcpRemovedBeforeChild).toBe(false)
       expect(mcpReads).toBe(2)
       expect(requests.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
+      expect(requests.find(({ path }) => path.endsWith('/prompt'))?.body).toMatchObject({
+        skills: [{ id: 'native-review' }],
+      })
       expect(text).toEqual(['Hello', 'boundary'])
       expect(eventNames.filter((name) => name === 'message.part.updated')).toHaveLength(3)
       expect(requests.map((request) => request.path)).toContain('/api/session/session/prompt')

@@ -38,10 +38,12 @@ type Active = {
 }
 let active: Active | undefined
 const listeners = new Set<() => void>()
+const composers = new Map<string, number>()
+const notify = () => listeners.forEach((listener) => listener())
 const publish = (session: Active, patch: Partial<DictationState>) => {
   if (active !== session) return
   session.state = { ...session.state, ...patch }
-  listeners.forEach((listener) => listener())
+  notify()
 }
 export const dictationSession = {
   subscribe: (listener: () => void) => {
@@ -51,9 +53,23 @@ export const dictationSession = {
     }
   },
   read: () => active?.state,
+  readBackground: () => {
+    const state = active?.state
+    if (state && !state.transient && !composers.has(state.scope)) return state
+  },
+  showInComposer(scope: string) {
+    composers.set(scope, (composers.get(scope) ?? 0) + 1)
+    notify()
+    return () => {
+      const remaining = (composers.get(scope) ?? 1) - 1
+      if (remaining) composers.set(scope, remaining)
+      else composers.delete(scope)
+      notify()
+    }
+  },
   clear() {
     active = undefined
-    listeners.forEach((listener) => listener())
+    notify()
   },
   async cancel() {
     const session = active
@@ -89,7 +105,6 @@ export const dictationSession = {
         publish(session, {
           phase: 'review',
           transcript: text,
-          error: 'Return to the original thread to review and insert this transcript.',
         })
     } catch (error) {
       if (active === session && !session.abort.signal.aborted) {
@@ -144,7 +159,7 @@ export const dictationSession = {
       accept: options.accept,
     }
     active = session
-    listeners.forEach((listener) => listener())
+    notify()
     const fail = (error: Error) => {
       if (active !== session) return
       session.abort.abort()

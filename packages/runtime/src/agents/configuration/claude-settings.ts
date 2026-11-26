@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { claudeLaunchFlags } from './launch-flags.js'
 import { processEnvironment } from '../../process.js'
+import type { ClaudeAutoRestriction } from '@dovo/protocol'
 
 // Copy connection settings only. Hooks, MCP servers, permissions and unrelated
 // settings env must never leak into a tools:none utility.
@@ -17,7 +18,7 @@ const connectionKeys = [
 ] as const
 const maxSettingsBytes = 1024 * 1024
 
-function settingsEnv(path: string): Record<string, string> {
+function settingsFile(path: string): unknown {
   let fd: number | undefined
   try {
     fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK)
@@ -30,7 +31,7 @@ function settingsEnv(path: string): Record<string, string> {
       length += count
     }
     if (length > maxSettingsBytes) throw new Error('settings exceed 1 MiB')
-    return connectionEnv(JSON.parse(buffer.toString('utf8', 0, length)))
+    return JSON.parse(buffer.toString('utf8', 0, length)) as unknown
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return {}
     throw new Error(`Could not read Claude connection settings: ${path}`)
@@ -119,7 +120,7 @@ export function claudeEffectiveEnvironment(
     if (!flags.settings.trimStart().startsWith('{'))
       paths.push(resolve(cwd || home, flags.settings))
   }
-  for (const path of paths) Object.assign(env, settingsEnv(path))
+  for (const path of paths) Object.assign(env, connectionEnv(settingsFile(path)))
   if (flags.settings?.trimStart().startsWith('{'))
     Object.assign(env, connectionEnv(inlineSettings(flags.settings, 'connection')))
   if (flags['managed-settings'] !== undefined) {
@@ -128,8 +129,78 @@ export function claudeEffectiveEnvironment(
     // to an endpoint/auth configuration the coding session never uses.
     inlineSettings(flags['managed-settings'], 'managed')
   }
-  Object.assign(env, settingsEnv(join(managed, 'managed-settings.json')))
+  Object.assign(env, connectionEnv(settingsFile(join(managed, 'managed-settings.json'))))
   return env
+}
+
+function disablesAuto(settings: unknown) {
+  if (!settings || typeof settings !== 'object') return false
+  const permissions: unknown = Reflect.get(settings, 'permissions')
+  return (
+    Reflect.get(settings, 'disableAutoMode') === 'disable' ||
+    (!!permissions &&
+      typeof permissions === 'object' &&
+      Reflect.get(permissions, 'disableAutoMode') === 'disable')
+  )
+}
+
+/** Return only the source category. Claude still owns model and account eligibility. */
+export async function claudeAutoDisabledBy(
+  cwd: string,
+  overrides?: Record<string, string>,
+  args?: readonly string[],
+  isolateSettings = false,
+): Promise<ClaudeAutoRestriction | undefined> {
+  const probe = async () => {
+    const env = processEnvironment(overrides)
+    const home = env.HOME || homedir()
+    const configured = env.CLAUDE_CONFIG_DIR || join(home, '.claude')
+    const directory = resolve(
+      cwd,
+      configured.startsWith('~/') ? join(home, configured.slice(2)) : configured,
+    )
+    const host = processEnvironment()
+    const customHome = env.HOME !== host.HOME || env.CLAUDE_CONFIG_DIR !== host.CLAUDE_CONFIG_DIR
+    const flags = claudeLaunchFlags(args)
+    const sources =
+      isolateSettings && flags['setting-sources'] === undefined
+        ? new Set<SettingSource>()
+        : selectedSources(flags)
+    const read = (path: string) => {
+      try {
+        return disablesAuto(settingsFile(path))
+      } catch {
+        return false
+      }
+    }
+    const { resolveSettings } = await import('@anthropic-ai/claude-agent-sdk')
+    const settings = await resolveSettings({
+      cwd,
+      settingSources: [...sources].filter((source) => source !== 'user' || !customHome),
+    })
+    const disabled = settings.sources.filter(({ settings }) => disablesAuto(settings))
+    if (
+      disabled.some(({ source }) => source === 'managed') ||
+      read(join(directory, 'remote-settings.json')) ||
+      (flags['managed-settings'] &&
+        disablesAuto(inlineSettings(flags['managed-settings'], 'managed')))
+    )
+      return 'managed' as const
+    const launch = flags.settings
+    if (
+      disabled.some(({ source }) => source === 'user') ||
+      (customHome && sources.has('user') && read(join(directory, 'settings.json'))) ||
+      (launch &&
+        (launch.trimStart().startsWith('{')
+          ? disablesAuto(inlineSettings(launch, 'connection'))
+          : read(resolve(cwd, launch))))
+    )
+      return 'user' as const
+    if (disabled.some(({ source }) => source === 'project' || source === 'local'))
+      return 'project' as const
+  }
+  // Configuration can be unreadable. Leave any further fallback to Claude's own startup.
+  return probe().catch(() => undefined)
 }
 
 export function claudeSubscriptionEnvironment(env: NodeJS.ProcessEnv) {

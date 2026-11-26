@@ -1308,6 +1308,7 @@ export function Composer({
                   onFocus={focus}
                   onBlur={blur}
                   onSelectionChange={select}
+                  onPasteCopiedImages={attachmentPicker.pasteCopiedImages}
                   placeholder={
                     editing
                       ? uiText('Edit queued message…')

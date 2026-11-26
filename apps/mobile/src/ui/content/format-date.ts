@@ -28,6 +28,8 @@ export const formatShortDate = (value: string | number | Date) =>
   format('shortDate', { month: 'short', day: 'numeric' }, value)
 export const formatDateTime = (value: string | number | Date) =>
   format('dateTime', { dateStyle: 'medium', timeStyle: 'short' }, value)
+export const formatArchiveDateTime = (value: string) =>
+  format('archiveDateTime', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }, value)
 export const formatShortDateTime = (value: string | number | Date) =>
   format(
     'shortDateTime',

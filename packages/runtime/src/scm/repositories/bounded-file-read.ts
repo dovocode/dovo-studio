@@ -9,7 +9,33 @@ export const DEFAULT_FILE_PREVIEW_BYTES = 256 * 1024
 export const MAX_FILE_PREVIEW_BYTES = 1024 * 1024
 const MAX_FILE_BYTES = 100 * 1024 * 1024
 const SCAN_BYTES = 64 * 1024
-const cursorPattern = /^([\da-f]{64})\.(\d{1,9})\.(\d{1,9})$/
+const cursorPattern = /^([\da-f]{64})\.(\d{1,9})\.(\d{1,9})(\.gb18030)?$/
+
+function decodeTextPage(bytes: Buffer, hasMore: boolean, legacy: boolean) {
+  const encodings = legacy ? (['gb18030'] as const) : (['utf-8', 'gb18030'] as const)
+  for (const encoding of encodings) {
+    const decoder = new TextDecoder(encoding, { fatal: true, ignoreBOM: true })
+    let contents: string
+    try {
+      contents = decoder.decode(bytes, { stream: hasMore })
+    } catch {
+      continue
+    }
+    try {
+      decoder.decode()
+      return { contents, consumed: bytes.length, legacy: encoding === 'gb18030' }
+    } catch {
+      // The page ended inside a character. UTF-8 and GB18030 have at most four bytes per character.
+      for (let consumed = bytes.length - 1; consumed >= Math.max(0, bytes.length - 3); consumed--)
+        try {
+          decoder.decode(bytes.subarray(0, consumed))
+          return { contents, consumed, legacy: encoding === 'gb18030' }
+        } catch {
+          // Continue back to the last complete character.
+        }
+    }
+  }
+}
 
 function fileRevision(stat: BigIntStats) {
   return createHash('sha256')
@@ -98,17 +124,23 @@ export async function readBoundedFile(
   const total = bytes.length
   if (bytes.includes(0)) throw new HttpError(415, 'Binary files cannot be previewed')
   const complete = position === 0 && total === size
-  const decoder = new StringDecoder('utf8')
   const hasMore = position + total < size
-  const contents = hasMore ? decoder.write(bytes) : decoder.end(bytes)
-  let consumed = total
-  if (hasMore && decoder.end()) {
-    // Read the buffered UTF-8 prefix again on the next page.
-    do {
-      consumed--
-    } while ((bytes[consumed]! & 0xc0) === 0x80)
+  const decoded = decodeTextPage(bytes, hasMore, !!cursor?.[4])
+  if (!decoded && cursor?.[4]) throw new HttpError(415, 'Invalid GB18030 text')
+  let contents = decoded?.contents ?? ''
+  let consumed = decoded?.consumed ?? total
+  if (!decoded) {
+    const decoder = new StringDecoder('utf8')
+    contents = hasMore ? decoder.write(bytes) : decoder.end(bytes)
+    if (hasMore && decoder.end()) {
+      // Read the buffered UTF-8 prefix again on the next page.
+      do {
+        consumed--
+      } while ((bytes[consumed]! & 0xc0) === 0x80)
+    }
   }
   const nextLine = line + (contents.match(/\n/g)?.length ?? 0)
+  const suffix = decoded?.legacy ? '.gb18030' : ''
   return {
     path,
     contents,
@@ -117,8 +149,11 @@ export async function readBoundedFile(
     truncated: !complete,
     startLine: line,
     hasMore,
-    cursor: maxBytes >= 4 ? `${revision}.${position}.${line}` : undefined,
+    encoding: decoded?.legacy ? ('gb18030' as const) : undefined,
+    cursor: maxBytes >= 4 ? `${revision}.${position}.${line}${suffix}` : undefined,
     nextCursor:
-      hasMore && maxBytes >= 4 ? `${revision}.${position + consumed}.${nextLine}` : undefined,
+      hasMore && maxBytes >= 4
+        ? `${revision}.${position + consumed}.${nextLine}${suffix}`
+        : undefined,
   }
 }

@@ -22,8 +22,8 @@ import { Schema } from 'effect'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
 import { taskToolsServer } from '../agent-tools/config.js'
-import type { AgentAdapter } from '../agents/execution/types.js'
-import { runtimeIntegration } from '../testing/integration.js'
+import type { AgentAdapter, AgentSteer } from '../agents/execution/types.js'
+import { deferred, runtimeIntegration } from '../testing/integration.js'
 import { isOwnerMessage, routineChanges } from '../jobs/routine-provenance.js'
 vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
@@ -331,6 +331,77 @@ it('returns bounded conversation text and reads files, checkpoints and long mess
   const full = await read({ detail: 'full', before: 'newest' })
   expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length / 100)
 })
+
+it.each(['live', 'queued', 'staged', 'paused', 'unsupported'] as const)(
+  'delivers Studio thread sends in order without stopping the active turn (%s)',
+  async (scenario) => {
+    const { s, post, parent } = await setup()
+    const steer = vi.fn<AgentSteer>(async () => {})
+    const { promise: ready, resolve: started } = deferred<AbortSignal>()
+    const { promise: hold, resolve: finish } = deferred<void>()
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        run.onPromptAccepted?.()
+        if (scenario !== 'unsupported') run.onSteer?.(steer)
+        started(run.signal)
+        await hold
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Receiving thread',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Original',
+    })
+    const turn = await s.tasks.start(task.id)
+    try {
+      const signal = await ready
+      if (scenario === 'queued') await s.tasks.send(task.id, 'earlier', 'Earlier prompt')
+      if (scenario === 'staged') {
+        s.tasks.queue.add(
+          task.id,
+          'staged',
+          'Use this later',
+          [],
+          undefined,
+          false,
+          false,
+          undefined,
+          {
+            queueOnly: true,
+          },
+        )
+        s.store.updateTask(task.id, (task) => ({ ...task, queuePaused: false }))
+      }
+      if (scenario === 'paused') s.tasks.queue.change(task.id, 'pause')
+      const send = { action: 'send', id: task.id, text: 'An update', messageId: 'update' }
+      expect((await post('threads', send)).status).toBe(200)
+      expect((await post('threads', send)).status).toBe(200)
+      const current = s.store.task(task.id)
+      const input = [...current.messages, ...(current.queue ?? [])].filter(
+        ({ id }) => id === send.messageId,
+      )
+      expect(input).toHaveLength(1)
+      expect(input[0].source).toMatchObject({ kind: 'thread', threadId: parent.id })
+      expect(signal.aborted).toBe(false)
+      expect(steer).toHaveBeenCalledTimes(scenario === 'live' || scenario === 'staged' ? 1 : 0)
+      expect(current.queue?.map(({ id }) => id) ?? []).toEqual(
+        scenario === 'live'
+          ? []
+          : scenario === 'queued'
+            ? ['earlier', 'update']
+            : scenario === 'staged'
+              ? ['staged']
+              : ['update'],
+      )
+      expect(!!current.queuePaused).toBe(scenario === 'paused')
+    } finally {
+      finish()
+      await turn.done
+    }
+  },
+)
 
 it('coalesces tool starts and results across activity pages and pages the saved raw event', async () => {
   const { s, post, parent } = await setup()
@@ -2090,10 +2161,11 @@ it('rejects Studio pairing grants and grant-setting changes from device-backed a
   const source = await setup()
   const token = randomUUID()
   source.s.devices.add('Agent device', token)
-  for (const [path, input] of [
+  const requests = [
     ['/api/studio/peers', { sessionId: 'agent', peers: [] }],
     ['/api/runtime/preferences/save', { enableStudioPeerRegistration: true }],
-  ]) {
+  ] as const
+  for (const [path, input] of requests) {
     const response = await fetch(source.origin + path, {
       method: 'POST',
       headers: {

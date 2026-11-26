@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: mocks.query,
   getSubagentMessages: mocks.getSubagentMessages,
+  resolveSettings: async () => ({ effective: {}, provenance: {}, sources: [] }),
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk/core', () => ({ prewarm: mocks.prewarm }))
 vi.mock('../../configuration/claude-command.js', () => ({
@@ -26,6 +27,54 @@ vi.mock('../../configuration/claude-command.js', () => ({
 }))
 
 import { claudeAdapter, createClaudeAdapter } from './claude.js'
+
+it.each([false, true])(
+  'launches a saved Auto selection with the effective Claude mode (restricted=%s)',
+  async (restricted) => {
+    mocks.query.mockImplementation(() => ({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: 'Done',
+          session_id: 'session',
+        }
+      },
+      close: vi.fn<() => void>(),
+    }))
+    const run: AgentRun = {
+      agent: {
+        id: 'agent',
+        name: 'Claude',
+        provider: 'claude',
+        permission: 'auto',
+        endpoint: '',
+        model: '',
+        instructions: '',
+        ...(restricted ? { args: ['--settings={"disableAutoMode":"disable"}'] } : {}),
+      },
+      cwd: '/tmp',
+      prompt: 'Check the task',
+      signal: new AbortController().signal,
+      onSession: () => {},
+      onActivity: vi.fn<AgentRun['onActivity']>(),
+      onText: () => {},
+      approve: async () => 'deny',
+      ask: async () => null,
+    }
+    try {
+      await claudeAdapter.run(run)
+      expect(mocks.query.mock.lastCall?.[0].options.permissionMode).toBe(
+        restricted ? 'default' : 'auto',
+      )
+      expect(run.agent.permission).toBe('auto')
+      expect(run.onActivity).toHaveBeenCalledTimes(restricted ? 1 : 0)
+    } finally {
+      mocks.query.mockReset()
+    }
+  },
+)
 
 it('checks native goal support before sending the command and renders local output', async () => {
   const submitted: SDKUserMessage[] = []

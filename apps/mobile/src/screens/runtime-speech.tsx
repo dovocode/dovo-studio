@@ -1,7 +1,12 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
-import { dictationStatusSchema, responses, type DictationStatus } from '@dovo/protocol'
+import {
+  dictationDownloadProgress,
+  dictationStatusSchema,
+  responses,
+  type DictationStatus,
+} from '@dovo/protocol'
 import { randomUUID } from 'expo-crypto'
 import { useRuntime } from '../runtime/connection/provider'
 import {
@@ -94,7 +99,7 @@ function ComputerSpeech({ runtimeId }: { runtimeId: string }) {
         )}
         {status?.downloading && (
           <Text style={styles.muted}>
-            <InterfaceText values={{ value0: Math.floor((status.downloaded / 751094240) * 100) }}>
+            <InterfaceText values={{ value0: dictationDownloadProgress(status.downloaded) }}>
               {'Downloading… {value0}%'}
             </InterfaceText>
           </Text>

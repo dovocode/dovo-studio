@@ -1,5 +1,10 @@
 import { Disclosure } from './disclosure'
-import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import {
+  claudeAutoRestrictionText,
+  selectPermissionPreset,
+  permissionPolicyLabel,
+  type ClaudeAutoRestriction,
+} from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { changeHarnessProvider } from './harness-permissions'
 import { PermissionPolicyFields } from './permission-policy-fields'
@@ -31,6 +36,7 @@ export function HarnessFields({
   agents = [],
   selectedAgentId,
   onSelectAgent,
+  claudeAutoLimit,
 }: {
   value: TaskHarness
   agents?: readonly Agent[]
@@ -39,9 +45,11 @@ export function HarnessFields({
   lockedProvider?: TaskHarness['provider']
   lockedInstallationId?: string
   onChange: (value: TaskHarness) => void
+  claudeAutoLimit?: ClaudeAutoRestriction
 }) {
   const { request, connected, snapshot } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
+  const autoLimit = value.provider === 'claude' ? claudeAutoLimit : undefined
   const load = useCallback(
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
     [request],
@@ -178,7 +186,9 @@ export function HarnessFields({
               <option
                 key={mode.id}
                 value={mode.id}
-                disabled={!supportsAccess(value.provider, mode.id)}
+                disabled={
+                  !supportsAccess(value.provider, mode.id) || (mode.id === 'auto' && !!autoLimit)
+                }
               >
                 {mode.name}
               </option>
@@ -187,11 +197,11 @@ export function HarnessFields({
         </ChoicePicker>
       </FormField>
       <p className="text-xs text-muted-foreground">
-        {
-          selectableAccessModes(value.permission, value.provider, value.acpInstallationId).find(
-            (mode) => mode.id === value.permission,
-          )?.description
-        }
+        {autoLimit
+          ? claudeAutoRestrictionText[autoLimit]
+          : selectableAccessModes(value.permission, value.provider, value.acpInstallationId).find(
+              (mode) => mode.id === value.permission,
+            )?.description}
       </p>
       <PermissionPolicyFields
         value={value}

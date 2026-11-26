@@ -1,9 +1,14 @@
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { ImageOcr } from './image-ocr'
-import { taskImageReadSchema } from '@dovo/protocol'
+import {
+  attachmentDocumentKind,
+  attachmentTextPreview,
+  taskImageReadSchema,
+  type AttachmentRead,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { ConversationVisibilityContext } from '../conversation-visibility'
 import { File, FileImage, X, Pencil } from 'lucide-react'
 import {
@@ -20,6 +25,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  MessageResponse,
 } from '@dovo/studio-ui'
 export function MessageAttachments({
   taskId,
@@ -40,7 +46,7 @@ export function MessageAttachments({
   previews?: Map<string, string>
   disabled?: boolean
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot } = useWorkspace()
   const visible = useContext(ConversationVisibilityContext)
   const visibleRef = useRef(visible)
   visibleRef.current = visible
@@ -62,13 +68,20 @@ export function MessageAttachments({
     measure()
     return () => observer.disconnect()
   }, [compact, files])
-  const [preview, setPreview] = useApplicationState<{
-      attachment: Attachment
-      data: string
-    } | null>(null),
+  const [preview, setPreview] = useApplicationState<AttachmentRead | null>(null),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
-  const open = async (id: string) => {
+  const text = useMemo(
+    () =>
+      preview &&
+      preview.documentPreview === undefined &&
+      !isImageAttachment(preview.attachment) &&
+      !/^(audio|video)\//.test(preview.attachment.mime)
+        ? attachmentTextPreview(preview.attachment.name, preview.data)
+        : undefined,
+    [preview],
+  )
+  const open = async (file: Attachment) => {
     const current = generation.current
     setBusy(true)
     setError('')
@@ -77,7 +90,10 @@ export function MessageAttachments({
         '/api/attachments/read',
         {
           taskId,
-          id,
+          id: file.id,
+          ...(snapshot?.documentAttachmentPreviewSupported && attachmentDocumentKind(file.name)
+            ? { previewDocument: true }
+            : {}),
         },
         attachmentReadSchema,
       )
@@ -158,7 +174,7 @@ export function MessageAttachments({
               type="button"
               className={`flex min-w-0 flex-1 items-center rounded-md px-1 [@media(pointer:coarse)]:min-h-11 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 ${compact ? 'min-h-7 gap-1.5' : 'min-h-8 gap-2'}`}
               disabled={!connected || busy || disabled}
-              onClick={() => void open(file.id)}
+              onClick={() => void open(file)}
               aria-label={`Preview ${file.name}`}
               title={`${file.name} · ${fileSizeLabel(file.size)}`}
             >
@@ -252,11 +268,18 @@ export function MessageAttachments({
           ) : preview && /^(audio|video)\//.test(preview.attachment.mime) ? (
             visible && <AttachmentMedia key={preview.attachment.id} {...preview} />
           ) : (
-            preview && (
+            preview &&
+            (text?.markdown ? (
+              <div className="max-h-80 overflow-auto">
+                <MessageResponse>{text.text}</MessageResponse>
+              </div>
+            ) : (
               <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs">
-                {textPreview(preview.data)}
+                {preview.documentPreview ??
+                  text?.text ??
+                  'Download this file to inspect its contents.'}
               </pre>
-            )
+            ))
           )}
           {preview && !remove && isImageAttachment(preview.attachment) && (
             <EditChatImage
@@ -341,18 +364,6 @@ function AttachmentMedia({ attachment, data }: { attachment: Attachment; data: s
       )}
     </div>
   )
-}
-function textPreview(data: string) {
-  try {
-    const text = new TextDecoder('utf-8', {
-      fatal: true,
-    }).decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)))
-    return text.includes('\0')
-      ? 'Download this file to inspect its contents.'
-      : text.slice(0, 32000) + (text.length > 32000 ? '\n… Preview truncated' : '')
-  } catch {
-    return 'Download this file to inspect its contents.'
-  }
 }
 
 function AttachmentThumbnail({

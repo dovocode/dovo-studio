@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Braces, Check, Copy } from 'lucide-react'
 import {
   approvalDetails,
+  approvalVisibleText,
   type ApprovalDetailField,
   type approvalActions,
   type ApprovalDecision,
@@ -17,7 +18,7 @@ function CodePreview({ text, label, raw = false }: { text: string; label: string
     <div className="min-w-0 rounded-lg border bg-background">
       <div className="flex items-center justify-between gap-2 border-b bg-muted/25 px-2.5 py-0.5">
         <span className="min-w-0 break-words text-xs font-medium text-muted-foreground">
-          {raw ? 'JSON' : label}
+          {raw ? 'JSON' : approvalVisibleText(label)}
         </span>
         <div className="flex items-center gap-2">
           {status && (
@@ -49,7 +50,7 @@ function CodePreview({ text, label, raw = false }: { text: string; label: string
         data-approval-json={raw || undefined}
         className={`m-0 whitespace-pre-wrap px-2.5 py-2 font-mono text-xs leading-relaxed [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${raw ? '' : 'max-h-[min(26dvh,10rem)] overflow-auto'}`}
       >
-        {text}
+        {approvalVisibleText(text)}
       </pre>
     </div>
   )
@@ -66,7 +67,7 @@ function Fields({ fields }: { fields: ApprovalDetailField[] }) {
                 field.code ? 'sr-only' : 'mb-0.5 text-xs font-medium text-muted-foreground'
               }
             >
-              {field.label}
+              {approvalVisibleText(field.label)}
             </dt>
           )}
           <dd className="m-0 min-w-0">
@@ -78,7 +79,7 @@ function Fields({ fields }: { fields: ApprovalDetailField[] }) {
               <CodePreview text={field.text ?? ''} label={field.label} />
             ) : (
               <div className="whitespace-pre-wrap text-xs leading-relaxed [overflow-wrap:anywhere]">
-                {field.text}
+                {approvalVisibleText(field.text ?? '')}
               </div>
             )}
           </dd>

@@ -35,7 +35,15 @@ import {
   presentationDetents,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers'
-import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native'
+import {
+  BackHandler,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+} from 'react-native'
 import { Text } from '../content/text'
 import { IconButton } from '../controls/icon-button'
 import type { IconName } from '../controls/icon'
@@ -71,7 +79,7 @@ export function Sheet({
   onClose: () => void
   busy?: boolean
   scrollable?: boolean
-  presentation?: 'sheet' | 'dialog'
+  presentation?: 'sheet' | 'dialog' | 'inline'
   validationAttempt?: number
   scrollViewProps?: Pick<
     React.ComponentPropsWithRef<typeof ScrollView>,
@@ -114,12 +122,20 @@ export function Sheet({
     afterDismiss.current = after
     Keyboard.dismiss()
     setPresented(false)
-    if (Platform.OS !== 'ios') finishClose()
+    if (Platform.OS !== 'ios' || presentation === 'inline') finishClose()
   }
   useImperativeHandle(ref, () => ({ dismiss }))
   const close = () => {
     if (!busy) dismiss()
   }
+  useEffect(() => {
+    if (presentation !== 'inline' || Platform.OS !== 'android') return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      close()
+      return true
+    })
+    return () => back.remove()
+  }, [presentation, busy])
   const navigate = (action: () => void) => {
     if (!busy) dismiss(() => parentNavigate(action))
   }
@@ -197,7 +213,7 @@ export function Sheet({
         </KeyboardAvoidingView>
       </SafeModal>
     )
-  if (Platform.OS === 'ios')
+  if (Platform.OS === 'ios' && presentation !== 'inline')
     return (
       <Host
         colorScheme={appearanceMode}
@@ -303,84 +319,89 @@ export function Sheet({
         </BottomSheet>
       </Host>
     )
-  return (
-    <SafeModal visible={presented} animationType="slide" onRequestClose={() => close()}>
-      <View style={styles.screen}>
-        <KeyboardAvoidingView style={styles.screen} behavior="height">
-          <View
+  const panel = (
+    <View style={styles.screen} accessibilityLabel={presentation === 'inline' ? title : undefined}>
+      <KeyboardAvoidingView style={styles.screen} behavior="height">
+        <View
+          style={[
+            styles.content,
+            {
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+            },
+          ]}
+        >
+          <Text
+            accessibilityRole="header"
             style={[
-              styles.content,
+              styles.title,
               {
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
+                flex: 1,
+                minWidth: 0,
               },
             ]}
           >
-            <Text
-              accessibilityRole="header"
-              style={[
-                styles.title,
-                {
-                  flex: 1,
-                  minWidth: 0,
-                },
-              ]}
-            >
-              {title}
-            </Text>
-            <View style={{ width: 44, height: 44, flexShrink: 0 }}>
-              {keyboard && (
-                <IconButton
-                  label={uiText('Dismiss keyboard')}
-                  icon="keyboard"
-                  onPress={() => Keyboard.dismiss()}
-                />
-              )}
-            </View>
-            {headerAction && (
+            {title}
+          </Text>
+          <View style={{ width: 44, height: 44, flexShrink: 0 }}>
+            {keyboard && (
               <IconButton
-                label={headerAction.label}
-                icon={headerAction.icon}
-                onPress={headerAction.onPress}
-                disabled={busy || !!headerAction.disabled}
+                label={uiText('Dismiss keyboard')}
+                icon="keyboard"
+                onPress={() => Keyboard.dismiss()}
               />
             )}
-            <IconButton
-              label={uiText('Close')}
-              icon="close"
-              variant="bordered"
-              disabled={busy}
-              onPress={close}
-            />
           </View>
-          {scrollable ? (
-            <ScrollView
-              {...scrollViewProps}
-              keyboardDismissMode="on-drag"
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={[
-                styles.content,
-                contentColumn.form,
-                {
-                  paddingTop: 4,
-                },
-              ]}
-            >
-              {content}
-            </ScrollView>
-          ) : (
-            <View
-              style={{
-                flex: 1,
-              }}
-            >
-              {content}
-            </View>
+          {headerAction && (
+            <IconButton
+              label={headerAction.label}
+              icon={headerAction.icon}
+              onPress={headerAction.onPress}
+              disabled={busy || !!headerAction.disabled}
+            />
           )}
-          {footer && <View style={[styles.sheetFooter, contentColumn.form]}>{footer}</View>}
-        </KeyboardAvoidingView>
-      </View>
+          <IconButton
+            label={uiText('Close')}
+            icon="close"
+            variant="bordered"
+            disabled={busy}
+            onPress={close}
+          />
+        </View>
+        {scrollable ? (
+          <ScrollView
+            {...scrollViewProps}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
+              styles.content,
+              contentColumn.form,
+              {
+                paddingTop: 4,
+              },
+            ]}
+          >
+            {content}
+          </ScrollView>
+        ) : (
+          <View
+            style={{
+              flex: 1,
+            }}
+          >
+            {content}
+          </View>
+        )}
+        {footer && <View style={[styles.sheetFooter, contentColumn.form]}>{footer}</View>}
+      </KeyboardAvoidingView>
+    </View>
+  )
+  return presentation === 'inline' ? (
+    panel
+  ) : (
+    <SafeModal visible={presented} animationType="slide" onRequestClose={close}>
+      {panel}
     </SafeModal>
   )
 }

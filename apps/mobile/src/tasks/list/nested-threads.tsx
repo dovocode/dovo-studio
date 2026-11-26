@@ -17,6 +17,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/context'
 import { openNestedThread } from './open-nested-thread'
+import type { OpenThreadInInspector } from '../../shell/task-route'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
@@ -29,6 +30,7 @@ export const NestedThreads = memo(function NestedThreads({
   onAcknowledgeFailure,
   hideSummary = false,
   beforeNavigate,
+  onOpenChild,
 }: {
   thread: NestedThread
   disabled?: boolean
@@ -36,6 +38,7 @@ export const NestedThreads = memo(function NestedThreads({
   acknowledgedFailures?: readonly string[]
   onAcknowledgeFailure?: (key: string) => void
   beforeNavigate?: (open: () => void) => void
+  onOpenChild?: OpenThreadInInspector
   hideSummary?: boolean
 }) {
   const uiText = useInterfaceText()
@@ -51,7 +54,7 @@ export const NestedThreads = memo(function NestedThreads({
   const [expanded, setExpanded] = useState(true)
   const [finishedExpanded, setFinishedExpanded] = useState(false)
   const navigate = (child: NestedThread) => {
-    const open = () => openNestedThread(child, thread, profiles, overviews)
+    const open = () => openNestedThread(child, thread, profiles, overviews, onOpenChild)
     if (beforeNavigate) beforeNavigate(open)
     else open()
   }
@@ -201,6 +204,7 @@ export const NestedThreads = memo(function NestedThreads({
       <NestedThreads
         thread={child}
         beforeNavigate={beforeNavigate}
+        onOpenChild={onOpenChild}
         disabled={disabled}
         searching={searching}
         acknowledgedFailures={acknowledgedFailures}

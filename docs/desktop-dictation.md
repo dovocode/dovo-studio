@@ -16,13 +16,16 @@ language guides recognition; accuracy on mixed-language coding speech still need
 Existing Parakeet Redux weights are not reused or automatically replaced: the new download is
 opt-in.
 
+Download progress stays below 100% while Dovo installs the verified model.
+
 Click the microphone and allow microphone access. A native streaming process loads the model once
 for the recording. The preview updates while speaking, using the model's maximum-quality streaming
 setting (1.12-second chunks); actual delay depends on CPU speed. Click Stop to finalize and insert,
-or press Escape to cancel. Recording is limited to five minutes. Disabling dictation, changing
-threads or closing the window cancels active recording and prevents late updates from changing a
-different draft. Transcription never sends the message. If you edit the draft while recording or
-finalizing, the transcript is kept separately for review and explicit insertion.
+or press Escape to cancel. Recording is limited to five minutes. The composer shows live text,
+progress, and errors. If you switch threads, use the dictation notice to finish or return to the
+original composer. Disabling dictation or closing the window cancels active recording. Transcription
+never sends the message. If you edit the draft while recording or finalizing, review and insert the
+transcript in the original composer.
 
 Audio is captured and processed on the desktop, even when connected to a remote runtime. It is not
 uploaded or written to temporary files. The renderer supplies 16 kHz mono PCM to the native helper

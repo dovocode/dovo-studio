@@ -6,7 +6,8 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
 import { MoreHorizontal, RefreshCw } from 'lucide-react'
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, type ReactNode } from 'react'
+import { pullDescriptionTasks, togglePullDescriptionTask } from '@dovo/protocol'
 import {
   forgeLabels,
   pullActionResultSchema,
@@ -296,6 +297,7 @@ function PullActionDialog({
   const detail = useRef(initialDetail).current
   const { request, connected } = useWorkspace()
   const [body, setBody] = useApplicationState(kind === 'edit' ? detail.pull.body : '')
+  const checklist = useMemo(() => (kind === 'edit' ? pullDescriptionTasks(body) : []), [kind, body])
   const [title, setTitle] = useApplicationState(detail.pull.title)
   const [base, setBase] = useApplicationState(
     detail.pull.base
@@ -515,7 +517,18 @@ function PullActionDialog({
           }
         }}
         onEscapeKeyDown={(e) => {
-          if (busy) e.preventDefault()
+          if (busy) {
+            e.preventDefault()
+            return
+          }
+          const editor =
+            e.target instanceof HTMLElement &&
+            e.target.closest<HTMLElement>(
+              'input:not([type="checkbox"]), textarea, [contenteditable="true"]',
+            )
+          if (!editor) return
+          e.preventDefault()
+          if (!e.isComposing) editor.blur()
         }}
         onPointerDownOutside={(e) => {
           if (busy) e.preventDefault()
@@ -803,6 +816,28 @@ function PullActionDialog({
                   />
                 )}
               </FormField>
+            )}
+            {!!checklist.length && (
+              <fieldset className="grid gap-2 text-sm">
+                <legend className="mb-2 font-medium">{uiText('Description checklist')}</legend>
+                {checklist.map((item) => (
+                  <label key={item.offset} className="flex items-start gap-2">
+                    <Checkbox
+                      aria-label={item.label}
+                      checked={item.checked}
+                      disabled={busy}
+                      onCheckedChange={(checked) =>
+                        setBody((current) =>
+                          current === body
+                            ? togglePullDescriptionTask(current, item, checked === true)
+                            : current,
+                        )
+                      }
+                    />
+                    <span className="break-words">{item.label}</span>
+                  </label>
+                ))}
+              </fieldset>
             )}
             {kind === 'close' && (
               <p className="text-sm">Close this pull request without merging its changes?</p>

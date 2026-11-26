@@ -5,6 +5,7 @@ import ./LinkedRead.bend as A
 import ./FilePages.bend as F
 import ./QuoteDraft.bend as C
 import ./TerminalPaste.bend as T
+import ./AgentSteering.bend as S
 
 def Laws.saved_reply_starts_next(reply, next, retry):
   {==}
@@ -131,4 +132,26 @@ def T.disconnected_paste_writes_nothing(chunks):
   {==}
 
 def T.a_duplicate_end_writes_nothing(chunk):
+  {==}
+
+def S.retry_acknowledges_existing_message(ready, paused, earlier):
+  {==}
+
+def S.paused_queue_holds_agent_input(ready, earlier):
+  match ready:
+    case False{}: {==}
+    case True{}: {==}
+
+def S.earlier_input_keeps_its_order(ready, paused):
+  match ready:
+    case False{}: {==}
+    case True{}:
+      match paused:
+        case False{}: {==}
+        case True{}: {==}
+
+def S.unavailable_native_turn_queues_input(paused, earlier):
+  {==}
+
+def S.ready_native_turn_takes_unqueued_input():
   {==}

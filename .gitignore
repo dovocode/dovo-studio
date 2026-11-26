@@ -38,6 +38,8 @@ packages/runtime/native/ios-device/target/
 
 # Local reference downloads, QA captures and release worktrees
 /work/
+/output/pr-review-checks/
+/output/scan-follow-up/
 # Secrets and signing material
 .env
 .env.*

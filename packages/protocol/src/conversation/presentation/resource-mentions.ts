@@ -4,6 +4,13 @@ import type { RuntimeDefaults } from '../../runtime/connection/runtime-setup.js'
 import { mergeResources, type ResourceSettings } from '../../shared/resources.js'
 import { resolveTaskAgent, type Agent, type Repository, type Task } from '../../workspace.js'
 import { applyBotResources, inheritedResourceProject } from '../../tasks/bots.js'
+import { Schema } from 'effect'
+import { mutableArray, mutableStruct } from '../../shared/schema.js'
+
+export const nativeSkillsSchema = mutableArray(
+  mutableStruct({ name: Schema.String, description: Schema.optional(Schema.String) }),
+)
+export type NativeSkill = Schema.Schema.Type<typeof nativeSkillsSchema>[number]
 
 /** @ Bots, agents, models and MCP servers, @file: paths, $ skills (like Codex), / skills at a line start,
  * and # saved prompts. */
@@ -22,7 +29,7 @@ export function composerMention(text: string, caret: number): ComposerMention | 
   if (skill) return { trigger: '$', start: caret - skill[2].length - 1, query: skill[2] }
   const saved = /(^|\s)#([\w.-]*)$/.exec(before)
   if (saved) return { trigger: '#', start: caret - saved[2].length - 1, query: saved[2] }
-  const slash = /(^|\n)[ \t]*\/([\w.-]*)$/.exec(before)
+  const slash = /(^|\n)[^\S\r\n]*\/([\w.-]*)$/.exec(before)
   if (slash) return { trigger: '/', start: caret - slash[2].length - 1, query: slash[2] }
   return undefined
 }
@@ -84,6 +91,7 @@ export function resourceSuggestions(
   trigger: MentionTrigger,
   query: string,
   limit = 8,
+  nativeSkills: readonly NativeSkill[] = [],
 ): ResourceSuggestion[] {
   const needle = query.toLowerCase()
   if (trigger === '#' || trigger === '@file:') return []
@@ -92,7 +100,17 @@ export function resourceSuggestions(
       ? resources.mcpServers
           .filter((server) => server.enabled)
           .map((server) => ({ kind: 'mcp' as const, name: server.name, enabled: true }))
-      : resources.skills.map((skill) => ({
+      : [
+          ...resources.skills,
+          ...nativeSkills
+            .filter(
+              (skill) =>
+                !resources.skills.some(
+                  (configured) => configured.name.toLowerCase() === skill.name.toLowerCase(),
+                ),
+            )
+            .map((skill) => ({ ...skill, enabled: true })),
+        ].map((skill) => ({
           kind: 'skill' as const,
           name: skill.name,
           description: skill.description,
@@ -123,13 +141,14 @@ const mentioned = (text: string, prefix: string, name: string, lineStart = false
     'i',
   ).test(text)
 
+export const mentionsSkill = (text: string, name: string) =>
+  mentioned(text, '$', name) || mentioned(text, '/', name, true)
+
 /** Skills (by $name or a leading /name) and enabled MCP servers (by @name) a message names. */
 export function mentionedResources(text: string, resources: ResourceSettings) {
   const prose = maskFileMentions(text).replace(/(^|\s)@(thread:|file(?=\s|$))/gi, '$1$2')
   return {
-    skills: resources.skills.filter(
-      (skill) => mentioned(prose, '$', skill.name) || mentioned(prose, '/', skill.name, true),
-    ),
+    skills: resources.skills.filter((skill) => mentionsSkill(prose, skill.name)),
     mcpServers: resources.mcpServers.filter(
       (server) => server.enabled && mentioned(prose, '@', server.name),
     ),

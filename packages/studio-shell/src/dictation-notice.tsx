@@ -3,18 +3,23 @@ import { useAppPreferences, useStudioHost } from '@dovo/studio-core'
 import { dictationSession } from '@dovo/studio-core/dictation-session'
 import { Button } from '@dovo/studio-ui'
 export function DictationNotice() {
-  const session = useSyncExternalStore(
+  const active = useSyncExternalStore(
     dictationSession.subscribe,
     dictationSession.read,
     dictationSession.read,
   )
+  const session = useSyncExternalStore(
+    dictationSession.subscribe,
+    dictationSession.readBackground,
+    dictationSession.readBackground,
+  )
   const host = useStudioHost()
   const preferences = useAppPreferences()
   useEffect(() => {
-    if (session && !session.remote && !preferences.dictationEnabled) void dictationSession.cancel()
-  }, [!!session, session?.remote, preferences.dictationEnabled])
+    if (active && !active.remote && !preferences.dictationEnabled) void dictationSession.cancel()
+  }, [!!active, active?.remote, preferences.dictationEnabled])
   useEffect(() => {
-    if (!session || session.transient) return
+    if (!active || active.transient) return
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -23,8 +28,8 @@ export function DictationNotice() {
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [!!session, session?.transient])
-  if (!session || session.transient) return null
+  }, [!!active, active?.transient])
+  if (!session) return null
   return (
     <aside
       aria-label="Dictation"
@@ -38,7 +43,9 @@ export function DictationNotice() {
             ? 'Recording… Maximum 5 minutes. Escape cancels.'
             : session.phase === 'transcribing'
               ? 'Transcribing on the selected computer…'
-              : 'Recording stopped.'}
+              : session.phase === 'review'
+                ? 'Return to the thread to review and insert the transcript.'
+                : 'Recording stopped.'}
       </p>
       {session.error && <p role="alert">{session.error}</p>}
       {(session.transcript || session.preview) && (

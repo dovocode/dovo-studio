@@ -1,4 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useNativeSkills } from '@dovo/studio-core/native-skills'
 import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Schema } from 'effect'
@@ -78,7 +79,7 @@ export function FileMentions({
 
   const { colors } = useTheme()
 
-  const { call, connected, activeId, connection, snapshot, overviews } = useRuntime()
+  const { call, readEffect, connected, activeId, connection, snapshot, overviews } = useRuntime()
   const [lookup, setLookup] = useState<{
     key: string
     call: typeof call
@@ -93,6 +94,12 @@ export function FileMentions({
   const mention = composerMention(text, caret)
   const trigger = mention?.trigger
   const query = mention?.query
+  const lookUpSkills =
+    snapshot?.nativeSkillMentionsSupported === true &&
+    connected &&
+    provider === 'opencode' &&
+    (trigger === '$' || trigger === '/')
+  const nativeSkills = useNativeSkills(lookUpSkills, taskId, connection, readEffect)
   const threadOnly = trigger === '@' && query?.toLowerCase().startsWith('thread:') === true
   const modelQuery = trigger === '@' && !threadOnly ? query : undefined
   const runtimeId = snapshot?.runtimeId ?? connection?.runtimeId ?? activeId
@@ -163,7 +170,7 @@ export function FileMentions({
   if (!mention) return null
   const suggestedResources = threadOnly
     ? []
-    : resourceSuggestions(resources, mention.trigger, mention.query)
+    : resourceSuggestions(resources, mention.trigger, mention.query, undefined, nativeSkills)
   const suggestions: Suggestion[] = [
     ...(mention.trigger === '@' && !threadOnly && runtimeId
       ? agentMentionSuggestions(runtimeId, repositoryId, agents, mention.query).map((agent) => ({

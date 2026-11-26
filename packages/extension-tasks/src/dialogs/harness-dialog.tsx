@@ -1,5 +1,11 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import {
+  claudeAutoRestrictionText,
+  containerSandboxEnabled,
+  selectPermissionPreset,
+  permissionPolicyLabel,
+  taskContainerSandbox,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode, resolveScopedAgents } from '@dovo/protocol'
 import { useCallback } from 'react'
@@ -31,6 +37,7 @@ import {
   ChoicePicker,
   PermissionPolicyFields,
   permissionPolicyUIIssue,
+  useHarnessAvailability,
 } from '@dovo/studio-ui'
 import { HarnessFields } from '../harness-fields'
 import { changeTaskHarness } from '../chat/composer/task-harness-selection'
@@ -65,6 +72,19 @@ export function HarnessDialog({
     const agent = resolveTaskAgent(task, agents)
     return agent ? decode(taskHarnessSchema, agent) : defaultTaskHarness(providerLock ?? 'codex')
   })
+  const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
+  const { claudeAutoLimits } = useHarnessAvailability(
+    task.repositoryId,
+    value.provider === 'claude',
+    agents,
+    false,
+    containerSandboxEnabled(taskContainerSandbox(task, snapshot?.defaults, repository)),
+    { taskId: task.id },
+  )
+  const autoLimit =
+    value.provider === 'claude'
+      ? claudeAutoLimits.get(task.agentId ? `agent:${task.agentId}` : 'harness:claude')
+      : undefined
   const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const locked =
@@ -174,13 +194,21 @@ export function HarnessDialog({
                     <option
                       key={mode.id}
                       value={mode.id}
-                      disabled={!supportsAccess(value.provider, mode.id)}
+                      disabled={
+                        !supportsAccess(value.provider, mode.id) ||
+                        (mode.id === 'auto' && !!autoLimit)
+                      }
                     >
                       {mode.name}
                     </option>
                   ))}
                 </ChoicePicker>
               </FormField>
+              {autoLimit && (
+                <p className="text-xs text-muted-foreground">
+                  {uiText(claudeAutoRestrictionText[autoLimit])}
+                </p>
+              )}
               <PermissionPolicyFields
                 value={value}
                 supported={snapshot?.permissionPolicySupported === true}
@@ -194,6 +222,7 @@ export function HarnessDialog({
               onChange={setValue}
               lockedProvider={providerLock}
               lockedInstallationId={installationLock}
+              claudeAutoLimit={autoLimit}
             />
           )}
           <DialogFooter>

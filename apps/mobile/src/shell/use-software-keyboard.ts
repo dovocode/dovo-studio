@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import { AppState, Keyboard, type KeyboardEvent } from 'react-native'
+import { AppState, Keyboard, Platform, type KeyboardEvent } from 'react-native'
 import { useApplicationState } from '../runtime/state/application-state'
 
-/** iOS can restore the keyboard before the app becomes active. Read its current state on resume. */
+/** Resync keyboard state on resume and when Android gives the recreated activity focus. */
 export function useSoftwareKeyboard() {
   const visible = () =>
     AppState.currentState === 'active' && (Keyboard.metrics?.()?.height ?? 0) > 0
@@ -20,6 +20,9 @@ export function useSoftwareKeyboard() {
       AppState.addEventListener('change', (state) =>
         setKeyboard(state === 'active' && (Keyboard.metrics?.()?.height ?? 0) > 0),
       ),
+      ...(Platform.OS === 'android'
+        ? [AppState.addEventListener('focus', () => setKeyboard(visible()))]
+        : []),
     ]
     return () => {
       for (const subscription of subscriptions) subscription.remove()

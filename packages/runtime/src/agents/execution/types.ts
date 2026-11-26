@@ -18,7 +18,7 @@ export type NativeAgentSession = {
   stop: (id?: string) => Promise<void>
   /** The provider handles foreground cancellation separately from a session stop. */
   foregroundCancellation?: true
-  readThread?: (id: string) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
+  readThread?: (id: string) => Promise<import('@dovo/protocol').NativeThreadEntry[] | undefined>
 }
 export type ApprovalDecision = 'approve' | 'session' | 'always' | 'deny'
 /** Native scopes a provider offers. Omitted `once` means a single-use grant is available. */
@@ -33,6 +33,8 @@ export interface AcpLaunch {
   sandbox?: SandboxSession
 }
 export interface AgentRun {
+  /** New user input, before history and other context are added to the provider prompt. */
+  nativeSkillText?: string
   /** Register only a dedicated, detached launcher owned by this run. Rebind on warm reuse. */
   onOwnedProcess?: (child: import('node:child_process').ChildProcess) => void
   /** Stable task identity for a warm provider transport. Utility runs omit it. */
@@ -115,6 +117,11 @@ export interface AgentRun {
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {
+  nativeSkills?: (
+    agent: Agent,
+    cwd: string,
+    signal: AbortSignal,
+  ) => Promise<import('@dovo/protocol').NativeSkill[]>
   /** Cursor sessions keep a request only after its run saves its own checkpoint. */
   cursorRunCheckpointed?: (
     agent: Agent,
@@ -139,7 +146,8 @@ export interface AgentAdapter {
     cwd?: string,
     /** A sandboxed thread's container. Only Codex reads through it; see `sandboxNativeReads`. */
     sandbox?: SandboxSession,
-  ) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
+    acpLaunch?: AcpLaunch,
+  ) => Promise<import('@dovo/protocol').NativeThreadEntry[] | undefined>
   models?: (agent: AgentDiscovery, launch?: AcpLaunch) => Promise<ModelCatalog>
   run: (run: AgentRun) => Promise<void>
   probe: (agent: Agent, launch?: AcpLaunch) => Promise<ProviderStatus>

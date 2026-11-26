@@ -124,6 +124,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   return (
     <>
       <ComposerSettingsControls
+        taskId={task.id}
         renderControls={renderControls}
         automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
         modelSelection={task.modelSelection}

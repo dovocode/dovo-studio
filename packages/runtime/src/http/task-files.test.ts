@@ -72,6 +72,18 @@ it('previews before download, preserves exact bytes, and requires a scoped expir
   expect((await fetch(origin + url)).status).toBe(401)
   clock.mockRestore()
 })
+it('anchors scoped read-only text previews at the linked line and reads legacy Chinese text', async () => {
+  const { directory, origin, share } = await setup()
+  await writeFile(join(directory, 'legacy.txt'), Buffer.from('d6d00aa1a1263c3e', 'hex'))
+  const grant = await share('legacy.txt#L2')
+  expect(grant.status).toBe(200)
+  const { url } = decode(taskFileShareSchema, await grant.json())
+  const html = await (await fetch(origin + url)).text()
+  expect(html).toContain('中\n<span id="L2"></span>　&amp;&lt;&gt;')
+  const raw = await fetch(origin + url + '?content=1')
+  expect(raw.headers.get('content-type')).toBe('text/plain; charset=gb18030')
+})
+
 it('allows assistant-shared outside files but denies other threads, user links and escaping symlinks', async () => {
   const { runtime, directory, origin, share } = await setup()
   const outside = await mkdtemp(join(tmpdir(), 'dovo-shared-files-'))

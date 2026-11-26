@@ -680,6 +680,12 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
           : readOpencodeThread(resolved, id, cwd),
       ),
     models: (agent) => withServer(agent, (resolved) => remoteAdapter.models!(resolved)),
+    nativeSkills: (agent, cwd, signal) =>
+      withServer(agent, async (resolved) =>
+        (await isOpencodeV2(resolved.endpoint, resolved.env, signal))
+          ? opencodeV2Adapter.nativeSkills(resolved, cwd, signal)
+          : [],
+      ),
     probe: async (agent) => {
       try {
         return await withServer(agent, (resolved) => remoteAdapter.probe(resolved))

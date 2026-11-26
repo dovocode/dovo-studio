@@ -21,12 +21,18 @@ The desktop package runs browser-viewer generation and `vp build` directly. Its 
 host under both Node 24 and 26. Complete workspace caching remains at the explicit CI boundary
 above; standalone desktop builds execute their steps without another task-cache wrapper.
 
-Browser shards prepare the build once and then run every registered suite's checks without repeating
-its package-build prefixes. Generators and checks remain in each suite. Task cache archives have
-separate writer keys for matrix shards and can reuse compatible entries from other Linux jobs.
-Source fingerprints, rather than a GitHub cache hit alone, decide whether a task can be reused.
+Browser shards use the workspace build and reuse its mobile, browser viewer and MCP app assets. They
+still run every registered check, including generator validation such as
+`build-image-editor.mjs --check`. Full local verification reuses the outputs built by `pnpm verify`.
+Task cache archives have separate writer keys for matrix shards and can reuse compatible entries
+from other Linux jobs. Source fingerprints, rather than a GitHub cache hit alone, decide whether a
+task can be reused.
 
 ## Browser scheduling
+
+Local `pnpm test:browser` builds once before starting up to four shards. Override the shard count
+with `--jobs 1` through `--jobs 4`. With multiple local shards, `DOVO_BROWSER_TIMINGS` gets a
+zero-based shard suffix before the filename extension, for example `timings-0.json`.
 
 The browser registry is assigned longest-first using `scripts/ci/browser-durations.json`. Newly
 registered suites use the median measured duration and are included automatically. Each shard emits

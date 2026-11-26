@@ -55,6 +55,41 @@ it('pages through a long line without splitting UTF-8 and rejects cursors after 
     await f.cleanup()
   }
 })
+it('decodes GB18030 pages and line links without splitting a four-byte character', async () => {
+  const f = await fixture()
+  const token = 'legacy-preview-token-with-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  try {
+    runtime.services.store.update(() => f.workspace)
+    const task = runtime.services.tasks.create({
+      title: 'Legacy text',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+      execution: 'main',
+    })
+    // 中 (GBK), then 😀 (four-byte GB18030), then a second line.
+    await writeFile(join(f.directory, 'legacy.txt'), Buffer.from('d6d09439fc360aa1a1', 'hex'))
+    const read = async (preview: Record<string, unknown>) => {
+      const response = await fetch(`http://127.0.0.1:${runtime.port}/api/tasks/files/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, path: 'legacy.txt', preview }),
+      })
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+    const first = await read({ maxBytes: 4 })
+    expect(first).toMatchObject({ contents: '中', encoding: 'gb18030', hasMore: true })
+    const second = await read({ cursor: first.nextCursor, maxBytes: 7 })
+    expect(second).toMatchObject({ contents: '😀\n　', encoding: 'gb18030', hasMore: false })
+    expect(await read({ startLine: 2 })).toMatchObject({ contents: '　', startLine: 2 })
+  } finally {
+    await runtime.close()
+    await f.cleanup()
+  }
+})
+
 it('serves bounded prefixes and line windows without allowing a preview to overwrite the full file', async () => {
   const f = await fixture(),
     token = 'bounded-preview-token-with-at-least-32-characters'

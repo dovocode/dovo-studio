@@ -78,9 +78,14 @@ function parse(text: string) {
 /** Hosted thread readers render this AST as React nodes, without HTML or remote media. */
 export const parseSharedMarkdown = parse
 export type SharedMarkdownNode = Nodes
+export function markdownNodeText(node: SharedMarkdownNode): string {
+  if (node.type === 'text' || node.type === 'inlineCode') return node.value
+  if (node.type === 'break') return ' '
+  return 'children' in node ? node.children.map(markdownNodeText).join('') : ''
+}
 function citation(node: Nodes): string | undefined {
   if (node.type !== 'textDirective' || node.name !== 'codex-file-citation') return
-  const path = node.attributes?.path?.trim()
+  const path = node.attributes?.path
   if (!path || localMarkdownPath(path) === undefined) return
   const start = Number(node.attributes?.line_range_start)
   const end = Number(node.attributes?.line_range_end)
@@ -97,6 +102,7 @@ function citation(node: Nodes): string | undefined {
     .replaceAll('>', '%3E')
     .replaceAll('\n', '%0A')
     .replaceAll('\r', '%0D')
+    .replace(/^[ \t]+|[ \t]+$/g, encodeURIComponent)
   const label = `${path.replaceAll('\\', '/').split('/').at(-1)}${lines}`.replace(
     /[\\[\]*_`<&]/g,
     '\\$&',

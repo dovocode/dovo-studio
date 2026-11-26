@@ -33,18 +33,28 @@ export function localMarkdownPath(url: string): string | undefined {
   return url.split('#')[0]!.replace(/:\d+(?::\d+)?$/, '') || undefined
 }
 
+export function localMarkdownLine(url: string) {
+  const match = /#L(\d+)(?:-L?\d+)?$/i.exec(url) ?? /:(\d+)(?::\d+)?$/.exec(url)
+  const line = Number(match?.[1])
+  return Number.isSafeInteger(line) && line > 0 ? line : undefined
+}
+
 // A render-only URL: clients intercept it and request a file-scoped preview from the runtime.
 const localLinkOrigin = 'https://dovo-local-file.invalid'
 export function localMarkdownURL(url: string) {
   const path = localMarkdownPath(url)
-  return path === undefined ? undefined : `${localLinkOrigin}/?path=${encodeURIComponent(path)}`
+  if (path === undefined) return
+  const line = localMarkdownLine(url)
+  return `${localLinkOrigin}/?path=${encodeURIComponent(path)}${line ? `&line=${line}` : ''}`
 }
-export function markdownURLLocalPath(url: string) {
+export function markdownURLLocalPath(url: string, includeLine = false) {
   try {
     const value = new URL(url)
-    return value.origin === localLinkOrigin
-      ? (value.searchParams.get('path') ?? undefined)
-      : undefined
+    if (value.origin !== localLinkOrigin) return
+    const path = value.searchParams.get('path')
+    const line = Number(value.searchParams.get('line'))
+    if (!path) return
+    return includeLine && Number.isSafeInteger(line) && line > 0 ? `${path}#L${line}` : path
   } catch {
     return undefined
   }

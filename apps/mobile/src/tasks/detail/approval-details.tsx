@@ -1,7 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
-import { approvalDetails, type ApprovalDetailField } from '@dovo/protocol'
+import { approvalDetails, approvalVisibleText, type ApprovalDetailField } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { copyText } from '../../ui/content/clipboard'
 import { useTheme } from '../../ui/theme'
@@ -15,7 +15,7 @@ function CodePreview({ text, label, raw = false }: { text: string; label: string
       selectable
       style={[styles.text, { padding: 8, fontFamily: 'monospace', fontSize: 13, lineHeight: 19 }]}
     >
-      {text}
+      {approvalVisibleText(text)}
     </Text>
   )
   return (
@@ -39,7 +39,7 @@ function CodePreview({ text, label, raw = false }: { text: string; label: string
         ]}
       >
         <Text style={[styles.muted, { flexShrink: 1, fontSize: 12, fontWeight: '500' }]}>
-          {label}
+          {approvalVisibleText(label)}
         </Text>
         <Pressable
           accessibilityRole="button"
@@ -76,7 +76,9 @@ function Fields({ fields }: { fields: ApprovalDetailField[] }) {
       {fields.map((field, index) => (
         <View key={index} style={{ gap: 4, minWidth: 0 }}>
           {!!field.label && !field.code && (
-            <Text style={[styles.muted, { fontSize: 12, fontWeight: '500' }]}>{field.label}</Text>
+            <Text style={[styles.muted, { fontSize: 12, fontWeight: '500' }]}>
+              {approvalVisibleText(field.label)}
+            </Text>
           )}
           {field.children?.length ? (
             <View style={{ borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 10 }}>
@@ -86,7 +88,7 @@ function Fields({ fields }: { fields: ApprovalDetailField[] }) {
             <CodePreview text={field.text ?? ''} label={field.label} />
           ) : (
             <Text selectable style={[styles.text, { fontSize: 13, lineHeight: 19 }]}>
-              {field.text}
+              {approvalVisibleText(field.text ?? '')}
             </Text>
           )}
         </View>

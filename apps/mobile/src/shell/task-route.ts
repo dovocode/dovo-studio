@@ -29,6 +29,8 @@ export function taskHref(
   }
 }
 
+export type OpenThreadInInspector = (href: ReturnType<typeof taskHref>) => boolean
+
 /** The search parameters that `taskHref` writes. Expo Router returns them as strings. */
 export type TaskRouteParams = {
   runtimeId?: string

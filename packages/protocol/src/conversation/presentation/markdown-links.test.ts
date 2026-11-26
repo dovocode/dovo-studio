@@ -80,4 +80,8 @@ it('retains runtime paths, source line suffixes, and encoded names without accep
   ])
     expect(localMarkdownPath(url)).toBeUndefined()
   expect(markdownURLLocalPath('https://example.com/?path=/tmp/test')).toBeUndefined()
+  expect(markdownURLLocalPath(localMarkdownURL('src/app.ts:12:3')!, true)).toBe('src/app.ts#L12')
+  expect(markdownURLLocalPath(localMarkdownURL('docs/README.md#L20-L25')!, true)).toBe(
+    'docs/README.md#L20',
+  )
 })

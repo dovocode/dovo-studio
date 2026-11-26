@@ -13,11 +13,13 @@ import {
 } from '../../../runtime/state/detail-drafts'
 import { detailDraftStorage } from '../../../runtime/state/detail-draft-storage'
 import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
-import { useRef } from 'react'
-import { Alert } from 'react-native'
+import { useMemo, useRef } from 'react'
+import { Alert, Pressable, View } from 'react-native'
 import {
   pullActionSchema,
   pullActionResultSchema,
+  pullDescriptionTasks,
+  togglePullDescriptionTask,
   type PullAction,
   type PullComment,
   type PullDetail,
@@ -29,6 +31,7 @@ import { Field } from '../../../ui/controls/field'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
+import { Icon } from '../../../ui/controls/icon'
 export type PullActionTarget = {
   action: PullAction['action']
   comment?: PullComment
@@ -67,10 +70,10 @@ export function PullActionSheet({
   const uiText = useInterfaceText()
 
   const detail = useRef(initialDetail).current
-  const { styles } = useTheme()
+  const { colors, styles } = useTheme()
 
   const { connected, callEffect, profile, snapshot } = useRuntime()
-  const { draft, setField, clear, persistence } = useDetailDraft(
+  const { draft, read, setField, clear, persistence } = useDetailDraft(
     actionDrafts,
     useRef(
       computerIntegrationDraftKey(
@@ -103,6 +106,10 @@ export function PullActionSheet({
     },
   )
   const { title, body, base, reviewers, teams, event, method, operation } = draft
+  const checklist = useMemo(
+    () => (target.action === 'edit' ? pullDescriptionTasks(body) : []),
+    [target.action, body],
+  )
   const { connectionId, headSha } = detail.pull
   const expectedDestination = detail.destination ?? detail.pull.destination
   const setTitle = (value: string) => setField('title', value)
@@ -272,6 +279,33 @@ export function PullActionSheet({
           }}
           placeholder={uiText('Markdown supported')}
         />
+      )}
+      {!!checklist.length && (
+        <View style={{ gap: 4 }}>
+          <Text accessibilityRole="header">{uiText('Description checklist')}</Text>
+          {checklist.map((item) => (
+            <Pressable
+              key={item.offset}
+              accessibilityRole="checkbox"
+              accessibilityLabel={item.label}
+              accessibilityState={{ checked: item.checked, disabled: busy }}
+              disabled={busy}
+              onPress={() => {
+                const current = read().body
+                if (current === body)
+                  setBody(togglePullDescriptionTask(current, item, !item.checked))
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 8 }}
+            >
+              <Icon
+                name={item.checked ? 'checkCircle' : 'circle'}
+                size={18}
+                color={item.checked ? colors.accent : colors.muted}
+              />
+              <Text style={{ flex: 1 }}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
       )}
       {target.action === 'reviewers' && (
         <>

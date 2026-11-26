@@ -40,6 +40,7 @@ import {
   useWorkspaceSelector,
   type WorkspaceContextValue,
 } from '@dovo/studio-core'
+import { useNativeSkills } from '@dovo/studio-core/native-skills'
 import { composerSelection, selectComposerInput } from './composer-input'
 import { selectConversationConnection } from '../thread/workspace-selection'
 import type { RichComposerHandle } from './rich-composer-editor'
@@ -108,6 +109,7 @@ export function useFileMentions({
   rich,
   resources,
   provider,
+  visible,
   onCommand,
   onSideChat,
   prompts = [],
@@ -121,6 +123,7 @@ export function useFileMentions({
   rich?: RefObject<RichComposerHandle | null> | null
   resources: ResourceSettings
   provider?: string
+  visible: boolean
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
   onSideChat?: () => void
@@ -140,6 +143,10 @@ export function useFileMentions({
   const modelMentionsSupported = useWorkspaceSelector(
     (state) => state.snapshot?.modelMentionsSupported === true,
   )
+  const nativeSkillMentionsSupported = useWorkspaceSelector(
+    (state) => state.snapshot?.nativeSkillMentionsSupported === true,
+  )
+  const requestEffect = useWorkspaceSelector((state) => state.requestEffect)
   const [modelLookup, setModelLookup] = useState<{
     key: string
     models: ModelMention[]
@@ -163,6 +170,14 @@ export function useFileMentions({
   const mention = composerMention(source, caret)
   const trigger = mention?.trigger
   const query = mention?.query
+  const lookUpSkills =
+    visible &&
+    nativeSkillMentionsSupported &&
+    connected &&
+    provider === 'opencode' &&
+    dismissed !== mention?.start &&
+    (trigger === '$' || (trigger === '/' && showSkillsInSlashMenu))
+  const nativeSkills = useNativeSkills(lookUpSkills, taskId, connection, requestEffect)
   const selectBots = useCallback(
     (state: WorkspaceContextValue) =>
       trigger === '@'
@@ -219,7 +234,7 @@ export function useFileMentions({
   )
   const agents = useWorkspaceSelector(selectAgents, sameIdentityMentions)
   const resourceItems: Suggestion[] = mention
-    ? resourceSuggestions(resources, mention.trigger, mention.query)
+    ? resourceSuggestions(resources, mention.trigger, mention.query, undefined, nativeSkills)
         .filter((item) => mention.trigger !== '/' || showSkillsInSlashMenu || item.kind !== 'skill')
         .map((item) => ({
           kind: item.kind,

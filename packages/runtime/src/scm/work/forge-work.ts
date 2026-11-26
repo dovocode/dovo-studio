@@ -133,7 +133,7 @@ export class ForgeWork {
               { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
               cwd,
               scope.github,
-              background && (options?.method ?? 'GET') === 'GET',
+              background && ((options?.method ?? 'GET') === 'GET' || path === 'graphql'),
               options?.body === undefined ? undefined : JSON.stringify(options.body),
             )
             return result.trim() ? (JSON.parse(result) as unknown) : null
@@ -141,6 +141,7 @@ export class ForgeWork {
         },
         'github',
         scope.repository,
+        scope.host === 'github.com',
       ),
     }
   }

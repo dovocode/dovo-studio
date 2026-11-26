@@ -1,6 +1,8 @@
 import { MoreHorizontal, Smartphone, Tablet } from 'lucide-react'
 import type { PreviewDevice } from '@dovo/studio-core'
-import { DropdownMenu, IconButton } from '@dovo/studio-ui'
+import { Button, DropdownMenu, IconButton } from '@dovo/studio-ui'
+import { runningVirtualDevices } from '@dovo/protocol'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 
 type Action = 'boot' | 'shutdown' | 'open' | 'screenshot' | 'devicehub'
 export function DeviceList({
@@ -10,6 +12,7 @@ export function DeviceList({
   connected,
   onOpen,
   onAction,
+  onStopAll,
   onDeploy,
 }: {
   devices: PreviewDevice[]
@@ -18,8 +21,11 @@ export function DeviceList({
   connected: boolean
   onOpen: (device: PreviewDevice) => void
   onAction: (device: PreviewDevice, action: Action) => void
+  onStopAll: (devices: PreviewDevice[]) => void
   onDeploy?: (device: PreviewDevice) => void
 }) {
+  const uiText = useInterfaceText()
+  const running = runningVirtualDevices(devices)
   const groups = [
     { name: 'Physical devices', items: devices.filter((d) => d.kind === 'physical') },
     {
@@ -33,6 +39,16 @@ export function DeviceList({
   ]
   return (
     <div className="space-y-3">
+      {running.length > 1 && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || !connected}
+          onClick={() => onStopAll(running)}
+        >
+          {uiText('Stop all simulators and emulators')}
+        </Button>
+      )}
       {groups
         .filter((group) => group.items.length)
         .map((group) => (

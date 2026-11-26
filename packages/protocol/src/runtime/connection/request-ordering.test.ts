@@ -7,6 +7,7 @@ it('lets pure reads and Stop proceed while preserving barriers for writes and un
     '/api/scm/source/identity',
     '/api/scm/work/issues/list',
     '/api/tasks/history',
+    '/api/tasks/native-skills',
     '/api/tasks/cancel',
   ])
     expect(requestNeedsWorkspaceSync(path)).toBe(false)
@@ -26,6 +27,9 @@ it('keeps project and thread prerequisites for pure reads', () => {
     requestReadWorkspaceDependency('/api/scm/pulls/detail', { repositoryId: 'project' }),
   ).toEqual({ repositoryId: 'project', taskId: undefined })
   expect(requestReadWorkspaceDependency('/api/tasks/history', { id: 'thread' })?.taskId).toBe(
+    'thread',
+  )
+  expect(requestReadWorkspaceDependency('/api/tasks/native-skills', { id: 'thread' })?.taskId).toBe(
     'thread',
   )
   expect(requestReadWorkspaceDependency('/api/tasks/cancel', { id: 'thread' })).toBeUndefined()

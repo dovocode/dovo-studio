@@ -23,7 +23,7 @@ const moduleMocks = new Map([
   ],
   [
     `${ui}src/use-harness-availability.ts`,
-    `export const useHarnessAvailability=()=>({available:new Set(['harness:codex','harness:claude']),loading:false,error:null,sandboxNotes:[]});`,
+    `export const useHarnessAvailability=()=>({claudeAutoLimits:new Map(window.fixture.autoRestriction?[['harness:claude','project']]:[]),available:new Set(['harness:codex','harness:claude']),loading:false,error:null,sandboxNotes:[]});`,
   ],
   [`${ui}src/model-settings.tsx`, `export const ModelSettings=()=>null;`],
   [`${ui}src/setting-source.tsx`, `export const SettingSource=()=>null;`],
@@ -44,7 +44,7 @@ const moduleMocks = new Map([
   [`${mobile}agents/acp-registry.tsx`, `export const AcpRegistry=()=>null;`],
   [
     `${mobile}agents/use-harness-availability.ts`,
-    `export const useHarnessAvailability=()=>({available:new Set(['harness:codex','harness:claude','agent:preset']),loading:false,error:null,sandboxNotes:[]});`,
+    `export const useHarnessAvailability=()=>({claudeAutoLimits:new Map(),available:new Set(['harness:codex','harness:claude','agent:preset']),loading:false,error:null,sandboxNotes:[]});`,
   ],
   [
     `${mobile}runtime/state/application-state.ts`,
@@ -261,6 +261,25 @@ async function composerChoice(page, label, name) {
   await page.getByRole('menuitemradio', { name, exact: true }).click()
 }
 try {
+  const claude = await pageFor({
+    kind: 'composer',
+    autoRestriction: true,
+    policy: { provider: 'claude', permission: 'auto' },
+  })
+  await openComposerPicker(claude)
+  await claude.getByRole('button', { name: 'Configure thread permissions' }).click()
+  const restrictedAuto = claude
+    .getByRole('menuitemradio')
+    .filter({ hasText: 'This checkout’s Claude settings disable Auto.' })
+  await restrictedAuto.waitFor()
+  assert.equal(await restrictedAuto.getAttribute('aria-disabled'), 'true')
+  await claude
+    .getByRole('menuitemradio', { name: /Supervised/ })
+    .first()
+    .click()
+  assert.equal(await claude.evaluate(() => window.value.permission), 'ask')
+  await claude.close()
+
   const grok = await pageFor({ kind: 'fields', policy: { provider: 'grok', permission: 'ask' } })
   await grok.getByRole('button', { name: 'Harness access', exact: true }).click()
   assert.deepEqual(await grok.getByRole('option').allTextContents(), [

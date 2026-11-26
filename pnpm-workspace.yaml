@@ -96,6 +96,7 @@ patchedDependencies:
   electron-chrome-extensions@4.10.0: patches/electron-chrome-extensions@4.10.0.patch
   expo-libghostty@0.8.1: patches/expo-libghostty@0.8.1.patch
   expo-modules-autolinking@58.1.0: patches/expo-modules-autolinking@58.1.0.patch
+  expo-modules-core@58.1.0: patches/expo-modules-core@58.1.0.patch
   ghostty-web@0.4.0: patches/ghostty-web@0.4.0.patch
   node-pty@1.2.0-beta.18: patches/node-pty@1.2.0-beta.18.patch
   prosemirror-markdown@1.13.9: patches/prosemirror-markdown@1.13.9.patch

@@ -5,7 +5,7 @@ import { AttachmentArchive } from './attachment-archive'
 import { SafeModal } from '../../../ui/layout/safe-modal'
 import { EditChatImage, ChatImageEditContext } from '../../composer/chat-image-edit-context'
 import { nativeEffect, mobileWorkflow } from '../../../runtime/state/native-effect'
-import { useContext, useEffect, useRef } from 'react'
+import { useContext, useEffect, useMemo, useRef } from 'react'
 import { runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
@@ -15,18 +15,22 @@ import { WebView } from 'react-native-webview'
 import { Text } from '../../../ui/content/text'
 import { shareAttachment } from './attachment-share'
 import {
+  attachmentDocumentKind,
   attachmentReadSchema,
+  attachmentTextPreview,
   taskImageReadSchema,
   isImageAttachment,
   isZipAttachment,
   fileSizeLabel,
   responses,
   type Attachment,
+  type AttachmentRead,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { IconButton } from '../../../ui/controls/icon-button'
 import { Icon, type IconName } from '../../../ui/controls/icon'
 import { useTheme } from '../../../ui/theme'
+import { Markdown } from '../../../ui/content/markdown'
 export function MessageAttachments({
   taskId,
   files = [],
@@ -54,16 +58,23 @@ export function MessageAttachments({
   const { styles, colors } = useTheme()
   const generation = useRef(0)
 
-  const { connected, callEffect } = useRuntime()
+  const { connected, callEffect, snapshot } = useRuntime()
   const [archive, setArchive] = useApplicationState<Attachment | null>(null)
-  const [preview, setPreview] = useApplicationState<{
-      attachment: Attachment
-      data: string
-    } | null>(null),
+  const [preview, setPreview] = useApplicationState<AttachmentRead | null>(null),
     [busy, setBusy] = useApplicationState(false),
     [readingPreview, setReadingPreview] = useApplicationState(false),
     [error, setError] = useApplicationState(''),
     [previewSize, setPreviewSize] = useApplicationState({ width: 0, height: 0 })
+  const text = useMemo(
+    () =>
+      preview &&
+      preview.documentPreview === undefined &&
+      !isImageAttachment(preview.attachment) &&
+      !/^(audio|video)\//.test(preview.attachment.mime)
+        ? attachmentTextPreview(preview.attachment.name, preview.data)
+        : undefined,
+    [preview],
+  )
   useEffect(() => {
     setPreview(null)
     return () => {
@@ -146,7 +157,10 @@ export function MessageAttachments({
                 opacity: !connected || busy || disabled ? 0.4 : pressed ? 0.6 : 1,
               })}
               onPress={() => {
-                if (isZipAttachment(file)) {
+                const previewDocument =
+                  snapshot?.documentAttachmentPreviewSupported === true &&
+                  !!attachmentDocumentKind(file.name)
+                if (!previewDocument && isZipAttachment(file)) {
                   setArchive(file)
                   return
                 }
@@ -157,7 +171,7 @@ export function MessageAttachments({
                       const current = generation.current
                       const result = yield* callEffect(
                         '/api/attachments/read',
-                        { taskId, id: file.id },
+                        { taskId, id: file.id, ...(previewDocument ? { previewDocument } : {}) },
                         attachmentReadSchema,
                       )
                       if (current === generation.current && AppState.currentState === 'active')
@@ -377,9 +391,15 @@ export function MessageAttachments({
                     style={{ flex: 1 }}
                     contentContainerStyle={styles.content}
                   >
-                    <Text selectable style={styles.text}>
-                      {textPreview(preview.data)}
-                    </Text>
+                    {text?.markdown ? (
+                      <Markdown taskId={taskId} text={text.text} variant="chat" />
+                    ) : (
+                      <Text selectable style={styles.text}>
+                        {preview.documentPreview ??
+                          text?.text ??
+                          'Share this file to open it in another app.'}
+                      </Text>
+                    )}
                   </ScrollView>
                 ))}
             </View>
@@ -558,16 +578,4 @@ function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachmen
       resizeMode="cover"
     />
   )
-}
-function textPreview(data: string) {
-  try {
-    const text = new TextDecoder('utf-8', {
-      fatal: true,
-    }).decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)))
-    return text.includes('\0')
-      ? 'Share this file to open it in another app.'
-      : text.slice(0, 32000) + (text.length > 32000 ? '\n… Preview truncated' : '')
-  } catch {
-    return 'Share this file to open it in another app.'
-  }
 }

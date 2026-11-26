@@ -16,7 +16,7 @@ import {
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { taskHref } from '../../../shell/task-route'
+import { taskHref, type OpenThreadInInspector } from '../../../shell/task-route'
 import { ChildThreadName } from '../../detail/child-thread-name'
 import { Action } from '../../../ui/controls/action'
 import { useAction } from '../../../ui/controls/use-action'
@@ -34,12 +34,16 @@ const resultSchema = mutableStruct({ id: Schema.String })
 
 export function AgentSideChats({
   task,
+  inline,
   onClose,
   onReadOnly,
+  onOpenChild,
 }: {
   task: Task
+  inline?: boolean
   onClose: () => void
   onReadOnly: () => void
+  onOpenChild?: OpenThreadInInspector
 }) {
   const uiText = useInterfaceText()
 
@@ -81,24 +85,24 @@ export function AgentSideChats({
     target?: SideThreadRequest,
   ) => {
     if (!runtimeId || !current()) return
+    const href = taskHref(
+      runtimeId,
+      id,
+      target?.kind === 'input' ? target.requestId : undefined,
+      undefined,
+      runtimeIdentity,
+      undefined,
+      target?.kind === 'approval' ? target.requestId : undefined,
+    )
+    if (onOpenChild?.(href)) return
     sheet.current?.dismiss(() => {
-      if (current())
-        router.push(
-          taskHref(
-            runtimeId,
-            id,
-            target?.kind === 'input' ? target.requestId : undefined,
-            undefined,
-            runtimeIdentity,
-            undefined,
-            target?.kind === 'approval' ? target.requestId : undefined,
-          ),
-        )
+      if (current()) router.push(href)
     })
   }
   return (
     <Sheet
       ref={sheet}
+      presentation={inline ? 'inline' : 'sheet'}
       title={uiText(task.bot ? 'Side threads' : 'Side chats')}
       onClose={onClose}
       busy={action.busy}
@@ -237,7 +241,15 @@ export function AgentSideChats({
 }
 
 /** Uses the ordinary task screen for models, tools, approvals and cancellation. */
-export function SideThreadActions({ task, onReview }: { task: Task; onReview?: () => void }) {
+export function SideThreadActions({
+  task,
+  onReview,
+  onBringBack,
+}: {
+  task: Task
+  onReview?: () => void
+  onBringBack?: (id: string) => boolean
+}) {
   const uiText = useInterfaceText()
 
   const { snapshot, profile, connected, call, legacyDraftRuntimeId } = useRuntime()
@@ -312,7 +324,7 @@ export function SideThreadActions({ task, onReview }: { task: Task; onReview?: (
               )
               if (current()) {
                 setDelivered(result.receiptId)
-                router.replace(taskHref(profile.id, result.id))
+                if (!onBringBack?.(result.id)) router.replace(taskHref(profile.id, result.id))
               }
             }
           })
@@ -336,7 +348,13 @@ export function SideThreadActions({ task, onReview }: { task: Task; onReview?: (
   )
 }
 
-export function SideChatAttention({ task }: { task: Task }) {
+export function SideChatAttention({
+  task,
+  onOpenChild,
+}: {
+  task: Task
+  onOpenChild?: OpenThreadInInspector
+}) {
   const uiText = useInterfaceText()
 
   const { snapshot, profile, overviews } = useRuntime()
@@ -363,19 +381,18 @@ export function SideChatAttention({ task }: { task: Task }) {
       <Action
         secondary
         label={target.kind === 'approval' ? uiText('Open approval') : uiText('Open question')}
-        onPress={() =>
-          router.push(
-            taskHref(
-              target.owner?.runtimeId ?? profile.id,
-              target.id,
-              target.kind === 'input' ? target.requestId : undefined,
-              undefined,
-              target.owner?.runtimeIdentity ?? snapshot?.runtimeId,
-              undefined,
-              target.kind === 'approval' ? target.requestId : undefined,
-            ),
+        onPress={() => {
+          const href = taskHref(
+            target.owner?.runtimeId ?? profile.id,
+            target.id,
+            target.kind === 'input' ? target.requestId : undefined,
+            undefined,
+            target.owner?.runtimeIdentity ?? snapshot?.runtimeId,
+            undefined,
+            target.kind === 'approval' ? target.requestId : undefined,
           )
-        }
+          if (!onOpenChild?.(href)) router.push(href)
+        }}
       />
     </View>
   )

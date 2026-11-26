@@ -1,8 +1,15 @@
 import { expect, it } from 'vite-plus/test'
-import { taskWorkflows, workflowState } from './workflows'
+import { taskWorkflows, workflowReplyPreview, workflowState } from './workflows'
 import { decode } from '../../shared/schema'
 import { workflowCommandSchema } from '../../tasks/workflow-tools'
 import { defaultTaskHarness, type Task } from '../../workspace'
+
+it('shows the first prose sentence of a worker reply after headings and fenced code', () => {
+  const reply =
+    '# Summary\n\n````ts\n```\nconst result = 1;\n````\n\n- **Reviewed** `result`. Details follow.'
+  expect(workflowReplyPreview(reply)).toBe('Reviewed result.')
+  expect(workflowReplyPreview('~~~text\nwaiting\n~~~', 'Still working')).toBe('Still working')
+})
 
 const task = (id: string): Task => ({
   id,

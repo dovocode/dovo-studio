@@ -15,6 +15,7 @@ import type { ForgeWorkProvider, WorkHttp } from './forge-work-types.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import { workflowGraph } from './workflow-graph.js'
 import { pipelineTime } from './forge-work-details.js'
+import { githubIssueCursorPrefix, readGitHubIssue } from './github-issue-detail.js'
 const user = mutableStruct({
   login: Schema.String,
 })
@@ -138,6 +139,7 @@ export class GitForgeWork implements ForgeWorkProvider {
     private http: WorkHttp,
     private provider: 'github' | 'gitea' | 'forgejo',
     private repository: string,
+    private githubIssueGraphql = false,
   ) {
     this.path = `${provider === 'github' ? '' : 'api/v1/'}repos/${repository.split('/').map(encodeURIComponent).join('/')}`
   }
@@ -240,18 +242,23 @@ export class GitForgeWork implements ForgeWorkProvider {
   }
   async issue(id: string, cursor?: string) {
     const n = decode(
-        CoercedNumber.pipe(
-          Schema.check(Schema.isInt()),
-          Schema.check(
-            Schema.isBetween({
-              minimum: Number.MIN_SAFE_INTEGER,
-              maximum: Number.MAX_SAFE_INTEGER,
-            }),
-          ),
-        ).pipe(Schema.check(Schema.isGreaterThan(0))),
-        id,
-      ),
-      page = workPage(cursor)
+      CoercedNumber.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(
+          Schema.isBetween({
+            minimum: Number.MIN_SAFE_INTEGER,
+            maximum: Number.MAX_SAFE_INTEGER,
+          }),
+        ),
+      ).pipe(Schema.check(Schema.isGreaterThan(0))),
+      id,
+    )
+    if (
+      this.githubIssueGraphql &&
+      (cursor === undefined || cursor.startsWith(githubIssueCursorPrefix))
+    )
+      return readGitHubIssue(this.http, this.repository, n, cursor)
+    const page = workPage(cursor)
     const raw = decode(issue, await this.get(`issues/${n}`))
     if (raw.pull_request) throw new HttpError(400, 'This item is a pull request. Use the PR view.')
     const comments = decode(

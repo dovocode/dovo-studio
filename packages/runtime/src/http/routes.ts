@@ -16,6 +16,7 @@ import { dictationRoute } from './endpoints/dictation-routes.js'
 import { searchRuntimeHistory } from './support/history-search.js'
 import { attachmentArchiveRequestSchema, attachmentArchiveReadRequestSchema } from '@dovo/protocol'
 import { listAttachmentArchive, readAttachmentArchive } from '../storage/attachment-archive.js'
+import { attachmentDocumentPreview } from '../storage/document-preview.js'
 import {
   STUDIO_BROWSER_SCOPE,
   STUDIO_TERMINAL_SCOPE,
@@ -1603,11 +1604,16 @@ export function route(
           mutableStruct({
             taskId: idSchema,
             id: uuidSchema,
+            previewDocument: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
-        if (path.endsWith('/read'))
-          return yield* serviceResult(s.attachments.read(input.taskId, input.id))
+        if (path.endsWith('/read')) {
+          const result = yield* serviceResult(s.attachments.read(input.taskId, input.id))
+          if (!input.previewDocument) return result
+          const documentPreview = yield* serviceResult(attachmentDocumentPreview(result))
+          return { ...result, documentPreview }
+        }
         s.attachments.removeDraft(input.taskId, input.id)
         return yield* serviceResult({
           ok: true,

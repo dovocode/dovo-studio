@@ -52,6 +52,16 @@ it('suggests skills for $ and / and only enabled MCP servers for @', () => {
   expect(resourceSuggestions(resources, '@', '').map((item) => item.name)).toEqual(['linear'])
 })
 
+it.each(['\u3000', '\u00a0'])(
+  'recognizes non-ASCII whitespace before composer triggers',
+  (space) => {
+    for (const trigger of ['@', '#', '$', '/'] as const) {
+      const text = 'line\n' + space + trigger + 're'
+      expect(composerMention(text, text.length)).toEqual({ trigger, start: 6, query: 're' })
+    }
+  },
+)
+
 it('searches skill descriptions after name matches, preserving ordering and limits', () => {
   const searchable = {
     ...resources,

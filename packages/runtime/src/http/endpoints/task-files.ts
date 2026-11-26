@@ -10,6 +10,7 @@ import {
   taskFileRequestSchema,
   taskFileOpenSchema,
   localMarkdownPath,
+  localMarkdownLine,
   richMarkdownPaths,
 } from '@dovo/protocol'
 import type { Services } from '../../services.js'
@@ -187,18 +188,23 @@ export async function serveTaskFile(
     const data = sample.subarray(0, bytesRead)
     const type = await fileTypeFromBuffer(data)
     const extension = extname(target).toLowerCase()
-    let text = !data.includes(0) && !type
-    if (text) {
-      try {
-        new TextDecoder('utf-8', { fatal: true }).decode(data, { stream: info.size > bytesRead })
-      } catch (error) {
-        if (!(error instanceof TypeError)) throw error
-        text = false
+    let encoding: string | undefined
+    if (!data.includes(0) && !type) {
+      for (const candidate of ['utf-8', 'gb18030']) {
+        try {
+          new TextDecoder(candidate, { fatal: true }).decode(data, {
+            stream: info.size > bytesRead,
+          })
+          encoding = candidate
+          break
+        } catch (error) {
+          if (!(error instanceof TypeError)) throw error
+        }
       }
     }
     const mime =
       type?.mime ??
-      (text
+      (encoding
         ? extension === '.html' || extension === '.htm'
           ? 'text/html'
           : extension === '.svg'
@@ -245,12 +251,35 @@ export async function serveTaskFile(
       const page = `<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHTML(basename(target))}</title><style>body{margin:0;font:14px system-ui;background:#111;color:#eee}header{padding:16px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}a{color:#8acfff}nav{display:flex;gap:8px;align-items:center;padding:12px;flex-wrap:wrap}button{padding:8px}canvas{display:block;margin:12px auto;background:white}iframe{width:100%;height:calc(100dvh - 72px);border:0;background:white}.text-preview{min-height:calc(100dvh - 72px);background:white;color:black;color-scheme:only light}.text-preview pre{margin:0;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}p{padding:16px}</style><header><strong>${escapeHTML(basename(target))}</strong><a href="${download}" download>Download original</a><span>Temporary preview · 15 minutes</span></header>${content}`
       if (plainText) {
         // Own the text document's colors instead of relying on the browser's text viewer.
-        // Decode incrementally so UTF-8 characters spanning stream chunks stay intact.
-        const source = handle.createReadStream({ start: 0, autoClose: false, encoding: 'utf8' })
+        const source = handle.createReadStream({ start: 0, autoClose: false })
+        const decoder = new TextDecoder(encoding)
+        const targetLine = localMarkdownLine(grant.path)
+        let line = 1
+        let marked = false
         await pipeline(
           (async function* () {
             yield page
-            for await (const chunk of source) yield escapeHTML(String(chunk))
+            for await (const chunk of source) {
+              const text = decoder.decode(chunk, { stream: true })
+              if (!targetLine || marked) {
+                yield escapeHTML(text)
+                continue
+              }
+              let offset = 0
+              while (line < targetLine) {
+                const newline = text.indexOf('\n', offset)
+                if (newline === -1) break
+                offset = newline + 1
+                line++
+              }
+              if (line === targetLine) {
+                marked = true
+                yield escapeHTML(text.slice(0, offset))
+                yield `<span id="L${targetLine}"></span>`
+                yield escapeHTML(text.slice(offset))
+              } else yield escapeHTML(text)
+            }
+            yield escapeHTML(decoder.decode())
             yield '</code></pre></main></html>'
           })(),
           response,
@@ -263,7 +292,7 @@ export async function serveTaskFile(
       'Content-Type',
       download
         ? 'application/octet-stream'
-        : `${mime}${mime.startsWith('text/') ? '; charset=utf-8' : ''}`,
+        : `${mime}${mime.startsWith('text/') ? `; charset=${encoding ?? 'utf-8'}` : ''}`,
     )
     response.setHeader(
       'Content-Disposition',
