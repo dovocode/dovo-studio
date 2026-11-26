@@ -51,6 +51,7 @@ const checks = [
       'test',
       '--maxWorkers=4',
       'packages/runtime/src/agent-tools/context-budget.test.ts',
+      'packages/runtime/src/agent-tools/imports.test.ts',
       'packages/runtime/src/agents/tasks/memory-protection.test.ts',
       'packages/runtime/src/scm/repositories/bounded-file-read.test.ts',
     ],

@@ -5,6 +5,7 @@ import {
   richMarkdownPaths,
   markdownMediaKind,
   artifactTemplatePrompt,
+  workflowReplyPreview,
 } from './rich-markdown'
 
 it('embeds standalone media and file links while keeping surrounding prose', () => {
@@ -187,4 +188,11 @@ it('preserves inline links and still recognizes standalone autolinks after prose
   expect(richMarkdown(indented).find((part) => part.kind === 'image')).toMatchObject({
     path: 'shot.png',
   })
+})
+
+it('shows the first prose sentence of a worker reply after headings and fenced code', () => {
+  const reply =
+    '# Summary\n\n````ts\n```\nconst result = 1;\n````\n\n- **Reviewed** `result`. Details follow.'
+  expect(workflowReplyPreview(reply)).toBe('Reviewed result.')
+  expect(workflowReplyPreview('~~~text\nwaiting\n~~~', 'Still working')).toBe('Still working')
 })

@@ -83,6 +83,28 @@ export function markdownNodeText(node: SharedMarkdownNode): string {
   if (node.type === 'break') return ' '
   return 'children' in node ? node.children.map(markdownNodeText).join('') : ''
 }
+
+function firstProse(node: SharedMarkdownNode): string {
+  if (node.type === 'paragraph') return markdownNodeText(node).replace(/\s+/g, ' ').trim()
+  if (
+    node.type !== 'root' &&
+    node.type !== 'list' &&
+    node.type !== 'listItem' &&
+    node.type !== 'blockquote'
+  )
+    return ''
+  for (const child of node.children) {
+    const text = firstProse(child)
+    if (text) return text
+  }
+  return ''
+}
+export function workflowReplyPreview(result?: string, activity?: string) {
+  if (!result) return activity ?? ''
+  const prose = firstProse(parse(result))
+  return /^.*?[.!?](?=\s|$)/u.exec(prose)?.[0] || prose || activity || ''
+}
+
 function citation(node: Nodes): string | undefined {
   if (node.type !== 'textDirective' || node.name !== 'codex-file-citation') return
   const path = node.attributes?.path
