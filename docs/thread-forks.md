@@ -58,7 +58,9 @@ Dovo does not change files in the source checkout when it creates a fork.
 **New thread in this worktree** starts an empty conversation in the existing checkout. **Fork
 worktree** starts an empty conversation in a new checkout with a snapshot of the source files. If
 the source thread or checkout changes while Dovo prepares the draft, Dovo asks you to try again.
-This includes a Git commit made while **Fork worktree** takes its snapshot.
+This includes a Git commit made while **Fork worktree** takes its snapshot. If you imported a
+session that ran in a subfolder, **New thread in this worktree** opens the new thread at the root of
+the registered worktree.
 
 On mobile, if the reply to a composer fork is lost, Dovo can retry the same fork when you reopen its
 thread. Any draft you edited while waiting stays in the source thread, even if you typed the

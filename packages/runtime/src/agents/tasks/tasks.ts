@@ -1523,11 +1523,12 @@ export class Tasks {
     }
     requireCurrentSource()
     const cwd = await this.checkouts.directory(id)
-    return this.withCheckoutMutation(cwd, async () => {
+    const worktree = source.existingWorktreePath ?? cwd
+    return this.withCheckoutMutation(worktree, async () => {
       requireCurrentSource()
       const forkId = randomUUID()
       const checkout = await this.git.inspect(cwd).catch(() => undefined)
-      if (checkout?.path !== cwd)
+      if (checkout?.path !== worktree)
         throw new HttpError(409, 'The source worktree is no longer available. Try again.')
       const refs = `refs/dovo/forks/${forkId}`
       let head: string | undefined
@@ -1553,7 +1554,7 @@ export class Tasks {
           agentOverrides: current.agentOverrides,
           execution: 'worktree',
           ...(mode === 'reuse'
-            ? { existingWorktreePath: current.existingWorktreePath ?? cwd }
+            ? { existingWorktreePath: worktree }
             : {
                 forkedFrom: { taskId: id, title: current.title, head, snapshot },
                 setupCommand: current.setupCommand,
