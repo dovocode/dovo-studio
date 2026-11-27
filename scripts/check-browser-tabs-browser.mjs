@@ -41,13 +41,10 @@ const built = await build({
         builder.onLoad({ filter: /.*/, namespace: 'shared-panel-fixture' }, ({ path }) => ({
           contents: `export function ${path === './browser-thread-panel' ? 'BrowserThreadPanel' : 'ResizableSidebar'}(){throw new Error('Shared browser panel rendered in per-thread browser fixture')}`,
         }))
-        builder.onResolve(
-          { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
-          ({ path }) => ({
-            path: path.endsWith('/state') ? path : '@dovo/studio-core',
-            namespace: 'fixture',
-          }),
-        )
+        builder.onResolve({ filter: /^@dovo\/studio-core$|^\.\/workspace\/context$/ }, () => ({
+          path: '@dovo/studio-core',
+          namespace: 'fixture',
+        }))
         builder.onResolve(
           { filter: /^\.\/(device-list|physical-controls|screenshot-attachment)$/ },
           ({ path }) => ({
@@ -58,9 +55,8 @@ const built = await build({
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
-          contents: path.endsWith('/state')
-            ? `export {useState as useApplicationState} from 'react';`
-            : path === './screenshot-attachment'
+          contents:
+            path === './screenshot-attachment'
               ? 'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async()=>{}});'
               : path === './device-list'
                 ? 'export const DeviceList=()=>null;'
