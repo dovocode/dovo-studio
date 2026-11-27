@@ -861,16 +861,29 @@ export default function TasksView({
     setBusy(true)
     setError('')
     try {
-      if (entry.source.runtimeId && entry.source.runtimeId !== activeRuntimeId)
-        await switchRuntime(entry.source.runtimeId)
+      const runtimeId = entry.source.runtimeId
+      const remote = !!runtimeId && runtimeId !== activeRuntimeId
+      const openRemoteThread = remote ? host.openThread : undefined
+      if (openRemoteThread) {
+        const opened = await openRemoteThread({
+          runtimeId,
+          threadId: entry.task.id,
+          title: entry.task.title,
+          messageId,
+        })
+        if (opened === false) return
+      } else if (remote) {
+        await switchRuntime(runtimeId)
+      }
       if (!mounted.current) return
       setSelectedId(entry.task.id)
       setDeselected(false)
-      host.navigate({
-        viewId: 'tasks',
-        entityId: entry.task.id,
-        messageId,
-      })
+      if (!openRemoteThread)
+        host.navigate({
+          viewId: 'tasks',
+          entityId: entry.task.id,
+          messageId,
+        })
       setListOpen(false)
       if (compact) setSidebar(false)
     } catch (error) {

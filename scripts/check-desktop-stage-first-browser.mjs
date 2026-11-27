@@ -10,18 +10,18 @@ const setup = source
     JSON.stringify(new URL('./browser/harness.mjs', import.meta.url).href),
   )
   .replaceAll('import.meta.url', JSON.stringify(fixtureUrl.href))
-  .replace(
-    "const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};",
-    "const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.composerPreferences=preferences;",
-  )
-  .replace(
-    'permissionPolicySupported:true}};',
-    'permissionPolicySupported:true,promptQueueStagingSupported:true,queuePausePreservationSupported:true,directMessageSupported:true,planModeSupported:true}};',
-  )
 const test = `
 const browser = await chromium.launch({headless:true});
 try {
   const page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.composerSnapshotCapabilities = {
+      promptQueueStagingSupported: true,
+      queuePausePreservationSupported: true,
+      directMessageSupported: true,
+      planModeSupported: true,
+    };
+  });
   await page.route('https://dovo.test/**', route => route.fulfill({contentType:'text/html',body:'<div id="app"></div>'}));
   await page.goto('https://dovo.test/'); await page.addScriptTag({content:built.outputFiles[0].text});
   // Add to queue starts idle work; later prompts use the same automatically drained queue.
@@ -48,7 +48,7 @@ try {
   const retryId=await page.evaluate(() => window.requests.find(request=>request.path==='/api/tasks/message').input.messageId);
   await page.evaluate(() => {window.fail=true;window.response()});
   await page.getByRole('alert').filter({hasText:'Network failure'}).waitFor();
-  await page.evaluate(() => {window.composerPreferences.followUp='steer';window.setTask(task=>({...task,status:'running',activeRunId:'new-run',queuePaused:true,queue:[{id:'other',role:'user',text:'Paused elsewhere'}]}))});
+  await page.evaluate(() => {window.setComposerPreferences({followUp:'steer'});window.setTask(task=>({...task,status:'running',activeRunId:'new-run',queuePaused:true,queue:[{id:'other',role:'user',text:'Paused elsewhere'}]}))});
   await page.getByRole('button',{name:'Queue follow-up',exact:true}).click();
   await page.waitForFunction(() => window.requests.filter(request => request.path === '/api/tasks/message').length === 2);
   const retried=await page.evaluate(()=>window.requests.filter(request=>request.path==='/api/tasks/message')[1].input);

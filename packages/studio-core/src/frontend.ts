@@ -21,6 +21,7 @@ export interface StudioThreadReference {
   runtimeIdentity?: string
   threadId: string
   title: string
+  messageId?: string
   threadRequest?: import('@dovo/protocol').SideThreadRequest
   /** Read-only provider agent inside this owning Studio thread. */
   nativeAgentKey?: string
@@ -146,7 +147,9 @@ export interface StudioHostApi {
   fileDrag?: import('@dovo/protocol').FileDragBridge
   repositoryOpener?: import('@dovo/protocol').RepositoryOpenerBridge
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
-  openThread?: (target: StudioThreadReference & { parent?: StudioThreadReference }) => void
+  openThread?: (
+    target: StudioThreadReference & { parent?: StudioThreadReference },
+  ) => void | Promise<boolean>
   /** False means there is no history. A canceled Back request is handled. */
   goBack?: () => Promise<boolean>
   navigate: (target: StudioNavigation, options?: { replace?: boolean }) => void

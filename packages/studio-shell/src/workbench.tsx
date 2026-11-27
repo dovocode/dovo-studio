@@ -674,6 +674,7 @@ function WorkbenchContent({
           {
             viewId: 'tasks',
             entityId: destination.threadId,
+            messageId: destination.messageId,
             threadParent: destination.parent,
             nativeAgentKey: destination.nativeAgentKey,
             threadRequest: destination.threadRequest,

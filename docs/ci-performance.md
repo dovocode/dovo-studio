@@ -49,8 +49,9 @@ node scripts/run-browser-suites.mjs 0 4 --list
 ```
 
 The local `pnpm verify:push` gate checks mobile Sheet layout, Bot screens, draft transitions,
-checkpoint attachments and project file previews. These checks exercise the fixture exports used by
-those browser suites. Run `pnpm test:browser --jobs 4` for the full browser matrix locally.
+checkpoint attachments, project file previews, desktop queue staging, and PDF recovery. These checks
+exercise the fixture exports used by those browser suites. Run `pnpm test:browser --jobs 4` for the
+full browser matrix locally.
 
 The design-system matrix has four shards covering every story and hosted page in both themes and
 viewports, including accessibility checks. The browser registry runs catalog interactions once. See

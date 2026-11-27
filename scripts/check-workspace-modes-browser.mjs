@@ -207,6 +207,7 @@ async function checkWorkspaceModes() {
       )
       await mode(name).click()
       await refreshing
+      await mode(name).and(page.locator('[aria-current="page"]')).waitFor()
       if (name === 'Workspace')
         await view(page.getByRole('region', { name: 'Unified workspace', exact: true }))
       if (name === 'Browser')
@@ -215,8 +216,6 @@ async function checkWorkspaceModes() {
         await page.getByRole('region', { name: 'Terminals workspace', exact: true }).waitFor()
       if (name === 'Threads')
         await view(page.getByRole('textbox', { name: 'Message thread', exact: true }))
-      await mode(name).click()
-
       await page.evaluate(
         () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
       )

@@ -930,6 +930,10 @@ for history; older data can lack that field.
 The Working indicator in the thread overview and conversation shows seconds during the first minute.
 After that, it shows whole minutes on desktop, web and mobile.
 
+In desktop and web Studio, selecting a thread or a conversation search result on another paired
+computer opens it on that computer. On the web, Back and Forward retain the owning computer even
+when two computers have a thread with the same ID.
+
 On iOS and Android, opening a Studio thread link from another app takes you to the thread on its
 paired computer. Cached threads can open while that computer is offline. If the computer has been
 removed from your pairings, Studio shows a message and gives you a way back to Threads.

@@ -30,6 +30,8 @@ if (preparation !== 0) process.exit(preparation)
 const checks = [
   [
     ['node', 'scripts/check-web-workbench-history-browser.mjs'],
+    ['node', 'scripts/check-desktop-stage-first-browser.mjs'],
+    ['node', 'scripts/check-pdf-continuity-browser.mjs'],
     ['node', 'scripts/check-mobile-integration-continuity-browser.mjs'],
     ['node', 'scripts/check-native-audit-browser.mjs'],
   ],

@@ -564,8 +564,7 @@ function WorkspaceContent({ browserTabId }: { browserTabId?: string }) {
           computers,
         )
         if (!owner) {
-          host.openThread?.(target)
-          return
+          return host.openThread?.(target)
         }
         const tab: WorkspaceTab = {
           kind: 'thread',
@@ -575,6 +574,7 @@ function WorkspaceContent({ browserTabId }: { browserTabId?: string }) {
         threadNavigation.current.set(workspaceTabKey(tab), {
           viewId: 'tasks',
           entityId: target.threadId,
+          messageId: target.messageId,
           nativeAgentKey: target.nativeAgentKey,
           threadRequest: target.threadRequest,
           threadParent: target.parent,

@@ -145,8 +145,8 @@ try {
   await runtimeSettings.getByRole('button', { name: 'Close', exact: true }).click()
   const selectThread = async (name) => {
     await page
+      .getByRole('complementary', { name: 'Thread sidebar' })
       .getByRole('button', { name: new RegExp(name + ' thread') })
-      .first()
       .press('Enter')
   }
   const measureThreadFrame = async (name) => {
@@ -177,20 +177,21 @@ try {
     return ms
   }
   const thread = async (active, runtime, name) => {
-    await active.waitForURL(
-      (url) =>
-        url.searchParams.get('thread') === 'same-thread-id' &&
-        url.searchParams.get('computer') === runtime.services.runtimeId,
-    )
     try {
+      await active.waitForURL(
+        (url) =>
+          url.searchParams.get('thread') === 'same-thread-id' &&
+          url.searchParams.get('computer') === runtime.services.runtimeId,
+      )
       await active
         .getByRole('button', { name: 'Thread actions', exact: true })
         .filter({ hasText: name + ' thread' })
         .waitFor()
     } catch (error) {
-      throw new Error(`${errors.join('\n')}\n${await active.locator('body').innerText()}`, {
-        cause: error,
-      })
+      throw new Error(
+        `Expected ${name} (${runtime.services.runtimeId}), got ${active.url()}\n${errors.join('\n')}\n${await active.locator('body').innerText()}`,
+        { cause: error },
+      )
     }
   }
   await selectThread('First computer')
@@ -537,6 +538,32 @@ try {
     firstSwitchMs: rounded(firstSwitch),
     warmMs: warmFrames.map(rounded),
   })
+  await page.evaluate(() => {
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = function (...args) {
+      if (
+        this.id === 'message-same-thread-id-reply' &&
+        this.textContent.includes('Fixture reply from First computer')
+      ) {
+        window.revealedSearchMessage = true
+        HTMLElement.prototype.scrollIntoView = scrollIntoView
+      }
+      return scrollIntoView.apply(this, args)
+    }
+  })
+  await page.keyboard.press('Control+k')
+  await page.getByRole('option', { name: 'Search conversations…', exact: true }).click()
+  const search = page.getByRole('dialog', { name: 'Search conversations', exact: true })
+  await search
+    .getByRole('combobox', { name: 'Search conversations' })
+    .fill('Fixture reply from First computer')
+  await search
+    .getByRole('option')
+    .filter({ hasText: 'First computer thread' })
+    .getByRole('button')
+    .click()
+  await thread(page, first, 'First computer')
+  await page.waitForFunction(() => window.revealedSearchMessage === true)
 } finally {
   await browser?.close()
   await Promise.all([server.close(), ...[...runtimes].map((runtime) => runtime.close())])
