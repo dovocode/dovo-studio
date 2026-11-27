@@ -44,10 +44,11 @@ appId: com.dovo.studio
     direction: DOWN
 - tapOn:
     id: Connect
+# Hosted simulators can take more than 20 seconds to claim, save and load the first snapshot.
 - extendedWaitUntil:
     visible:
       id: Task mobile-task
-    timeout: 20000
+    timeout: 60000
 - openLink: ${THREAD_LINK}
 - tapOn:
     text: Open
