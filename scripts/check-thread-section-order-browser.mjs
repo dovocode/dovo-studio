@@ -10,7 +10,7 @@ const mocks = {
   '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const useStudioHost=()=>window.host;`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
-  './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),error:""});',
+  './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),failures:[]});',
   '../detail/task-context-menu': 'export const TaskContextMenu=({children})=>children;',
   './task-row':
     'export const TaskRow=({task,onSelect})=><button onClick={onSelect}>{task.title}</button>;',

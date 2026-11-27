@@ -83,7 +83,7 @@ const built = await bundleBrowser(
     {
       path: '../list/use-task-search',
       importer: root + 'packages/extension-tasks/src/dialogs',
-      contents: 'export const useTaskSearch=()=>({hits:[],loading:false,error:null});',
+      contents: 'export const useTaskSearch=()=>({hits:[],loading:false,failures:[]});',
     },
   ],
 )

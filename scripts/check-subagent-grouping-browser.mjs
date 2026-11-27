@@ -75,7 +75,7 @@ async function bundle(contents) {
     'react-native-gesture-handler': controls,
     'lucide-react-native': 'export * from "lucide-react";',
     'expo-router': 'export const router={push:target=>window.routes.push(target)};',
-    './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),error:""});',
+    './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),failures:[]});',
     '../detail/task-context-menu':
       'export const TaskContextMenu=({children,selectionMenu})=><div>{children}{selectionMenu}</div>;',
     '../detail/task-lifecycle-actions': 'export const TaskLifecycleActions=()=>null;',
