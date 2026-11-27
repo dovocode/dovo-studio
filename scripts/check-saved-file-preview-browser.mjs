@@ -30,11 +30,10 @@ function App(){
     window.calls.push({path,input});
     // Bound the broken baseline so its microtask loop cannot hang the browser.
     if(window.calls.length<64&&requestNeedsWorkspaceSync(path)){const taskId=requestWorkspaceTask(path,input);yield* taskId?synchronization.flushTaskEffect(taskId):synchronization.flushEffect()}
-    if(window.fail)return yield* Effect.fail(new Error('Preview unavailable'));
     const complete=input.full&&!window.compactOnly;
     const side={kind:'text',size,text:complete?text+'FULL '+input.path:text.slice(0,65536)+' COMPACT '+input.path,truncated:!complete};
     const preview={before:{...side,text:side.text+' BEFORE'},after:{...side,text:side.text+' AFTER'}};
-    if(window.delay)return yield* Effect.promise(()=>new Promise(resolve=>window.pending.push(()=>resolve(preview))));
+    if(window.delay)return yield* Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.pending.push(()=>resolve(preview));window.failPendingPreview=()=>reject(new Error('Preview unavailable'));}),catch:cause=>cause});
     return preview;
   })),[synchronization]);
   window.workspace={...window.workspace,request};
@@ -189,14 +188,21 @@ try {
   assert.ok((await page.locator('body').textContent()).includes('COMPACT current.txt'))
   await page.evaluate(() => {
     window.compactOnly = false
-    window.fail = true
+    window.delay = true
   })
   await page.getByRole('button', { name: 'Load full diff', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Loading full diff…' }).waitFor()
+  assert.equal(await page.locator('pre').count(), 2, 'Keep both excerpts while the full diff loads')
+  assert.match(await page.locator('pre').last().textContent(), /COMPACT current.txt AFTER/)
+  await page.waitForFunction(() => window.pending.length === 1)
+  await page.evaluate(() => {
+    window.delay = false
+    window.pending.shift()
+    window.failPendingPreview()
+  })
   await page.getByRole('alert').waitFor()
   assert.equal(await page.getByRole('alert').textContent(), 'Preview unavailable')
-  await page.evaluate(() => {
-    window.fail = false
-  })
+  assert.equal(await page.locator('pre').count(), 2, 'Keep both excerpts if the full diff fails')
   await page.getByRole('button', { name: 'Retry full diff', exact: true }).click()
   await page.getByRole('article', { name: 'Complete diff' }).waitFor()
   assert.ok(

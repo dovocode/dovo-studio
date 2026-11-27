@@ -61,12 +61,13 @@ export function DeviceList({
               {group.items.map((device) => {
                 const physical = device.kind === 'physical'
                 const running = device.state === 'booted'
+                const previewUnavailable = running && device.liveSupported === false
                 const disabled =
                   busy ||
                   !connected ||
                   device.state === 'starting' ||
                   (physical && !running) ||
-                  (running && device.liveSupported === false)
+                  previewUnavailable
                 const Icon = /ipad|tablet/i.test(device.name) ? Tablet : Smartphone
                 const actions: Array<{ action: Action; label: string; disabled?: boolean }> = [
                   {
@@ -122,15 +123,17 @@ export function DeviceList({
                                 : 'Stopped'}
                         </span>
                       </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {device.state === 'starting'
-                          ? 'Starting…'
-                          : device.liveSupported === false && running
-                            ? 'Unavailable'
-                            : running
-                              ? 'Open'
-                              : 'Start'}
-                      </span>
+                      {(!physical || running) && (
+                        <span className="max-w-32 shrink-0 text-right text-xs text-muted-foreground">
+                          {device.state === 'starting'
+                            ? uiText('Starting…')
+                            : previewUnavailable
+                              ? uiText('Live preview unavailable')
+                              : running
+                                ? uiText('Open')
+                                : uiText('Start')}
+                        </span>
+                      )}
                     </button>
                     <DropdownMenu.Root>
                       <DropdownMenu.Trigger asChild>

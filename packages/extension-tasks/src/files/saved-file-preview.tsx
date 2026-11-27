@@ -61,20 +61,21 @@ export function SavedFilePreview({
     () => changedFileFingerprint({ path, before, after, viewed: false }),
     [path, before, after],
   )
-  const key = JSON.stringify([
+  const scope = JSON.stringify([
     ownerKey,
     contentKey,
     filePreviewIdentity(file.preview),
     file.workingRevision,
-    full,
-    attempt,
   ])
+  const key = JSON.stringify([scope, full, attempt])
   const [result, setResult] = useState<{
     key: string
     preview: FilePreview | null
     error: string
   } | null>(null)
-  const preview = result?.key === key ? result.preview : null
+  const [compact, setCompact] = useState<{ scope: string; preview: FilePreview } | null>(null)
+  const current = result?.key === key ? result : null
+  const preview = current?.preview ?? (full && compact?.scope === scope ? compact.preview : null)
   const completeText =
     preview &&
     [preview.before, preview.after].every(
@@ -92,7 +93,7 @@ export function SavedFilePreview({
         : null,
     [completeText, preview, file.path],
   )
-  const error = result?.key === key ? result.error : ''
+  const error = current?.error ?? ''
   useEffect(() => {
     let active = true
     if (!taskId && !repositoryId) return
@@ -113,7 +114,9 @@ export function SavedFilePreview({
     }
     void request(endpoint, input, filePreviewSchema).then(
       (result) => {
-        if (active) setResult({ key, preview: result, error: '' })
+        if (!active) return
+        if (!full) setCompact({ scope, preview: result })
+        setResult({ key, preview: result, error: '' })
       },
       (cause: unknown) => {
         if (active)
@@ -136,13 +139,14 @@ export function SavedFilePreview({
     working,
     file.path,
     key,
+    scope,
     full,
     branchComparison,
     repositoryId,
     terminalId,
     path,
   ])
-  if (diff) return <CheckpointDiff file={diff} />
+  if (diff && current?.preview) return <CheckpointDiff file={diff} />
   return (
     <div className="space-y-3 p-4 text-xs">
       <p className="text-muted-foreground">
@@ -159,11 +163,13 @@ export function SavedFilePreview({
         <p role="alert" className="text-destructive">
           {error}
         </p>
-      ) : !preview && (taskId || repositoryId) ? (
+      ) : !current && (taskId || repositoryId) ? (
         <p role="status">{full ? 'Loading full diff…' : 'Loading compact preview…'}</p>
       ) : null}
-      {((preview &&
-        [preview.before, preview.after].some((side) => side?.kind === 'text' && side.truncated)) ||
+      {((current?.preview &&
+        [current.preview.before, current.preview.after].some(
+          (side) => side?.kind === 'text' && side.truncated,
+        )) ||
         error) && (
         <Button
           size="sm"
@@ -176,7 +182,7 @@ export function SavedFilePreview({
           {full ? 'Retry full diff' : 'Load full diff'}
         </Button>
       )}
-      {full && (preview?.before?.truncated || preview?.after?.truncated) && (
+      {full && (current?.preview?.before?.truncated || current?.preview?.after?.truncated) && (
         <p className="text-muted-foreground">
           This computer returned only a compact preview. Update it to load larger text diffs.
         </p>

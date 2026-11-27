@@ -16,6 +16,7 @@ import {
   type RuntimeConnection,
   runtimeSyncStatus,
   retryRuntimeSync,
+  sameRuntimeConnection,
   PAIRING_PROTOCOL_VERSION,
   pairingAddress,
 } from '@dovo/protocol'
@@ -108,6 +109,7 @@ export function PairingClient({
       setOpen(true)
     }
   }, [discovered])
+  const [forgetTarget, setForgetTarget] = useApplicationState<RuntimeProfile | null>(null)
   const [discardTarget, setDiscardTarget] = useApplicationState<RuntimeProfile | null>(null)
   const generation = useRef(0)
   const pairingPhase = useRef<'waiting' | 'cancelled' | 'saving'>('waiting')
@@ -510,15 +512,10 @@ export function PairingClient({
                           aria-label={`Forget ${entry.profile.name}`}
                           title="Remove this saved connection from this device"
                           disabled={busy}
-                          onSelect={() =>
-                            void act(async () => {
-                              const revoked = await forgetRuntime(entry.profile.id)
-                              if (!revoked && !entry.snapshot?.owner)
-                                setError(
-                                  'Computer forgotten on this device. Remote access removal could not be confirmed. Check Trusted devices on that computer.',
-                                )
-                            })
-                          }
+                          onSelect={() => {
+                            setError('')
+                            setForgetTarget(entry.profile)
+                          }}
                         >
                           Forget
                         </DropdownMenu.Item>
@@ -537,11 +534,64 @@ export function PairingClient({
           NetBird addresses are supported.
         </p>
       )}
-      {error && !open && (
+      {error && !open && !forgetTarget && (
         <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}
+      <Dialog
+        open={forgetTarget !== null}
+        onOpenChange={(value) => {
+          if (!value && !busy) setForgetTarget(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogTitle>
+            {uiText('Forget {value0}?', { value0: forgetTarget?.name ?? '' })}
+          </DialogTitle>
+          <DialogDescription>
+            {uiText(
+              'Studio will remove this saved connection and try to revoke this device’s access on the computer. Connecting again needs a new pairing code.',
+            )}
+          </DialogDescription>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={busy} onClick={() => setForgetTarget(null)}>
+              {uiText('Cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                if (!forgetTarget) return
+                const profile = runtimeRegistry.profiles.find(({ id }) => id === forgetTarget.id)
+                if (
+                  !profile ||
+                  !sameRuntimeConnection(profile.connection, forgetTarget.connection)
+                ) {
+                  setError(uiText('The saved connection changed. Close this dialog and try again.'))
+                  return
+                }
+                const owner = runtimes.find((entry) => entry.profile.id === profile.id)
+                void act(async () => {
+                  const revoked = await forgetRuntime(profile.id)
+                  setForgetTarget(null)
+                  if (!revoked && !owner?.snapshot?.owner)
+                    setError(
+                      'Computer forgotten on this device. Remote access removal could not be confirmed. Check Trusted devices on that computer.',
+                    )
+                })
+              }}
+            >
+              {uiText('Forget computer')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={reloadOpen} onOpenChange={setReloadOpen}>
         <DialogContent className="max-w-md">
           <DialogTitle>Discard unsent edits?</DialogTitle>
@@ -697,9 +747,8 @@ export function PairingClient({
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 pattern="[0-9]{8}"
-                maxLength={8}
                 value={code}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 8))}
                 disabled={!!pending || busy}
               />
             </FormField>

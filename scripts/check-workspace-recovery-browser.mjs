@@ -61,6 +61,7 @@ window.fetch=async(url,init={})=>{
   if(path==='/api/workspace/recovered-edits' && parsed.searchParams.has('cursor'))return Response.json({edits:[{id:'older',createdAt:'2026-10-01',patch:{collection:'agents',id:'agent',changes:{}},host:null}]});
   if(path==='/api/workspace/recovered-edits')return Response.json({edits:[{id:'saved',createdAt:'2026-10-13T00:00:00Z',patch:{collection:'agents',id:'agent',changes:{name:{before:'Before',after:'Recovered local name'}}},host:{name:'Runtime name'}}],nextCursor:'100'});
   if(path==='/api/device-hosts')return Response.json({enabled:true,hosts:[]});
+ if(path==='/api/devices/revoke-self')return Response.json({ok:true});
   throw new Error('Unexpected request '+url);
 };
 function LauncherProbe(){window.launcherContext=useWorkspace();return null}
@@ -397,7 +398,15 @@ try {
   await page.getByRole('menuitem', { name: 'Update address for Computer 0', exact: true }).click()
   const addressDialog = page.getByRole('dialog', { name: 'Update connection address', exact: true })
   await addressDialog.getByRole('textbox', { name: 'Runtime address', exact: true }).waitFor()
-  assert.equal(await addressDialog.getByLabel('Pairing code', { exact: true }).inputValue(), '')
+  const codeField = addressDialog.getByLabel('Pairing code', { exact: true })
+  assert.equal(await codeField.inputValue(), '')
+  for (const code of ['12345678', '1234 5678', '1234-5678']) {
+    await codeField.fill('')
+    await codeField.focus()
+    await page.keyboard.insertText(code)
+    assert.equal(await codeField.inputValue(), '12345678', `Accept pairing code ${code}`)
+    assert.equal(await codeField.evaluate((input) => input.checkValidity()), true)
+  }
   await addressDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.equal(
     await page.evaluate(
@@ -537,6 +546,35 @@ try {
   await tabs[1].evaluate(() => window.workspaceContext.discardAndReload())
   assert.equal(await tabs[1].evaluate(async () => !!(await window.recoveryCopy(0))), true)
   assert.equal(await tabs[1].evaluate(() => window.recoveryCopy(1)), null)
+  const computerName = 'Computer 5 renamed'
+  const selectForget = async () => {
+    await page
+      .getByRole('button', { name: `More actions for ${computerName}`, exact: true })
+      .click()
+    await page.getByRole('menuitem', { name: `Forget ${computerName}`, exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: `Forget ${computerName}?`, exact: true })
+    await dialog.waitFor()
+    return dialog
+  }
+  const revocations = () =>
+    page.evaluate(() => window.calls.filter(({ path }) => path === '/api/devices/revoke-self'))
+  const forgetDialog = await selectForget()
+  assert.equal((await revocations()).length, 0)
+  await forgetDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await forgetDialog.waitFor({ state: 'hidden' })
+  assert.equal((await revocations()).length, 0)
+  await selectForget()
+  await forgetDialog.getByRole('button', { name: 'Forget computer', exact: true }).click()
+  await forgetDialog.waitFor({ state: 'hidden' })
+  const forgotten = await revocations()
+  assert.deepEqual(
+    forgotten.map(({ host }) => host),
+    ['host5.lan:8787'],
+  )
+  assert.equal(
+    await page.getByRole('button', { name: `Manage ${computerName}`, exact: true }).count(),
+    0,
+  )
   await shared.close()
   console.log(
     'Workspace recovery: six HTTP hosts, offline switching and edit recovery, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation, Stop bypass and selective action recovery passed.',

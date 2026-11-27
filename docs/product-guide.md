@@ -1273,7 +1273,8 @@ creation and tab-state retention.
 Open **Browser → Host browser** to control a browser running on the task’s computer from desktop,
 web or mobile. Its canvas stream reaches host-only `localhost` servers without exposing their ports.
 Use Direct preview for a local browser or **Simulators** for devices on that task’s runtime. iOS
-uses Xcode Simulator; Android uses Emulator and ADB. See the
+uses Xcode Simulator; Android uses Emulator and ADB. A connected phone can be ready even when live
+preview is unavailable. **Start** is for simulators and emulators. See the
 [browser and device guide](design/browser-and-devices.md) for setup, remote addresses, current
 boundaries and planned improvements.
 
@@ -1324,7 +1325,9 @@ Compact layouts open these tools in their usual views.
 In desktop **Devices & runtime**, choose **Connect your phone** for a QR code and manual
 address/code instructions. Scan with the iPhone Camera, review the address in Dovo, then pair and
 approve on the Mac. For an address change, use **Update connection address** and a fresh code from
-the same computer. Existing saved routes retain their computer ID.
+the same computer. Existing saved routes retain their computer ID. You can paste all eight digits
+together or separated by spaces or hyphens. **Forget computer** asks for confirmation before
+removing the saved pairing and attempting to revoke this device’s access.
 
 MCP credentials use named, masked fields. **Replace** changes a value, **Keep saved value** cancels
 a replacement, and **Remove** clears that credential when you save. Stored references are handled
@@ -1410,7 +1413,9 @@ message. Diagram rendering loads only when needed and uses Mermaid's strict secu
 
 Open a source link with `:line` or `#Lline` to start its read-only text preview at that line. Use
 **Copy path** beside a file in the desktop file tree to copy the path on the thread's computer. With
-an older runtime the action copies the path relative to the selected checkout.
+an older runtime the action copies the path relative to the selected checkout. When you choose
+**Load full diff**, the compact before and after excerpts remain available while the full diff loads
+or if the request fails.
 
 Markdown files offer **Show formatted preview**. Supported notebooks show code cells and text and
 Markdown outputs without running any cells. Use **Show source** to see the underlying file. GB18030

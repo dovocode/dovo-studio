@@ -747,9 +747,11 @@ function BrowserContent({
                     })
                   : `${device.platform === 'ios' ? uiText('iOS simulator') : uiText('Android emulator')} · ${device.state}`}
                 {device.kind === 'physical' &&
-                  device.state === 'booted' &&
-                  uiText(' · Direct control')}
+                  ` · ${device.state === 'booted' ? uiText('Ready') : uiText('Unavailable')}`}
               </Text>
+              {device.state === 'booted' && device.liveSupported === false && (
+                <Text style={styles.muted}>{uiText('Live preview unavailable')}</Text>
+              )}
               <View
                 style={[
                   styles.row,

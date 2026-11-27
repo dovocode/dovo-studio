@@ -3,6 +3,8 @@ import { DiffView } from '../preview/diff-view'
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
 import {
+  changedFileFingerprint,
+  filePreviewIdentity,
   filePreviewLabel,
   filePreviewSchema,
   fileSizeLabel,
@@ -55,14 +57,26 @@ export function SavedFilePreview({
     file.path,
   ])
   const full = fullKey === ownerKey
-  const key = JSON.stringify([ownerKey, full, attempt])
+  const { path, before, after } = file
+  const contentKey = useMemo(
+    () => changedFileFingerprint({ path, before, after, viewed: false }),
+    [path, before, after],
+  )
+  const scope = JSON.stringify([
+    ownerKey,
+    contentKey,
+    filePreviewIdentity(file.preview),
+    file.workingRevision,
+  ])
+  const key = JSON.stringify([scope, full, attempt])
   const [result, setResult] = useState<{
     key: string
-    file: ChangedFile
     preview: FilePreview | null
     error: string
   } | null>(null)
-  const preview = result?.key === key && result.file === file ? result.preview : null
+  const [compact, setCompact] = useState<{ scope: string; preview: FilePreview } | null>(null)
+  const current = result?.key === key ? result : null
+  const preview = current?.preview ?? (full && compact?.scope === scope ? compact.preview : null)
   const completeText =
     preview &&
     [preview.before, preview.after].every(
@@ -80,7 +94,7 @@ export function SavedFilePreview({
         : null,
     [completeText, preview, file.path],
   )
-  const error = result?.key === key && result.file === file ? result.error : ''
+  const error = current?.error ?? ''
   useEffect(() => {
     let active = true
     void read(
@@ -92,13 +106,13 @@ export function SavedFilePreview({
       sideThreadSnapshot
         ? {
             id: taskId,
-            path: file.path,
+            path,
             ...sideThreadSnapshot,
             full,
           }
         : {
             id: taskId,
-            path: file.path,
+            path,
             turnId,
             checkoutId,
             working,
@@ -110,13 +124,14 @@ export function SavedFilePreview({
       filePreviewSchema,
     ).then(
       (result) => {
-        if (active) setResult({ key, file, preview: result, error: '' })
+        if (!active) return
+        if (!full) setCompact({ scope, preview: result })
+        setResult({ key, preview: result, error: '' })
       },
       (cause: unknown) => {
         if (active)
           setResult({
             key,
-            file,
             preview: null,
             error: cause instanceof Error ? cause.message : String(cause),
           })
@@ -132,14 +147,14 @@ export function SavedFilePreview({
     commitSha,
     checkoutId,
     working,
-    file.path,
+    path,
     key,
+    scope,
     full,
-    file,
     branchComparison,
   ])
   const patch = preview?.patch
-  const displayDiff = diff && patch && patch.length <= 512 * 1024
+  const displayDiff = current?.preview && diff && patch && patch.length <= 512 * 1024
   if (displayDiff)
     return <DiffView path={diff.path} before={diff.before} after={diff.after} patch={patch} />
   return (
@@ -154,7 +169,7 @@ export function SavedFilePreview({
             ? uiText('Submodule commit references saved in Git.')
             : uiText('Full contents saved in Git.')}
       </Text>
-      {diff && !displayDiff && (
+      {current?.preview && diff && !displayDiff && (
         <Text accessibilityRole="alert" style={styles.error}>
           <InterfaceText>
             {
@@ -167,13 +182,15 @@ export function SavedFilePreview({
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>
-      ) : !preview ? (
-        <Text style={styles.muted}>
+      ) : !current ? (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
           {full ? uiText('Loading full diff…') : uiText('Loading compact preview…')}
         </Text>
       ) : null}
-      {((preview &&
-        [preview.before, preview.after].some((side) => side?.kind === 'text' && side.truncated)) ||
+      {((current?.preview &&
+        [current.preview.before, current.preview.after].some(
+          (side) => side?.kind === 'text' && side.truncated,
+        )) ||
         (diff && !full && !patch) ||
         error) && (
         <Pressable
@@ -188,7 +205,7 @@ export function SavedFilePreview({
           <Text>{full ? uiText('Retry full diff') : uiText('Load full diff')}</Text>
         </Pressable>
       )}
-      {full && (preview?.before?.truncated || preview?.after?.truncated) && (
+      {full && (current?.preview?.before?.truncated || current?.preview?.after?.truncated) && (
         <Text style={styles.muted}>
           <InterfaceText>
             {'This computer returned only a compact preview. Update it to load larger text diffs.'}
