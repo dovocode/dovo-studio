@@ -3,6 +3,7 @@ import {
   patchSchema,
   workspaceSchema,
   taskMetadataSchema,
+  taskFamilyIds,
   SCRATCH_PROJECT_ID,
   type WorkspacePatch,
   type WorkspacePatchResult,
@@ -128,7 +129,13 @@ function apply(s: Services, requested: WorkspacePatch): WorkspacePatchResult {
       patch.collection === 'tasks' &&
       (patch.create !== undefined || s.store.get().tasks.some((task) => task.id === patch.id))
     ) {
-      const current = s.store.get().tasks.find((task) => task.id === patch.id)
+      const tasks = s.store.get().tasks
+      const current = tasks.find((task) => task.id === patch.id)
+      if (current && patch.changes.archived?.after === false) {
+        const family = taskFamilyIds(tasks, patch.id)
+        for (const task of tasks)
+          if (task.archivedAt && family.has(task.id)) s.tasks.requireNoDeletionReservation(task.id)
+      }
       s.tasks.requireCheckoutReferencesAvailable(
         decode(taskMetadataSchema, {
           ...(patch.create ?? current),

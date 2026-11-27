@@ -89,6 +89,7 @@ import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
 import { dismissComposerKeyboard } from './native-composer-input'
 import { ComposerActivity } from './composer-activity'
+import { QueueTemplates } from './queue-templates'
 import { ComposerHistoryGesture } from './composer-history-gesture'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
@@ -1031,7 +1032,7 @@ export function Composer({
         <CarComposer task={task} onType={() => setTyping(true)} />
       </>
     )
-  const input = (
+  const input = (menuActions: MenuAction[]) => (
     <FileDropTarget
       key={actions.threadScope}
       enabled={
@@ -1431,7 +1432,7 @@ export function Composer({
                     !!task.example
                   }
                   onPress={() => {}}
-                  menuActions={visibleDraftMenuActions}
+                  menuActions={menuActions}
                 />
               ) : (
                 <View ref={toolsTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
@@ -1727,7 +1728,7 @@ export function Composer({
               anchor={toolsAnchor}
               onClose={() => setToolsAnchor(null)}
               align="start"
-              actions={visibleDraftMenuActions}
+              actions={menuActions}
             />
             <DraftStash
               open={draftTools === 'stash'}
@@ -2083,12 +2084,12 @@ export function Composer({
       {settings && <HarnessSettings task={task} onClose={() => setSettings(false)} />}
     </FileDropTarget>
   )
-  return renderAbove ? (
+  return (
     <>
-      {renderAbove(setup, showStartModes ? machineSelector : null)}
-      {input}
+      {renderAbove?.(setup, showStartModes ? machineSelector : null)}
+      <QueueTemplates key={`${actions.threadScope}:${task.repositoryId}`} task={task}>
+        {(action) => input(action ? [...visibleDraftMenuActions, action] : visibleDraftMenuActions)}
+      </QueueTemplates>
     </>
-  ) : (
-    input
   )
 }

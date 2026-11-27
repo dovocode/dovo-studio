@@ -133,7 +133,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport);if(event.data.visibility!==undefined)window.remoteVisibility.push(event.data.visibility)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.openedTabLinks=[];window.createdTabs=[];window.closedTabs=[];window.lostTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);if(window.failWindowMove)throw Error('Destination closed');window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action==='site-certificate'){decode(browserCommandSchema,command);return {certificate:nativePages.get(command.key).certificate??{origin:new URL(nativePages.get(command.key).url).origin,protocol:'TLS 1.3',cipher:'AES_128_GCM',chain:[{subject:'CN=Bank test',issuer:'CN=Test CA',serialNumber:'B9',fingerprint256:'AB:CD',validTo:'2030-09-01T00:00:00.000Z'}]}}}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),openedTabLinks:window.openedTabLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),lostTabs:window.lostTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.openedTabLinks=[];window.createdTabs=[];window.closedTabs=[];window.lostTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);if(window.failWindowMove)throw Error('Destination closed');window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action==='site-certificate'){decode(browserCommandSchema,command);return {certificate:nativePages.get(command.key).certificate??{origin:new URL(nativePages.get(command.key).url).origin,protocol:'TLS 1.3',cipher:'AES_128_GCM',chain:[{subject:'CN=Bank test',issuer:'CN=Test CA',serialNumber:'B9',fingerprint256:'AB:CD',validTo:'2030-09-01T00:00:00.000Z'}]}}}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity'){if(window.holdTabActivity)await new Promise(resolve=>window.finishTabActivity=resolve);return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};}if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),openedTabLinks:window.openedTabLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),lostTabs:window.lostTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>{(window.extensionCalls??=[]).push(command);return {extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}}};
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -718,7 +718,10 @@ async function openControlledBrowser(seed, flags = {}) {
       window.controlErrors = []
       window.handledRequests = []
       window.fixtureWorkspaceControl = {
-        onSelect: (id) => window.controlSelections.push(id),
+        onSelect: (id) => {
+          window.controlSelections.push(id)
+          window.onControlSelection?.(id)
+        },
         onError: (message) => window.controlErrors.push(message),
         onLifecycleHandled: (id) => window.handledRequests.push(id),
         onTabsChange: (tabs, active) => {
@@ -1418,6 +1421,69 @@ async function checkThreadBrowserProfiles() {
     await page.close()
   }
 }
+async function checkPreviewCleanupReselection() {
+  const source = {
+    id: 'opener',
+    url: 'http://lan.local:3000/source',
+    title: 'Source',
+    kind: 'web',
+    profileId: 'default',
+  }
+  const { page, errors } = await openControlledBrowser({ tabs: [source], active: source.id })
+  page.setDefaultTimeout(6000)
+  try {
+    await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
+    await page.evaluate(async () => {
+      const openerKey = window.calls.find((call) => call.action === 'show').key
+      window.holdTabActivity = true
+      window.createdTabs.push(
+        ...['retained-preview', 'discarded-preview', 'foreground-preview'].map((key) => ({
+          key,
+          url: 'http://lan.local:3000/' + key,
+          profileId: 'default',
+          active: true,
+          openerKey,
+        })),
+      )
+      await window.pollBrowser()
+    })
+    await page.waitForFunction(() => window.finishTabActivity)
+    const retainedId = await page.evaluate(
+      () => window.controlledTabs.find((tab) => tab.url.endsWith('/retained-preview')).id,
+    )
+    await page.evaluate(async (id) => {
+      window.onControlSelection = (selected) => {
+        if (selected !== id) return
+        window.holdTabActivity = false
+        window.finishTabActivity()
+      }
+      window.focusedTabKey = 'retained-preview'
+      await window.pollBrowser()
+    }, retainedId)
+    await page.waitForFunction(() =>
+      window.calls.some((call) => call.action === 'close' && call.key === 'discarded-preview'),
+    )
+    assert.equal(
+      await page.evaluate(() =>
+        window.calls.some((call) => call.action === 'close' && call.key === 'retained-preview'),
+      ),
+      false,
+      'A stale activity response must never send Close for the reselected preview',
+    )
+    assert.equal(await page.evaluate(() => window.controlActive), retainedId)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+if (process.argv.includes('--preview-cleanup-only')) {
+  try {
+    await checkPreviewCleanupReselection()
+  } finally {
+    await browser.close()
+  }
+  process.exit(0)
+}
 if (process.argv.includes('--thread-profiles-only')) {
   try {
     await checkThreadBrowserProfiles()
@@ -1439,6 +1505,7 @@ try {
   await checkThreadBrowserProfiles()
   await checkRealUnifiedBrowserIntegration()
   await checkControlledBrowserTabs()
+  await checkPreviewCleanupReselection()
   await checkBackgroundBrowserService()
   await checkBackgroundRemoteBrowser()
   await checkUnifiedBrowserControl()

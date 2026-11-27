@@ -237,11 +237,12 @@ Links opened as temporary previews retain the original opener beneath them. **Ex
 preview chain and returns to that retained page; **Close preview** returns to the immediate opener.
 If your first click after switching back to the window lands on the opener, the preview stays open.
 Click the opener again to return. Clicks inside the preview and its **Close preview** control work
-on the first press. **Keep as tab** retains the preview as a normal tab without creating another
-session. On desktop and web, the normal address bar keeps the opener's address while a preview is
-open. The floating preview has its own address bar. Select the normal toolbar to return to the
-opener before using its controls. Each toolbar controls its own page. Closing a preview also
-restores the opener's address draft.
+on the first press. **Open in new tab** (**Keep as tab** on mobile) retains the live page as a
+normal tab. Closing the opener or unloading its inactive page leaves the promoted tab open. On
+desktop and web, the normal address bar keeps the opener's address while a preview is open. The
+floating preview has its own address bar. Select the normal toolbar to return to the opener before
+using its controls. Each toolbar controls its own page. Closing a preview also restores the opener's
+address draft.
 
 On desktop, the opener stays in its original native browser view beneath the link preview. Opening
 the preview does not capture a screenshot or start a frame-image stream. The opener keeps its

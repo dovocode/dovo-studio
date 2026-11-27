@@ -597,6 +597,18 @@ try {
             sourceMessageId: 'mention',
           },
         },
+        {
+          ...base,
+          id: 'incoming-call',
+          title: 'Called from a Linux thread',
+          botMention: {
+            runtimeId: 'runtime-mac',
+            botId: 'parent',
+            sourceTaskId: 'remote-source',
+            sourceRuntimeId: 'runtime-linux',
+            sourceMessageId: 'incoming',
+          },
+        },
       ],
     }))
     window.host.openThread = (reference) => window.navigations.push(reference)
@@ -640,7 +652,12 @@ try {
       },
     ])
   })
-  for (const title of ['Routine worker', 'Saved mention', 'Remote Bot call']) {
+  for (const title of [
+    'Routine worker',
+    'Saved mention',
+    'Remote Bot call',
+    'Called from a Linux thread',
+  ]) {
     const row = panel
       .locator('li')
       .filter({ has: page.getByRole('button', { name: title, exact: true }) })
@@ -669,6 +686,21 @@ try {
     threadId: 'remote-copy',
     title: 'Remote Bot call',
   })
+  await page.evaluate(() => {
+    window.setRuntimes([])
+    window.setRequests({
+      questions: [],
+      approvals: [
+        { id: 'incoming-approval', taskId: 'incoming-call', title: 'Review incoming work' },
+      ],
+    })
+  })
+  await panel.getByRole('button', { name: 'Called from a Linux thread', exact: true }).waitFor()
+  await page.locator('[data-side-chat-attention-banner="approval"]').waitFor()
+  await panel.getByRole('button', { name: 'Open approval in Called from a Linux thread' }).click()
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('data-request-id') === 'incoming-approval',
+  )
   // Simulate the shell opening the owning runtime and verify the receipt gains focus in its primary pane.
   await page.evaluate(() => {
     window.setRequests({

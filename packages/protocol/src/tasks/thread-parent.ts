@@ -33,6 +33,11 @@ export function botInvocationParent(
   }
 }
 
+export function invokedBotId(task: Pick<TaskMetadata, 'botMention'>, runtimeIdentity?: string) {
+  const call = task.botMention
+  return call?.sourceRuntimeId && call.runtimeId === runtimeIdentity ? call.botId : undefined
+}
+
 export function mentionSourceTitle(
   task: Pick<TaskMetadata, 'botMention' | 'forkedFrom'>,
   lookup: (id: string) => string | undefined,

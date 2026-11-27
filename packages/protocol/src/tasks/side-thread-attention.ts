@@ -1,12 +1,15 @@
 import type { Task } from '../workspace.js'
 import { taskFamilyIds } from './delegation.js'
-import { botInvocationParent } from './thread-parent.js'
+import { botInvocationParent, invokedBotId } from './thread-parent.js'
 
 type AttentionSnapshot = {
   runtimeId?: string
   revision?: number
   workspace: {
-    tasks: readonly Pick<Task, 'id' | 'delegation' | 'sideThread' | 'botJob' | 'botMention'>[]
+    tasks: readonly Pick<
+      Task,
+      'id' | 'delegation' | 'sideThread' | 'bot' | 'botJob' | 'botMention'
+    >[]
   }
   approvals: readonly { id: string; taskId: string }[]
   questions: readonly { id: string; taskId: string; routing?: 'parent' | 'human' }[]
@@ -74,6 +77,7 @@ export function sideThreadAttentionTarget(
 ): RoutedSideThreadRequest | undefined {
   if (!snapshot) return
   let input: RoutedSideThreadRequest | undefined
+  const parentIsBot = snapshot.workspace.tasks.some((task) => task.id === parentId && task.bot)
   const sources = [
     { snapshot, owner: undefined },
     ...sideThreadPeers(peers, snapshot.runtimeId).flatMap((peer) =>
@@ -96,8 +100,11 @@ export function sideThreadAttentionTarget(
         call?.threadId === parentId &&
         !call.subthread &&
         call.runtimeIdentity === snapshot.runtimeId
+      const botWorker =
+        parentIsBot && !source.owner && invokedBotId(task, snapshot.runtimeId) === parentId
       if (
         !sideCall &&
+        !botWorker &&
         (source.owner ||
           (task.sideThread?.parentTaskId !== parentId && task.botJob?.botId !== parentId))
       )

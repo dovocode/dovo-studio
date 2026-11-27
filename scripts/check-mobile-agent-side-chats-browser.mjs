@@ -376,6 +376,19 @@ try {
       createdAt: '2026-11-15T08:00:00Z',
       botJob: { botId: 'parent', runId: 'run' },
     })
+    window.runtime.snapshot.workspace.tasks.push({
+      id: 'incoming-call',
+      title: 'Called from a Linux thread',
+      status: 'review',
+      createdAt: '2026-11-15T08:00:00Z',
+      botMention: {
+        runtimeId: 'runtime-mac',
+        botId: 'parent',
+        sourceTaskId: 'linux-thread',
+        sourceRuntimeId: 'runtime-linux',
+        sourceMessageId: 'incoming',
+      },
+    })
     window.runtime.overviews = [
       {
         profile: { id: 'linux' },
@@ -437,6 +450,24 @@ try {
     taskId: 'remote-copy',
     approvalId: 'remote-approval',
   })
+  await page.evaluate(() => {
+    window.runtime.overviews = []
+    window.runtime.snapshot.approvals = [{ id: 'incoming-approval', taskId: 'incoming-call' }]
+    window.show('list')
+  })
+  await page.getByRole('button', { name: 'Called from a Linux thread · Needs approval' }).click()
+  assert.deepEqual(await page.evaluate(() => window.routes.at(-1).params), {
+    runtimeId: 'mac',
+    runtimeIdentity: 'runtime-mac',
+    taskId: 'incoming-call',
+    approvalId: 'incoming-approval',
+  })
+  await page.evaluate(() => window.show('attention'))
+  await page.getByRole('button', { name: 'Open approval' }).click()
+  assert.equal(
+    await page.evaluate(() => window.routes.at(-1).params.approvalId),
+    'incoming-approval',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile full-agent side chats, retry IDs, bring-back guards and revision-bound PR handoff passed',

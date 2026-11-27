@@ -48,6 +48,7 @@ import {
   useAppPreferences,
 } from '@dovo/studio-core'
 import { AttachmentPicker } from './attachment-picker'
+import { QueueTemplates } from './queue-templates'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
 import {
@@ -1206,6 +1207,7 @@ export function Composer({
   }
   const [accessContainer, setAccessContainer] = useState<HTMLSpanElement | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const addMenuButton = useRef<HTMLButtonElement>(null)
   const projectSettings = useThreadInfoContext()
   const [infoOpen, setInfoOpen] = useState(false)
   const [infoContainer, setInfoContainer] = useState<HTMLDivElement | null>(null)
@@ -1439,40 +1441,68 @@ export function Composer({
             <>
               <div className="composer-add-actions">
                 {attachmentControl}
-                {!task.bot && (
-                  <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
-                    <Popover.Trigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label="More composer actions"
-                        aria-pressed={!preferences.showPlanButton && plan}
-                        className={cn(
-                          'composer-add-menu',
-                          !preferences.showPlanButton && plan && 'text-primary bg-primary/15',
-                        )}
-                        disabled={sending || !!task.archivedAt}
-                      >
-                        <ChevronDown className="size-4" />
-                      </Button>
-                    </Popover.Trigger>
-                    <Popover.Portal forceMount>
-                      <Popover.Content
-                        forceMount
-                        hidden={!addOpen}
-                        side="top"
-                        align="start"
-                        sideOffset={12}
-                        onCloseAutoFocus={(event) => {
-                          if (document.activeElement === input.current) event.preventDefault()
-                        }}
-                        className="z-50 w-72 rounded-2xl border bg-popover p-2 text-popover-foreground shadow-xl"
-                      >
-                        {extraActions}
-                      </Popover.Content>
-                    </Popover.Portal>
-                  </Popover.Root>
-                )}
+                <QueueTemplates
+                  key={`${task.repositoryId}:${task.id}`}
+                  task={task}
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault()
+                    addMenuButton.current?.focus()
+                  }}
+                >
+                  {(action) =>
+                    (!task.bot || action) && (
+                      <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
+                        <Popover.Trigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            ref={addMenuButton}
+                            aria-label="More composer actions"
+                            aria-pressed={!preferences.showPlanButton && plan}
+                            className={cn(
+                              'composer-add-menu',
+                              !preferences.showPlanButton && plan && 'text-primary bg-primary/15',
+                            )}
+                            disabled={sending || !!task.archivedAt}
+                          >
+                            <ChevronDown className="size-4" />
+                          </Button>
+                        </Popover.Trigger>
+                        <Popover.Portal forceMount>
+                          <Popover.Content
+                            forceMount
+                            hidden={!addOpen}
+                            side="top"
+                            align="start"
+                            sideOffset={12}
+                            onCloseAutoFocus={(event) => {
+                              if (action?.open || document.activeElement === input.current)
+                                event.preventDefault()
+                            }}
+                            className="z-50 w-72 rounded-2xl border bg-popover p-2 text-popover-foreground shadow-xl"
+                          >
+                            {!task.bot && extraActions}
+                            {action && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-10 w-full justify-start gap-2 rounded-md px-3 text-sm font-normal"
+                                disabled={action.disabled}
+                                onClick={() => {
+                                  setAddOpen(false)
+                                  action.show()
+                                }}
+                              >
+                                <ListPlus className="size-3.5" />
+                                {uiText('Queue templates')}
+                              </Button>
+                            )}
+                          </Popover.Content>
+                        </Popover.Portal>
+                      </Popover.Root>
+                    )
+                  }
+                </QueueTemplates>
               </div>
               {preferences.showMarkdownSourceToggle && (
                 <ComposerModeToggle input={input} disabled={!!task.archivedAt} />

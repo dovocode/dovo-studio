@@ -7,6 +7,10 @@ import ./QuoteDraft.bend as C
 import ./TerminalPaste.bend as T
 import ./AgentSteering.bend as S
 import ./StoppedChild.bend as D
+import ./BrowserPreview.bend as B
+import ./ThreadStart.bend as U
+import ./ModelAndMobile.bend as N
+import ./RemoteConnection.bend as R
 
 def Laws.saved_reply_starts_next(reply, next, retry):
   {==}
@@ -173,4 +177,101 @@ def D.a_new_stop_before_run_rejects_admission(message, held):
   {==}
 
 def D.agent_input_cannot_resume(started, save_current, run_current, message, held):
+  {==}
+
+def B.opener_loss_keeps_the_promoted_page(page, reason):
+  {==}
+
+def B.old_electron_default_closes_the_promoted_page(page, reason):
+  {==}
+
+def B.studio_can_still_dismiss_a_preview(page):
+  {==}
+
+def B.studio_preview_cleanup_leaves_a_promoted_tab_open(page):
+  {==}
+
+def U.new_start_creates_one_draft(same):
+  {==}
+
+def U.matching_start_replays():
+  {==}
+
+def U.different_start_rejects():
+  {==}
+
+def U.deleted_start_cannot_create(present, same):
+  {==}
+
+def U.unavailable_parent_blocks_side_commit(snapshot, busy):
+  {==}
+
+def U.busy_parent_blocks_snapshot_commit():
+  {==}
+
+def U.busy_parent_allows_committed_context():
+  {==}
+
+def U.ended_parent_blocks_child_start(same_run):
+  {==}
+
+def U.replaced_parent_run_blocks_child_start():
+  {==}
+
+def U.live_parent_admits_its_child():
+  {==}
+
+def U.committed_fork_can_start_after_source_deletion():
+  {==}
+
+def U.narrowed_parent_blocks_side_write():
+  {==}
+
+def U.narrowed_parent_allows_side_read():
+  {==}
+
+def U.deleted_fork_cannot_commit(source_available):
+  match source_available:
+    case False{}: {==}
+    case True{}: {==}
+
+def U.missing_source_blocks_fork_commit():
+  {==}
+
+def N.model_persists_with_old_access(old, old_reasoning, old_tier, model, reasoning, tier, write, turn_write):
+  {==}
+
+def N.legacy_default_does_not_change(previous, selected):
+  {==}
+
+def N.live_worker_blocks_switch(released):
+  {==}
+
+def N.released_worker_and_session_allow_switch():
+  {==}
+
+def N.edited_fork_keeps_equal_text():
+  {==}
+
+def N.first_acknowledgement_clears_matching_untouched_fork():
+  {==}
+
+def N.completed_fork_cannot_clear_follow_up(edited, matches):
+  {==}
+
+def R.verified_lan_keeps_preference(alternate_verified, internet_paired):
+  {==}
+
+def R.internet_fallback_uses_its_own_pairing():
+  {==}
+
+def R.no_verified_or_paired_route_is_unavailable():
+  {==}
+
+def R.stale_setup_cannot_publish(available):
+  match available:
+    case False{}: {==}
+    case True{}: {==}
+
+def R.background_connection_cannot_publish():
   {==}

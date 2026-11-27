@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, stat, lstat, symlink, writeFile } from 'node:fs/pr
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
-import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
+import { deferred, runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import { exec } from '../../process'
 import { randomUUID } from 'node:crypto'
 import { Effect } from 'effect'
@@ -198,6 +198,11 @@ it('starts an active-thread fork at committed HEAD with conversation, settings a
     expect(s.attachments.read(forkId, copied?.id ?? '').data).toBe(
       Buffer.from('attachment context').toString('base64'),
     )
+    // Earlier forks have no request fingerprint and still compare their copied input.
+    s.store.updateTask(forkId, (task) => ({
+      ...task,
+      forkedFrom: task.forkedFrom && { ...task.forkedFrom, startFingerprint: undefined },
+    }))
     expect((await call('/api/tasks/start-fork', input)).status).toBe(200)
     expect(forkPrompts).toHaveLength(1)
     expect(
@@ -210,6 +215,119 @@ it('starts an active-thread fork at committed HEAD with conversation, settings a
     finishSource?.()
     await running.done
   }
+})
+
+it.each(['archive', 'delete'] as const)(
+  'does not start a fork when the source changes during Git preparation: %s',
+  async (action) => {
+    const { f, s, call } = await setup()
+    const source = s.tasks.create({
+      title: 'Source',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      execution: 'main',
+      objective: '',
+    })
+    const forkId = randomUUID()
+    let inspected!: () => void
+    let release!: () => void
+    const preparing = new Promise<void>((resolve) => (inspected = resolve))
+    const pending = new Promise<void>((resolve) => (release = resolve))
+    const command = s.git.command.bind(s.git)
+    vi.spyOn(s.git, 'command').mockImplementation(async (cwd, args, ...options) => {
+      const result = await command(cwd, args, ...options)
+      if (args[0] === 'update-ref' && args[1] === `refs/dovo/forks/${forkId}/head`) {
+        inspected()
+        await pending
+      }
+      return result
+    })
+    const run = vi.fn<AgentAdapter['run']>(async () => {})
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const starting = call('/api/tasks/start-fork', {
+      id: source.id,
+      forkId,
+      text: 'Do not launch',
+      attachmentIds: [],
+    })
+    try {
+      await preparing
+      expect((await call('/api/tasks/lifecycle', { id: source.id, action })).status).toBe(200)
+    } finally {
+      release()
+      await starting
+    }
+    expect((await starting).status).toBe(409)
+    expect(s.store.get().tasks.some((task) => task.id === forkId)).toBe(false)
+    expect(run).not.toHaveBeenCalled()
+    expect(await exists(join(f.directory, 'hello.txt'))).toBe(true)
+  },
+)
+
+it('replays a committed fork with attachments after the source is deleted', async () => {
+  const { s, call } = await setup()
+  const source = s.tasks.create({
+    title: 'Source',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'main',
+    objective: '',
+  })
+  const { attachment } = await s.attachments.upload({
+    id: randomUUID(),
+    taskId: source.id,
+    name: 'input.txt',
+    data: Buffer.from('Fork input').toString('base64'),
+  })
+  const forkId = randomUUID()
+  const input = { id: source.id, forkId, text: 'Continue', attachmentIds: [attachment.id] }
+  const run = vi.fn<AgentAdapter['run']>(async (turn) => turn.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  expect(await call('/api/tasks/start-fork', input)).toMatchObject({
+    status: 200,
+    body: { id: forkId },
+  })
+  await waitForRuntime(() => expect(s.store.taskSummary(forkId).status).toBe('review'))
+  const cwd = await s.checkouts.directory(forkId)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect((await call('/api/tasks/lifecycle', { id: source.id, action: 'delete' })).status).toBe(200)
+  expect(await call('/api/tasks/start-fork', input)).toMatchObject({
+    status: 200,
+    body: { id: forkId },
+  })
+  expect(
+    (await call('/api/tasks/start-fork', { ...input, attachmentIds: [randomUUID()] })).status,
+  ).toBe(409)
+  expect(run).toHaveBeenCalledOnce()
+  const copied = s.store.task(forkId).messages.find((message) => message.id === forkId)
+    ?.attachments?.[0]
+  expect(copied).toBeDefined()
+  expect(s.attachments.read(forkId, copied!.id).data).toBe(
+    Buffer.from('Fork input').toString('base64'),
+  )
+})
+
+it('does not recreate a deleted fork on a late retry', async () => {
+  const { s, call } = await setup()
+  const source = s.tasks.create({
+    title: 'Source',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'main',
+    objective: '',
+  })
+  const forkId = randomUUID()
+  const input = { id: source.id, forkId, text: 'Start once', attachmentIds: [] }
+  const run = vi.fn<AgentAdapter['run']>(async (turn) => turn.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  expect((await call('/api/tasks/start-fork', input)).status).toBe(200)
+  await waitForRuntime(() => expect(s.store.taskSummary(forkId).status).toBe('review'))
+  const cwd = await s.checkouts.directory(forkId)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect((await call('/api/tasks/lifecycle', { id: forkId, action: 'delete' })).status).toBe(200)
+  expect((await call('/api/tasks/start-fork', input)).status).toBe(409)
+  expect(s.store.get().tasks.some((task) => task.id === forkId)).toBe(false)
+  expect(run).toHaveBeenCalledOnce()
 })
 
 it.skipIf(process.platform === 'win32')(
@@ -672,6 +790,87 @@ it('starts empty threads in an existing worktree or forks its current files inde
   s.store.updateTask(source.id, (task) => ({ ...task, status: 'running' }))
   expect((await call('/api/tasks/worktree-thread', { id: source.id, mode: 'fork' })).status).toBe(
     409,
+  )
+})
+
+it.each(['archived', 'deleted', 'restored after cleanup'] as const)(
+  'does not start a thread in a resolved worktree when its source is %s',
+  async (change) => {
+    const { s, call } = await setup()
+    const source = s.tasks.create({
+      title: 'Source',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      execution: 'worktree',
+      objective: 'Prepare',
+    })
+    const cwd = await s.checkouts.directory(source.id)
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+    const resolved = deferred<void>()
+    const release = deferred<void>()
+    const directory = s.checkouts.directory.bind(s.checkouts)
+    vi.spyOn(s.checkouts, 'directory').mockImplementationOnce(async (id, signal) => {
+      const result = await directory(id, signal)
+      resolved.resolve()
+      await release.promise
+      return result
+    })
+    const starting = call('/api/tasks/worktree-thread', { id: source.id, mode: 'reuse' })
+    const lifecycleStatuses: number[] = []
+    let checkoutExistsAfterCleanup: boolean | undefined
+    try {
+      await resolved.promise
+      lifecycleStatuses.push(
+        (
+          await call('/api/tasks/lifecycle', {
+            id: source.id,
+            action: change === 'deleted' ? 'delete' : 'archive',
+          })
+        ).status,
+      )
+      if (change === 'restored after cleanup') {
+        lifecycleStatuses.push((await call('/api/scm/worktrees/remove', { path: cwd })).status)
+        lifecycleStatuses.push(
+          (await call('/api/tasks/lifecycle', { id: source.id, action: 'restore' })).status,
+        )
+        checkoutExistsAfterCleanup = await exists(cwd)
+      }
+    } finally {
+      release.resolve()
+      await starting
+    }
+    expect(lifecycleStatuses).toEqual(change === 'restored after cleanup' ? [200, 200, 200] : [200])
+    expect(checkoutExistsAfterCleanup).toBe(change === 'restored after cleanup' ? false : undefined)
+    expect((await starting).status).toBe(409)
+    expect(s.store.get().tasks.some((task) => task.existingWorktreePath === cwd)).toBe(false)
+  },
+)
+
+it('does not save a worktree fork when HEAD changes during its snapshot', async () => {
+  const { s, call } = await setup()
+  const source = s.tasks.create({
+    title: 'Source',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Prepare',
+  })
+  const cwd = await s.checkouts.directory(source.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  const original = s.git.snapshot.bind(s.git)
+  vi.spyOn(s.git, 'snapshot').mockImplementationOnce(async (...args) => {
+    await writeFile(join(cwd, 'hello.txt'), 'New commit in the source checkout\n')
+    await exec('git', ['commit', '-qam', 'Change source HEAD'], { cwd })
+    return original(...args)
+  })
+  const input = { id: source.id, mode: 'fork' }
+  expect((await call('/api/tasks/worktree-thread', input)).status).toBe(409)
+  expect(s.store.get().tasks.some((task) => task.forkedFrom?.taskId === source.id)).toBe(false)
+  expect((await exec('git', ['for-each-ref', 'refs/dovo/forks/'], { cwd })).stdout).toBe('')
+  const retry = await call('/api/tasks/worktree-thread', input)
+  expect(retry.status).toBe(200)
+  expect(s.store.task(String(retry.body.id)).forkedFrom?.head).toBe(
+    (await exec('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim(),
   )
 })
 

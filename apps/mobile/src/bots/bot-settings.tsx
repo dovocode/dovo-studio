@@ -426,6 +426,7 @@ function BotRoutines({ taskId }: { taskId: string }) {
         [...(snapshot?.approvals ?? []), ...(snapshot?.questions ?? [])].map(
           (input) => input.taskId,
         ),
+        snapshot?.runtimeId,
       )
     : []
   const routines = botRoutines(taskId, snapshot?.workspace.automations ?? [], snapshot?.runs ?? [])

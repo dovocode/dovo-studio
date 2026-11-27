@@ -230,6 +230,18 @@ const restorableTab = (tab: BrowserTab) =>
   !tab.previewOf &&
   !isPrivateBrowserProfile(tab.profileId) &&
   (!tab.url || /^https?:\/\//i.test(tab.url))
+function inactivePreviews(tabs: readonly BrowserTab[], ...retainedIds: (string | undefined)[]) {
+  const retained = new Set<string>()
+  for (const id of retainedIds) {
+    let tab = tabs.find((item) => item.id === id)
+    while (tab && !retained.has(tab.id)) {
+      retained.add(tab.id)
+      const openerId = tab.previewOf
+      tab = tabs.find((item) => item.id === openerId)
+    }
+  }
+  return tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
+}
 const sharedBrowserScope = (windowId?: string) => `studio:browser:${windowId ?? 'main'}`
 /** Storage window for shared tabs; pop-out threads never overwrite the main browser workspace. */
 export function sharedBrowserWindowId(host: { browserWindowId?: string; threadWindow?: boolean }) {
@@ -551,9 +563,9 @@ function BrowserContent({
   useEffect(() => {
     if (!tabsHydrated) tabsControl.current?.onSetTabs?.(ownTabs)
   }, [tabsHydrated, ownTabs])
-  const [activeTab, setActiveTab] = useApplicationState(() => saved?.active ?? tabs[0].id)
-  const activeTabRef = useRef(activeTab)
-  activeTabRef.current = activeTab
+  const [activeTab, setActiveTab, activeTabRef] = useApplicationState(
+    () => saved?.active ?? tabs[0].id,
+  )
   const [clock, setClock] = useApplicationState(() => Date.now())
   const [openTabSections, setOpenTabSections] = useApplicationState({
     snoozed: false,
@@ -598,7 +610,9 @@ function BrowserContent({
     useApplicationState<BrowserPreviewBackground | null>(null)
   const previewSlot = useRef<HTMLButtonElement>(null)
   const previewRequest = useRef(0)
-  const [pendingPreview, setPendingPreview] = useApplicationState<string | undefined>(undefined)
+  const [pendingPreview, setPendingPreview, pendingPreviewRef] = useApplicationState<
+    string | undefined
+  >(undefined)
   useEffect(() => {
     if (!selectedTab.previewOf) setPreviewBackground(null)
     return () => {
@@ -2041,20 +2055,22 @@ function BrowserContent({
   }
   // Unused previews close, but a call or shared page becomes a regular tab and stays alive.
   useEffect(() => {
-    const retained = new Set<string>(pendingPreview ? [pendingPreview] : [])
-    let tab = tabs.find((item) => item.id === activeTab)
-    while (tab && !retained.has(tab.id)) {
-      retained.add(tab.id)
-      tab = tabs.find((item) => item.id === tab?.previewOf)
-    }
-    const discarded = tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
+    const discarded = inactivePreviews(tabs, activeTab, pendingPreview)
     if (!discarded.length) return
     let cancelled = false
     void protectedTabIds(discarded).then((protectedIds) => {
       if (cancelled) return
-      const ids = new Set(discarded.map((tab) => tab.id))
-      const updated = currentTabs.current.flatMap((tab) =>
-        !ids.has(tab.id)
+      const current = currentTabs.current
+      const candidates = inactivePreviews(
+        current,
+        activeTabRef.current,
+        pendingPreviewRef.current,
+      ).filter((tab) => discarded.includes(tab))
+      if (!candidates.length) return
+      const affected = new Set(candidates)
+      const closing = candidates.filter((tab) => !protectedIds.has(tab.id))
+      const updated = current.flatMap((tab) =>
+        !affected.has(tab)
           ? [tab]
           : protectedIds.has(tab.id)
             ? [{ ...tab, previewOf: undefined }]
@@ -2062,11 +2078,8 @@ function BrowserContent({
       )
       currentTabs.current = updated
       setTabs(updated)
-      for (const tab of discarded)
-        if (!protectedIds.has(tab.id))
-          void disposeTab(tab).catch((cause) =>
-            setError(`Could not close preview: ${String(cause)}`),
-          )
+      for (const tab of closing)
+        void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
     })
     return () => {
       cancelled = true

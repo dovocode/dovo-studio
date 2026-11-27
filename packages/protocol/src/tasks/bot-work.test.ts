@@ -105,6 +105,37 @@ it('keeps active workers distinct from completed routine turns and highlights re
   )
 })
 
+it('lists invoked work on the Bot computer without counting idle mention copies', () => {
+  const call = {
+    ...task,
+    id: 'call',
+    status: 'running' as const,
+    subagents: [],
+    botMention: {
+      botId: task.id,
+      runtimeId: 'owner',
+      sourceRuntimeId: 'caller',
+      sourceTaskId: 'thread',
+      sourceMessageId: 'message',
+    },
+  }
+  const copy = {
+    ...call,
+    id: 'copy',
+    botMention: { ...call.botMention, sourceRuntimeId: undefined },
+  }
+  const wrongComputer = {
+    ...call,
+    id: 'wrong-computer',
+    botMention: { ...call.botMention, runtimeId: 'other' },
+  }
+  const tasks = [task, call, copy, wrongComputer]
+  expect(botWorkSummary(task, tasks, [], [], 'owner').workers).toBe(2)
+  expect(botWorkInbox(task, tasks, [], [], ['call'], 'owner')).toMatchObject([
+    { taskId: 'call', status: 'Needs input' },
+  ])
+})
+
 it('gives prompts bounded routine metadata without private objectives, credentials or invented run results', () => {
   const flows = Array.from({ length: 12 }, (_, index) => ({
     ...flow,

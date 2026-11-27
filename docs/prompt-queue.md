@@ -50,9 +50,10 @@ queue pauses with a resumable error. The successful reorder is still acknowledge
 
 ## Queue templates
 
-Open **Queue templates** in a project thread on desktop, web, or mobile. To save a sequence, queue
-its plain-text messages in order, enter a name, and choose **Save queue as template**. Each template
-belongs to that project on its computer. You can remove it from the same dialog.
+In a project thread, open the composer’s **+** menu and select **Queue templates**. On desktop and
+web, use the arrow next to **+**. To save a sequence, queue its plain-text messages in order, enter
+a name, and choose **Save queue as template**. Each template belongs to that project on its
+computer. You can remove it from the same dialog.
 
 In another thread from the project, select the template, review its messages, and choose **Add
 template to queue**. Studio appends editable copies in order and pauses the queue, including any

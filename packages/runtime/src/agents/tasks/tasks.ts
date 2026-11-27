@@ -398,13 +398,16 @@ export class Tasks {
     for (const id of ids)
       if (this.deletionReservations.get(id) === reservation) this.deletionReservations.delete(id)
   }
-  requireIdle(id: string, reservation?: symbol) {
+  requireNoDeletionReservation(id: string, reservation?: symbol) {
     const activeDeletion = this.deletionReservations.get(id)
     if (activeDeletion && activeDeletion !== reservation)
       throw new HttpError(
         409,
         'This thread is being archived or deleted. Try again when it finishes.',
       )
+  }
+  requireIdle(id: string, reservation?: symbol) {
+    this.requireNoDeletionReservation(id, reservation)
     const task = this.store.taskSummary(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the active turn before archiving or deleting this thread.')
@@ -947,15 +950,37 @@ export class Tasks {
   }
   /** Continue the conversation in an independent worktree at the source's committed HEAD. */
   async startFork(id: string, forkId: string, text: string, attachmentIds: string[]) {
-    const source = this.store.task(id)
-    if (source.bot)
-      throw new HttpError(409, 'Bots keep one conversation. Reset its context instead of forking.')
-    if (source.archived || source.archivedAt)
-      throw new HttpError(409, 'Reopen this thread before forking.')
     if (!text.trim() && !attachmentIds.length)
       throw new HttpError(400, 'A message needs text or attachments')
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify([id, text, attachmentIds]))
+      .digest('hex')
+    const requireSource = () => {
+      this.requireNoDeletionReservation(id)
+      const summary = this.store.get().tasks.find((task) => task.id === id)
+      if (!summary) throw new HttpError(409, 'The source thread is no longer available.')
+      this.requireExecutionOwner(id)
+      if (summary.bot)
+        throw new HttpError(
+          409,
+          'Bots keep one conversation. Reset its context instead of forking.',
+        )
+      if (summary.archived || summary.archivedAt)
+        throw new HttpError(409, 'Reopen this thread before forking.')
+      return summary
+    }
     const existing = () => {
-      if (!this.store.get().tasks.some((task) => task.id === forkId)) return undefined
+      if (this.store.wasTaskDeleted(forkId))
+        throw new HttpError(409, 'This fork was deleted. Start a new fork.')
+      const summary = this.store.get().tasks.find((task) => task.id === forkId)
+      if (!summary) return false
+      if (summary.forkedFrom?.taskId !== id)
+        throw new HttpError(409, 'This fork request already has different contents.')
+      if (summary.forkedFrom.startFingerprint !== undefined) {
+        if (summary.forkedFrom.startFingerprint !== fingerprint)
+          throw new HttpError(409, 'This fork request already has different contents.')
+        return true
+      }
       const task = this.store.task(forkId)
       const input = [...task.messages, ...(task.queue ?? [])].find(
         (message) => message.id === forkId,
@@ -970,29 +995,36 @@ export class Tasks {
             original.data === copied.data && original.attachment.name === copied.attachment.name
           )
         })
-      if (task.forkedFrom?.taskId !== id || input?.text !== text || !sameAttachments)
+      if (input?.text !== text || !sameAttachments)
         throw new HttpError(409, 'This fork request already has different contents.')
-      return task
+      return true
     }
     const submit = async () => {
-      const task = this.store.task(forkId)
-      const message = [...task.messages, ...(task.queue ?? [])].find(
-        (message) => message.id === forkId,
-      )
-      await runClientEffect(
-        this.sendEffect(forkId, forkId, text, message?.attachments?.map((file) => file.id) ?? []),
-      )
+      const message = this.store.taskSummary(forkId).queue?.find((item) => item.id === forkId)
+      if (message)
+        await runClientEffect(
+          this.sendEffect(forkId, forkId, text, message.attachments?.map((file) => file.id) ?? []),
+        )
       return { id: forkId }
     }
     if (existing()) return submit()
-    const repo = this.store.get().repositories.find((repo) => repo.id === source.repositoryId)
+    const before = requireSource()
+    const repo = this.store.get().repositories.find((repo) => repo.id === before.repositoryId)
     if (!repo || repo.kind) throw new HttpError(400, 'Start in fork requires a Git project.')
+    const history = this.store.task(id).messages
     // Reading HEAD never changes the source checkout, even while its agent is writing files.
     const cwd = await this.checkouts.directory(id)
     const head = (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
     await this.git.command(cwd, ['update-ref', `refs/dovo/forks/${forkId}/head`, head])
     this.store.transaction(() => {
       if (existing()) return
+      const source = requireSource()
+      if (
+        source.repositoryId !== before.repositoryId ||
+        source.execution !== before.execution ||
+        source.existingWorktreePath !== before.existingWorktreePath
+      )
+        throw new HttpError(409, 'The source checkout changed while preparing the fork. Try again.')
       const task: Task = {
         id: forkId,
         title: `Fork: ${source.title}`.slice(0, 200),
@@ -1008,12 +1040,12 @@ export class Tasks {
         execution: 'worktree',
         setupCommand: source.setupCommand,
         submodules: source.submodules,
-        forkedFrom: { taskId: id, title: source.title, head },
+        forkedFrom: { taskId: id, title: source.title, head, startFingerprint: fingerprint },
         status: 'draft',
         createdAt: new Date().toISOString(),
         messages: this.attachments.copyHistory(
           forkId,
-          source.messages.filter((message) => message.role === 'assistant' || !message.file),
+          history.filter((message) => message.role === 'assistant' || !message.file),
         ),
         files: [],
         draft: '',
@@ -1471,43 +1503,79 @@ export class Tasks {
       throw new HttpError(409, 'Prepare a worktree before starting another thread in it.')
     if (source.status === 'running')
       throw new HttpError(409, 'Wait for the running thread to finish.')
+    const requireCurrentSource = () => {
+      this.requireNoDeletionReservation(id)
+      const current = this.store.get().tasks.find((task) => task.id === id)
+      if (
+        !current ||
+        current.archivedAt !== source.archivedAt ||
+        !!current.archived !== !!source.archived ||
+        current.repositoryId !== source.repositoryId ||
+        current.execution !== source.execution ||
+        current.checkoutBranch !== source.checkoutBranch ||
+        current.existingWorktreePath !== source.existingWorktreePath
+      )
+        throw new HttpError(409, 'The source thread or its checkout changed. Try again.')
+      this.requireExecutionOwner(id)
+      if (current.status === 'running')
+        throw new HttpError(409, 'Wait for the running thread to finish.')
+      return current
+    }
+    requireCurrentSource()
     const cwd = await this.checkouts.directory(id)
     return this.withCheckoutMutation(cwd, async () => {
+      requireCurrentSource()
       const forkId = randomUUID()
-      const head =
-        mode === 'fork' ? (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim() : undefined
-      if (head) await this.git.command(cwd, ['update-ref', `refs/dovo/forks/${forkId}/head`, head])
-      const snapshot =
-        mode === 'fork'
-          ? await this.git.snapshot(cwd, `refs/dovo/forks/${forkId}/source`)
-          : undefined
-      const task: Task = {
-        id: forkId,
-        title: mode === 'fork' ? `Fork: ${source.title}`.slice(0, 200) : 'New thread',
-        repositoryId: source.repositoryId,
-        agentId: source.agentId,
-        agentName: source.agentName,
-        agentIcon: source.agentIcon,
-        linkedCheckouts: source.linkedCheckouts,
-        harness: source.harness,
-        agentOverrides: source.agentOverrides,
-        execution: 'worktree',
-        ...(mode === 'reuse'
-          ? { existingWorktreePath: source.existingWorktreePath ?? cwd }
-          : {
-              forkedFrom: { taskId: id, title: source.title, head, snapshot },
-              setupCommand: source.setupCommand,
-              submodules: source.submodules,
-            }),
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-        messages: [],
-        files: [],
-        draft: '',
-        example: false,
+      const checkout = await this.git.inspect(cwd).catch(() => undefined)
+      if (checkout?.path !== cwd)
+        throw new HttpError(409, 'The source worktree is no longer available. Try again.')
+      const refs = `refs/dovo/forks/${forkId}`
+      let head: string | undefined
+      let snapshot: string | undefined
+      try {
+        if (mode === 'fork') {
+          head = (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
+          await this.git.command(cwd, ['update-ref', `${refs}/head`, head])
+          snapshot = await this.git.snapshot(cwd, `${refs}/source`)
+          if ((await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim() !== head)
+            throw new HttpError(409, 'The worktree changed while taking its snapshot. Try again.')
+        }
+        const current = requireCurrentSource()
+        const task: Task = {
+          id: forkId,
+          title: mode === 'fork' ? `Fork: ${current.title}`.slice(0, 200) : 'New thread',
+          repositoryId: current.repositoryId,
+          agentId: current.agentId,
+          agentName: current.agentName,
+          agentIcon: current.agentIcon,
+          linkedCheckouts: current.linkedCheckouts,
+          harness: current.harness,
+          agentOverrides: current.agentOverrides,
+          execution: 'worktree',
+          ...(mode === 'reuse'
+            ? { existingWorktreePath: current.existingWorktreePath ?? cwd }
+            : {
+                forkedFrom: { taskId: id, title: current.title, head, snapshot },
+                setupCommand: current.setupCommand,
+                submodules: current.submodules,
+              }),
+          status: 'draft',
+          createdAt: new Date().toISOString(),
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        }
+        this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, task] }))
+        return { id: task.id }
+      } catch (error) {
+        if (head)
+          await Promise.allSettled([
+            this.git.command(cwd, ['update-ref', '-d', `${refs}/head`]),
+            this.git.command(cwd, ['update-ref', '-d', `${refs}/source`]),
+          ])
+        throw error
       }
-      this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, task] }))
-      return { id: task.id }
     })
   }
   /** Removes a review comment the agent has not received yet. Sent comments are history. */

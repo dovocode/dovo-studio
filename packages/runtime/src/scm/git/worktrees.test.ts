@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
+import { deferred } from '../../testing/integration'
 import { listWorktreesEffect, removeWorktreeEffect, worktreeChoicesEffect } from './worktrees'
 import { Housekeeping } from '../../agents/tasks/housekeeping'
 import { runClientEffect } from '@dovo/client-runtime'
 import { handoffTask } from '../tasks/task-handoff'
 import { GitService } from './git'
 import { TaskCheckout } from '../tasks/task-checkout'
+import { patchWorkspace } from '../../http/endpoints/workspace-patch'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -219,6 +221,96 @@ it('housekeeping removes clean archived worktrees only when the setting is on', 
   expect(existsSync(clean)).toBe(false)
   expect(existsSync(join(dirty, 'unsaved.txt'))).toBe(true)
 })
+
+async function archivedWorktree() {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const token = 'worktree-restore-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Restore during cleanup',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Keep the checkout on restore',
+  })
+  const cwd = await s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    archived: true,
+    archivedAt: new Date().toISOString(),
+  }))
+  s.preferences.save({ removeArchivedWorktrees: true })
+  const restorePatch = () =>
+    patchWorkspace(
+      s,
+      {
+        collection: 'tasks',
+        id: task.id,
+        changes: { archived: { before: true, after: false } },
+      },
+      'fixture',
+    )
+  const restore = () =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/tasks/lifecycle`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: task.id, action: 'restore' }),
+    })
+  return { s, task, cwd, restore, restorePatch, housekeeping: new Housekeeping(s) }
+}
+
+it('keeps a worktree when the source thread is restored before automatic removal', async () => {
+  const { s, task, cwd, restorePatch, housekeeping } = await archivedWorktree()
+  let inspections = 0
+  let restoring: ReturnType<typeof restorePatch> | undefined
+  vi.spyOn(s.terminals, 'list').mockImplementation(() => {
+    // Sweep listing, removal listing, early check, then the final shell check.
+    if (++inspections === 4) restoring = restorePatch()
+    return []
+  })
+  expect(await housekeeping.removeArchivedWorktrees()).toEqual([])
+  expect(restoring).toBeDefined()
+  await restoring
+  expect(s.store.taskSummary(task.id).archivedAt).toBeUndefined()
+  expect(existsSync(cwd)).toBe(true)
+})
+
+it.each([{ gitFails: false }, { gitFails: true }])(
+  'blocks restore only while automatic worktree removal runs (Git fails: $gitFails)',
+  async ({ gitFails }) => {
+    const { s, task, cwd, restore, restorePatch, housekeeping } = await archivedWorktree()
+    const entered = deferred<void>()
+    const release = deferred<void>()
+    const command = s.git.command.bind(s.git)
+    vi.spyOn(s.git, 'command').mockImplementation(async (path, args, ...options) => {
+      if (args[0] === 'worktree' && args[1] === 'remove' && args[2] === cwd) {
+        entered.resolve()
+        await release.promise
+        if (gitFails) throw new Error('Git kept the worktree')
+      }
+      return command(path, args, ...options)
+    })
+    const cleanup = housekeeping.removeArchivedWorktrees()
+    try {
+      await entered.promise
+      expect((await restore()).status).toBe(409)
+      await expect(restorePatch()).rejects.toThrow('being archived or deleted')
+    } finally {
+      release.resolve()
+      await cleanup
+    }
+    expect(await cleanup).toEqual(gitFails ? [] : [cwd])
+    expect(existsSync(cwd)).toBe(gitFails)
+    expect((await restore()).status).toBe(200)
+    expect(await s.checkouts.directory(task.id)).toBe(cwd)
+    expect(existsSync(cwd)).toBe(true)
+  },
+)
 
 it('protects a standalone terminal worktree while its shell runs, then allows safe orphan removal', async () => {
   const f = await fixture()

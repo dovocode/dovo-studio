@@ -1324,7 +1324,7 @@ it('handles interrupted JSON formatting when the tab view loses its WebContents'
   listener('did-finish-load')?.()
   await call(event, { action: 'close', key: workspaceShow.key })
   mocks.contents.isDestroyed.mockReturnValue(true)
-  const detachedContents = vi.fn(() => undefined)
+  const detachedContents = vi.fn<() => undefined>(() => undefined)
   Object.defineProperty(mocks.view, 'webContents', { get: detachedContents })
   try {
     formatting.reject(new Error('Render frame was disposed before the request completed'))
@@ -1880,6 +1880,9 @@ it('adopts bounded native new tabs with their profile, background disposition an
     ].includes(url)
     expect(result.action).toBe(allowed ? 'allow' : 'deny')
     expect(allowed || Object.keys(result).length === 1).toBe(true)
+    expect('outlivesOpener' in result ? result.outlivesOpener : undefined).toBe(
+      allowed ? true : undefined,
+    )
     if (allowed) result.createWindow?.({ webPreferences: { javascript: true } })
   }
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({

@@ -43,6 +43,7 @@ function BotWorkControls({
     snapshot?.workspace.tasks ?? [],
     snapshot?.workspace.automations ?? [],
     snapshot?.runs ?? [],
+    snapshot?.runtimeId,
   )
   const status = work.failed
     ? `${work.failed} ${uiText('failed')}`

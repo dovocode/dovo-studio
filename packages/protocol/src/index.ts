@@ -336,6 +336,7 @@ export * from './tasks/subagent-failures.js'
 export {
   botInvocationParent,
   botProjectThread,
+  invokedBotId,
   spawnedThreadWatch,
   taskParentReference,
 } from './tasks/thread-parent.js'

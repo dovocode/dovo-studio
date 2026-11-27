@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import {
   artifactListSchema,
   botInvocationParent,
+  invokedBotId,
   botProjectThread,
   sideThreadAttentionTarget,
   spawnedThreadWatch,
@@ -89,6 +90,7 @@ export function TaskTools({
         const call = botInvocationParent(child, snapshot?.runtimeId)
         return (
           (call?.subthread && call.threadId === task.id) ||
+          (!!task.bot && invokedBotId(child, snapshot?.runtimeId) === task.id) ||
           child.delegation?.parentTaskId === task.id ||
           (child.spawnParent?.threadId === task.id &&
             !child.spawnParent.steering &&

@@ -29,14 +29,15 @@ caller link opens the original conversation. If the caller is absent, Dovo keeps
 reference. The mention grants no access to the Bot. Older runtimes still send the source message
 without creating a copy. Dovo does not copy old messages retroactively.
 
-A Studio Tools `send` to a Bot starts an isolated conversation on the Bot’s computer. The caller
-owns the side thread. A Bot that calls itself gets a subthread instead. The call uses the Bot’s
-agent configuration and role, with the caller’s permission ceiling. It starts with the supplied
-prompt and keeps the Bot’s permanent conversation and private memory separate. The response contains
-the new thread ID. Use that ID to read the answer or send a follow-up. Retry the same message ID to
-recover a lost response. Both paired runtimes must support this call behavior. You can still message
-ordinary threads on older paired runtimes. If the older runtime cannot start a Bot call, Dovo asks
-you to update it.
+A Studio Tools `send` to a Bot starts an isolated conversation on the Bot’s computer. It appears
+under the receiving Bot in its subthreads, **Side threads**, and the **Work inbox**, even if the
+calling computer is offline. The caller can still open the same conversation from its side chats.
+The call uses the Bot’s agent configuration and role, with the caller’s permission ceiling. It
+starts with the supplied prompt and keeps the Bot’s permanent conversation and private memory
+separate. The response contains the new thread ID. Use that ID to read the answer or send a
+follow-up. Retry the same message ID to recover a lost response. Both paired runtimes must support
+this call behavior. You can still message ordinary threads on older paired runtimes. If the older
+runtime cannot start a Bot call, Dovo asks you to update it.
 
 Open the caller to see a waiting approval or question from its side thread on a paired computer.
 Select the request to open it on the computer that owns it.

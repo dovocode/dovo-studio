@@ -845,6 +845,8 @@ export const taskSchema = mutableStruct({
       turnId: Schema.optional(Schema.String),
       /** Last source message copied into a conversation or turn fork. */
       messageId: Schema.optional(Schema.String),
+      /** Identity of the first send for a fork started from the composer. */
+      startFingerprint: Schema.optional(Schema.String),
       head: Schema.optional(Schema.String),
       title: maxValue(Schema.String, 400),
       snapshot: Schema.optional(Schema.String),

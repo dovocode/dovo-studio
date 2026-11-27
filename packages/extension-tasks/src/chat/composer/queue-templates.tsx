@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { ListPlus } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { queueTemplateSource, type Task } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { useQueueTemplates } from '@dovo/studio-core/queue-templates'
@@ -15,20 +14,26 @@ import {
   Input,
 } from '@dovo/studio-ui'
 
-export function QueueTemplates({ task }: { task: Task }) {
+export function QueueTemplates({
+  task,
+  children,
+  onCloseAutoFocus,
+}: {
+  task: Task
+  onCloseAutoFocus?: (event: Event) => void
+  children: (action?: { disabled: boolean; open: boolean; show: () => void }) => ReactNode
+}) {
   const text = useInterfaceText()
   const { request, connected, snapshot, workspace } = useWorkspace()
   const templates = useQueueTemplates(task.id, task.repositoryId, request, request)
   const [name, setName] = useState('')
   const [deleting, setDeleting] = useState('')
-  if (
-    !snapshot?.queueTemplatesSupported ||
-    task.archived ||
-    task.archivedAt ||
-    task.machineHandoff ||
-    !workspace.repositories.some((project) => project.id === task.repositoryId)
-  )
-    return null
+  const available =
+    snapshot?.queueTemplatesSupported &&
+    !task.archived &&
+    !task.archivedAt &&
+    !task.machineHandoff &&
+    workspace.repositories.some((project) => project.id === task.repositoryId)
   const source = templates.open
     ? queueTemplateSource(workspace.tasks.find((item) => item.id === task.id)?.queue ?? [])
     : undefined
@@ -36,25 +41,22 @@ export function QueueTemplates({ task }: { task: Task }) {
   const confirmDelete = deleting === templates.selected?.id
   return (
     <>
-      <div className="flex justify-end px-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={templates.show}
-          disabled={!connected}
-        >
-          <ListPlus className="size-4" /> {text('Queue templates')}
-        </Button>
-      </div>
-      {templates.open && (
+      {children(
+        available
+          ? { disabled: !connected, open: templates.open, show: templates.show }
+          : undefined,
+      )}
+      {available && templates.open && (
         <Dialog
           open
           onOpenChange={(open) => {
             if (!open) templates.close()
           }}
         >
-          <DialogContent className="max-h-[85dvh] overflow-auto">
+          <DialogContent
+            className="max-h-[85dvh] overflow-auto"
+            onCloseAutoFocus={onCloseAutoFocus}
+          >
             <DialogHeader>
               <DialogTitle>{text('Queue templates')}</DialogTitle>
               <DialogDescription>

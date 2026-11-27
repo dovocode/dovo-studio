@@ -28,6 +28,7 @@ const recordSchema = mutableStruct({
       attachmentIds: mutableArray(Schema.String),
       connection: Schema.String,
       accepted: Schema.Boolean,
+      editedAfterStage: Schema.optional(Schema.Boolean),
     }),
   ),
   restore: Schema.optional(
@@ -70,6 +71,9 @@ export type DraftRecord = Schema.Schema.Type<typeof recordSchema>
 function editedSubmission(submission: DraftRecord['submission']) {
   return submission && !submission.accepted ? { ...submission, editedAfterStage: true } : undefined
 }
+function editedFork(fork: DraftRecord['fork']) {
+  return fork && !fork.accepted ? { ...fork, editedAfterStage: true } : fork
+}
 function decodeRecord(raw: string | null): DraftRecord | null {
   if (raw === null) return null
   return raw.startsWith(prefix)
@@ -95,7 +99,10 @@ export function createDraftStorage(storage: Storage) {
   const queueEditListeners = new Map<string, Set<(edit: QueueEdit | undefined) => void>>()
   const records = new Map<string, DraftRecord | null>()
   // Text already published to the composer may be ahead of serialized disk writes.
-  const publishedText = new Map<string, string>()
+  // A new publication has its own identity even when its text matches an earlier one.
+  const published = new Map<string, { readonly text: string }>()
+  const publishedText = (key: string) => published.get(key)?.text
+  const publishText = (key: string, text: string) => published.set(key, { text })
   const pendingWrites = new Map<string, { text: string; revision: number; done?: Promise<void> }>()
   let revision = 0
   const appendedAt = new Map<string, number>()
@@ -108,7 +115,7 @@ export function createDraftStorage(storage: Storage) {
       dirty.has(key) ||
       pendingWrites.has(key) ||
       locks.has(key) ||
-      (publishedText.has(key) && publishedText.get(key) !== record?.text) ||
+      (published.has(key) && publishedText(key) !== record?.text) ||
       record?.submission ||
       record?.fork ||
       record?.restore ||
@@ -117,7 +124,7 @@ export function createDraftStorage(storage: Storage) {
       return
     // Disk remains authoritative. Receipts and unsent text reload on the next visit.
     records.delete(key)
-    publishedText.delete(key)
+    published.delete(key)
     appendedAt.delete(key)
   }
   const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>, coalescing = false) =>
@@ -193,8 +200,7 @@ export function createDraftStorage(storage: Storage) {
             : record.text
         const next = { ...record, text, submission: { ...submission, accepted: true } }
         if (text !== record.text || !submission.accepted) {
-          if (!publishedText.has(key) || publishedText.get(key) === record.text)
-            publishedText.set(key, text)
+          if (!published.has(key) || publishedText(key) === record.text) publishText(key, text)
           records.set(key, next)
           dirty.add(key)
         }
@@ -225,7 +231,7 @@ export function createDraftStorage(storage: Storage) {
   const writeEffect = (key: string, value: string, origin?: (value: string) => void) =>
     Effect.suspend(() => {
       const writing = ++revision
-      publishedText.set(key, value)
+      publishText(key, value)
       listeners.get(key)?.forEach((listener) => {
         if (listener !== origin) listener(value)
       })
@@ -252,6 +258,7 @@ export function createDraftStorage(storage: Storage) {
               ...previous,
               text: batch.text,
               submission: editedSubmission(previous?.submission),
+              fork: editedFork(previous?.fork),
             })
           }).pipe(
             Effect.ensuring(
@@ -277,18 +284,18 @@ export function createDraftStorage(storage: Storage) {
       key,
       Effect.gen(function* () {
         const previous = yield* load(key, legacyKey)
-        const current = publishedText.get(key) ?? previous?.text ?? initial
+        const current = publishedText(key) ?? previous?.text ?? initial
         if (receiptId && previous?.handoffReceipts?.includes(receiptId)) {
           if (dirty.has(key)) yield* save(key, previous)
           return
         }
         // A fresh device can hydrate the server draft after this handoff was persisted there.
         const value =
-          receiptId && !previous && !publishedText.has(key) && current.includes(text)
+          receiptId && !previous && !published.has(key) && current.includes(text)
             ? current
             : [current, text].filter(Boolean).join('\n\n')
         appendedAt.set(key, ++revision)
-        publishedText.set(key, value)
+        publishText(key, value)
         listeners.get(key)?.forEach((listener) => listener(value))
         yield* save(key, {
           ...previous,
@@ -297,6 +304,7 @@ export function createDraftStorage(storage: Storage) {
             ? { handoffReceipts: [...(previous?.handoffReceipts ?? []), receiptId] }
             : {}),
           submission: editedSubmission(previous?.submission),
+          fork: editedFork(previous?.fork),
         })
       }),
     )
@@ -320,32 +328,40 @@ export function createDraftStorage(storage: Storage) {
         }
         yield* save(key, {
           ...previous,
-          text: publishedText.get(key) ?? previous?.text ?? initial,
+          text: publishedText(key) ?? previous?.text ?? initial,
           fork: pending,
         })
         return pending
       }),
     )
   const confirmForkEffect = (key: string, id: string) =>
-    serialize(
-      key,
-      Effect.gen(function* () {
-        const previous = yield* load(key)
-        if (!previous?.fork || previous.fork.id !== id) return
-        const fork = { ...previous.fork, accepted: true }
-        const current = publishedText.get(key) ?? previous.text
-        const text = !previous.fork.accepted && current === fork.draftText ? '' : current
-        // Acceptance and its conditional clear share a record. Subsequent retries never
-        // clear a follow-up, even if the user deliberately types the same text again.
-        appendedAt.set(key, ++revision)
-        if (text !== current) {
-          publishedText.set(key, text)
-          listeners.get(key)?.forEach((listener) => listener(text))
-        }
-        yield* save(key, { ...previous, text, fork })
-        return fork
-      }),
-    )
+    Effect.suspend(() => {
+      const publishedBeforeConfirming = published.get(key)
+      return serialize(
+        key,
+        Effect.gen(function* () {
+          const previous = yield* load(key)
+          if (!previous?.fork || previous.fork.id !== id) return
+          const { editedAfterStage, ...request } = previous.fork
+          const fork = { ...request, accepted: true }
+          const current = publishedText(key) ?? previous.text
+          const unchanged =
+            !editedAfterStage &&
+            published.get(key) === publishedBeforeConfirming &&
+            current === fork.draftText
+          const text = !request.accepted && unchanged ? '' : current
+          // Acceptance and its conditional clear share a record. Subsequent retries never
+          // clear a follow-up, even if the user deliberately types the same text again.
+          if (text !== current) {
+            appendedAt.set(key, ++revision)
+            publishText(key, text)
+            listeners.get(key)?.forEach((listener) => listener(text))
+          }
+          yield* save(key, { ...previous, text, fork })
+          return fork
+        }),
+      )
+    })
   const finishForkEffect = (key: string, id: string) =>
     serialize(
       key,
@@ -378,7 +394,7 @@ export function createDraftStorage(storage: Storage) {
           return yield* Effect.fail(new Error('Resolve the pending queued-message restore first'))
         yield* save(key, {
           ...previous,
-          text: publishedText.get(key) ?? previous?.text ?? initial,
+          text: publishedText(key) ?? previous?.text ?? initial,
           restore,
         })
       }),
@@ -393,12 +409,12 @@ export function createDraftStorage(storage: Storage) {
           return
         }
         if (!previous?.restore || previous.restore.requestId !== requestId) return
-        const current = publishedText.get(key) ?? previous.text
+        const current = publishedText(key) ?? previous.text
         const text = [current, previous.restore.text].filter(Boolean).join('\n\n')
         // The append and clearing its intent share one durable write. A restart either
         // retries the old intent or sees the complete append, never both.
         appendedAt.set(key, ++revision)
-        publishedText.set(key, text)
+        publishText(key, text)
         listeners.get(key)?.forEach((listener) => listener(text))
         yield* save(key, {
           ...previous,
@@ -439,7 +455,7 @@ export function createDraftStorage(storage: Storage) {
       Effect.gen(function* () {
         const previous = yield* load(key)
         if (!previous || previous.submission?.attempt.id !== attempt.id) return
-        const current = publishedText.get(key) ?? previous.text
+        const current = publishedText(key) ?? previous.text
         const text =
           clear && !previous.submission.editedAfterStage && current.trim() === attempt.text
             ? ''
@@ -448,7 +464,7 @@ export function createDraftStorage(storage: Storage) {
         const next = { ...previous, text, submission: { ...previous.submission, accepted: true } }
         // Publish before awaiting storage, retaining the accepted record in memory if saving fails.
         if (text !== current) {
-          publishedText.set(key, text)
+          publishText(key, text)
           listeners.get(key)?.forEach((listener) => listener(text))
         }
         yield* save(key, next)
@@ -485,7 +501,7 @@ export function createDraftStorage(storage: Storage) {
           }
           yield* save(key, {
             ...previous,
-            text: publishedText.get(key) ?? previous?.text ?? initial,
+            text: publishedText(key) ?? previous?.text ?? initial,
             sideThreadCreation: { id, objective },
           })
           return id
@@ -499,7 +515,7 @@ export function createDraftStorage(storage: Storage) {
           if (previous?.sideThreadCreation?.id !== id) return
           yield* save(key, {
             ...previous,
-            text: publishedText.get(key) ?? previous.text,
+            text: publishedText(key) ?? previous.text,
             sideThreadCreation: undefined,
           }).pipe(
             Effect.catch((error) => {
@@ -545,17 +561,18 @@ export function createDraftStorage(storage: Storage) {
         key,
         Effect.gen(function* () {
           const previous = yield* load(key)
-          const current = publishedText.get(key) ?? previous?.text ?? initial
+          const current = publishedText(key) ?? previous?.text ?? initial
           const text =
             current === expected ? final : [current, transcript].filter(Boolean).join('\n\n')
           if (text === current) return
           appendedAt.set(key, ++revision)
-          publishedText.set(key, text)
+          publishText(key, text)
           listeners.get(key)?.forEach((listener) => listener(text))
           yield* save(key, {
             ...previous,
             text,
             submission: editedSubmission(previous?.submission),
+            fork: editedFork(previous?.fork),
           })
         }),
       ),

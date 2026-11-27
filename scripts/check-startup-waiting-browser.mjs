@@ -58,7 +58,9 @@ const built = await bundleBrowser(
         return <>
           <button onClick={()=>store.setWorkspace(workspace=>({...workspace,tasks:workspace.tasks.map(item=>item.id===task.id?{...item,draft:'Hello'}:item)}))}>Save draft</button>
           <button onClick={()=>store.request('/api/tasks/message',{id:task.id,text:'Hello'},responses.ok)}>Send</button>
-          <QueueTemplates task={task}/>
+          <QueueTemplates task={task}>
+            {action=>action&&<button disabled={action.disabled} onClick={action.show}>Queue templates</button>}
+          </QueueTemplates>
           {committed&&<Waiting/>}
         </>;
       }

@@ -72,3 +72,42 @@ theorem missingEarlierRowUsesLaterPage (earlier later : List (Nat × α)) (numbe
   simp [lookupAppended, missing, Option.orElse]
 
 end Dovo.PullOverview
+
+namespace Dovo.RemoteConnection
+
+inductive Route where
+  | lan | alternate | connect
+  deriving DecidableEq
+
+inductive Credential where
+  | pairing | internet
+  deriving DecidableEq
+
+def endpoint (lanVerified alternateVerified internetPaired : Bool) :
+    Option (Route × Credential) :=
+  if lanVerified then some (.lan, .pairing)
+  else if alternateVerified then some (.alternate, .pairing)
+  else if internetPaired then some (.connect, .internet)
+  else none
+
+theorem verifiedLanWins (alternateVerified internetPaired : Bool) :
+    endpoint true alternateVerified internetPaired = some (.lan, .pairing) := rfl
+
+theorem fallbackUsesItsOwnCredential :
+    endpoint false false true = some (.connect, .internet) := rfl
+
+theorem noCredentialWithoutAVerifiedOrPairedRoute :
+    endpoint false false false = none := rfl
+
+def mayPublish (available : Bool) (current : Option Nat) (attempt : Nat) : Bool :=
+  available && decide (current = some attempt)
+
+theorem invalidatedAttemptCannotPublish (available : Bool) (attempt : Nat) :
+    mayPublish available none attempt = false := by
+  simp [mayPublish]
+
+theorem oldAttemptCannotReplaceNewAttempt {current old : Nat} (different : current ≠ old)
+    (available : Bool) : mayPublish available (some current) old = false := by
+  simp [mayPublish, different]
+
+end Dovo.RemoteConnection

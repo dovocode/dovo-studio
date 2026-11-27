@@ -223,6 +223,20 @@ path and its check for new input after pausing the old worker.
 [Mobile cache write](../apps/mobile/src/runtime/connection/provider.tsx) ·
 [Harness handoff tests](../packages/runtime/src/http/thread-handoff.test.ts)
 
+The [TLA+ model-switching spec](../verification/tla/ThreadModelSwitch.tla) checks queue edits,
+reordering, admission and restart with up to two queued inputs. The active turn keeps its admitted
+settings. On runtimes with persistent turn models, the model, reasoning and tier become the thread's
+defaults at admission, while an access override stays with the turn. A separate branch checks that a
+delayed automatic selection cannot replace a newer choice or select a model that has become
+unavailable. The in-place harness branch checks that the old worker retires and the provider session
+is released before the new harness commits.
+
+TLC requires counterexamples for early model promotion, stale discovery and a harness switch before
+worker retirement. The [Lean proofs](../verification/ThreadModelSwitch.lean) and
+[Bend laws](../verification/thread/ModelAndMobile.bend) also check the local admission rules.
+[Model selection tests](../packages/runtime/src/agents/tasks/model-selection.test.ts) ·
+[Runtime queue tests](../packages/runtime/src/agents/tasks/task-queue.test.ts)
+
 Run the mobile draft storage checks and browser fixtures from the repository root:
 
 ```sh
@@ -236,6 +250,30 @@ node scripts/check-mobile-thread-start-browser.mjs
 These browser fixtures exercise the mobile React components with mocked native controls and
 transport. The storage tests inject native write failures. A current installed build and a paired
 test runtime are needed to exercise this recovery path on a simulator or phone.
+
+## Mobile thread workflow in TLA+
+
+The [mobile thread model](../verification/tla/MobileThread.tla) covers the client side of
+[thread startup](#starting-threads-and-subthreads) and
+[the runtime lifecycle](#thread-lifecycle-in-tla). It uses two computer scopes that can contain the
+same thread ID. The model follows staged sends and first sends across app relaunch, lost replies and
+reconnect. Queued and staged sends can recover from the outbox. Direct sends and steering need a
+live connection, and steering retains the original run ID. Under fair replay, a deferred send
+eventually reaches its original computer and settles if the app and connection stay available.
+
+Other branches cover queue restore, fork and side-thread creation, caching thread history while
+navigating between computers, lifecycle changes from the owning computer, and a delayed reply to an
+agent question. TLC checks that a fork confirmation preserves a newer draft, even when its text
+matches, and that a stale question reply preserves the newer answer. It also exercises a duplicate
+queue restore and a cached read that returns after a computer or history revision change.
+
+The model abstracts each saved operation to one request and each edit to a small set of values. It
+checks mobile thread flows across the client and runtime boundary. Native controls, OS storage
+timing and other app surfaces are outside its bounds. The
+[Lean proof](../verification/MobileThread.lean),
+[draft storage tests](../apps/mobile/src/tasks/draft/storage.test.ts), and
+[mobile fork browser fixture](../scripts/check-mobile-fork-browser.mjs) check draft preservation at
+the corresponding boundaries.
 
 ## Notification taps
 
@@ -315,6 +353,26 @@ those cases through workspace startup and checks the recovered journal, the auto
 and preservation of queued work. The flag is eligibility for automatic recovery. Preferences and
 provider availability are checked later. The separate process-kill test exercises dispatch.
 
+## Remote connections
+
+The [TLA+ connection model](../verification/tla/RemoteConnection.tla) checks route discovery and
+mobile reconnect. A LAN or VPN address must identify the paired computer before receiving its
+credential. An authorized Dovo Connect fallback carries its own credential. Discovery from a
+superseded pairing cannot publish an endpoint, and reconnect cannot resend an uncertain write.
+
+The mobile branch checks that pending tunnel setup loses ownership when the app backgrounds, the
+phone goes offline or changes networks, or the pairing is forgotten. If the pairing remains valid,
+the app stays in the foreground and the network stabilizes, fair setup and completion let a
+requested connection recover. TLC requires counterexamples for stale discovery, an unverified
+alternate address, a replayed write, and an obsolete tunnel publishing after invalidation.
+
+The model treats a public descriptor, paired connection, and completed encrypted tunnel as inputs.
+It abstracts probe deadlines, ICE candidate exchange, credential storage and transport
+implementation. [Lean connection boundaries](../verification/ConnectionBoundaries.lean) and
+[Bend laws](../verification/thread/RemoteConnection.bend) check endpoint selection and setup
+ownership. [Route tests](../packages/protocol/src/runtime/connection/routes.test.ts) ·
+[Mobile tunnel tests](../apps/mobile/src/runtime/connection/peer-transport.test.ts)
+
 ## Concurrent computer and pairing edits
 
 [RuntimeRegistry.lean](../verification/RuntimeRegistry.lean) checks the three-way merge used by
@@ -374,6 +432,77 @@ runtime behavior. [Holder client](../packages/runtime/src/terminal/holder-client
 
 When the first read's end cursor is still retained, the next read starts there and the two segment
 lengths add up to the full range. The theorem applies to raw replay offsets across reconnect.
+
+## Starting threads and subthreads
+
+The [TLA+ startup model](../verification/tla/ThreadStart.tla) checks four entry points.
+
+| Entry point               | What the model checks                                                                                                                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New thread and first send | The draft and bootstrap identity commit together. First-input acceptance is a separate durable step. Retrying after restart or a lost reply cannot accept the same input twice or recreate a deleted thread.                |
+| Side thread               | The parent must still be available at commit. A busy Git parent uses committed context, and an in-progress snapshot cannot commit once the parent starts. Execution checks the captured and current permission ceilings.    |
+| Independent fork          | Start in fork uses committed HEAD and rechecks the source at commit. A committed fork can run after the source is deleted. Deleted forks stay deleted.                                                                      |
+| Delegated agent           | A retry key belongs to one parent turn. Creating a child and admitting it to the executor are separate. A retired or replaced parent turn cannot admit its pending child, and the model enforces depth and capacity bounds. |
+
+TLC checks two payloads, two parent turns, two retry keys, and one active-child slot. The weakened
+configurations demonstrate a draft without its bootstrap record, a duplicate first input, a side
+thread or fork committed after its source becomes unavailable, a deleted fork recreated on retry, a
+side thread started after its parent’s permissions narrow, and a child admitted after its parent
+turn ends. The [Lean proofs](../verification/ThreadStart.lean) and
+[Bend laws](../verification/thread/ThreadStart.bend) also check the local admission decisions.
+
+New composer forks store the first request’s fingerprint alongside its copied input. A retry can
+acknowledge the fork even after the source and its attachments are deleted. Older forks still
+validate retries by comparing the original and copied inputs.
+
+These models cover application-owned starts. They abstract Git and scratch preparation, attachment
+copying, provider-native child discovery, and detailed permission values. The runtime suites
+exercise [first sends](../packages/runtime/src/http/endpoints/thread-start.test.ts),
+[side threads](../packages/runtime/src/agents/tasks/side-thread.test.ts),
+[independent forks](../packages/runtime/src/agents/tasks/quality-of-life.test.ts), and
+[delegated agents](../packages/runtime/src/agents/tasks/delegation.test.ts).
+
+## Thread lifecycle in TLA+
+
+The [thread lifecycle model](../verification/tla/ThreadLifecycle.tla) explores one ordinary thread
+family on its source runtime, with up to two queued inputs and two execution attempts. It follows
+draft creation, queue admission and pause, execution, waiting for input, completion, failed save and
+retry, restart and resume, snooze and wake, settling, archive, restore, deletion, and cleanup. The
+source-side handoff transitions block execution while a transfer is pending and after it moves. The
+[handoff model](../verification/tla/Handoff.tla) checks destination activation and fencing across
+runtimes.
+
+TLC checks the lifecycle invariants and requires four weakened configurations to fail. An old
+provider attempt can finish a newer turn, and an archive can commit after new input is queued.
+Worktree removal can also proceed after restore if it uses stale ownership or releases its
+reservation before Git finishes. The runtime checks ownership after the final terminal check and
+reserves the archived owners until Git finishes. The
+[worktree tests](../packages/runtime/src/scm/git/worktrees.test.ts) exercise restore before and
+during removal, including recovery when Git refuses removal.
+
+The model abstracts elapsed time, family membership and policy changes into eligibility events. It
+checks safety over those bounded transitions. Provider payloads, filesystem operations and
+cross-runtime transport are outside this model.
+
+## Browser preview lifetime
+
+The [Lean proof](../verification/BrowserPreview.lean) and
+[Bend laws](../verification/thread/BrowserPreview.bend) check that promotion preserves the page
+identity and that closing or evicting the opener leaves the promoted page intact. Studio can still
+dismiss an unpromoted preview.
+
+[TLC](../verification/tla/BrowserPreview.tla) explores both opener-loss paths alongside promotion,
+preview dismissal, and explicit tab closure. The weakened configuration uses Electron’s old
+opener-owned lifetime and produces a counterexample after promotion. The
+[native Electron regression](../scripts/check-browser-link-preview-native.mjs) runs the real browser
+code and checks that the same WebContents survives both ways of losing its opener.
+
+[Preview cleanup](../verification/tla/PreviewCleanup.tla) checks a separate lifecycle rule. When an
+activity result arrives, the renderer rechecks that the same preview is still inactive. The weakened
+model can close a preview the user reselected while the probe was pending. The
+[shared Browser fixture](../scripts/check-shared-browser-browser.mjs) holds an activity response
+while native focus reselects a preview, then checks that Studio closes the abandoned preview and
+keeps the selected one.
 
 ## Run the checks
 

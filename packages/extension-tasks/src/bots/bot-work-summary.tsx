@@ -29,7 +29,13 @@ function BotWorkControls({
 }) {
   const uiText = useInterfaceText()
   const { workspace, snapshot, connected, request } = useWorkspace()
-  const work = botWorkSummary(task, workspace.tasks, workspace.automations, snapshot?.runs ?? [])
+  const work = botWorkSummary(
+    task,
+    workspace.tasks,
+    workspace.automations,
+    snapshot?.runs ?? [],
+    snapshot?.runtimeId,
+  )
   const lastMessageId = task.messages.at(-1)?.id
   const [revision, setRevision] = useState<{ revision: string; lastMessageId: string }>()
   const [busy, setBusy] = useState(false)

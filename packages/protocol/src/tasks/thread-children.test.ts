@@ -63,7 +63,7 @@ it('shows an old mention copy under its caller on the sending computer', () => {
   })
 })
 
-it('treats a Bot calling itself as a subthread only on the same runtime', () => {
+it('shows a Bot call under the receiving Bot and preserves the cross-computer caller link', () => {
   const bot = task('bot', { bot: botMetadata })
   const call = task('call', {
     botMention: {
@@ -82,7 +82,10 @@ it('treats a Bot calling itself as a subthread only on the same runtime', () => 
     tasks: [bot, call, self],
   }
   const caller = { runtimeId: 'caller-profile', runtimeIdentity: 'caller', tasks: [bot] }
-  expect(threadChildren([owner, caller], { ...owner, id: 'bot' })).toEqual([])
+  expect(threadChildren([owner, caller], { ...owner, id: 'bot' })).toMatchObject([
+    { task: { id: 'call' }, runtimeId: 'destination-profile' },
+    { task: { id: 'self' }, runtimeId: 'destination-profile' },
+  ])
   expect(threadChildren([owner, caller], { ...caller, id: 'bot' })).toMatchObject([
     { task: { id: 'call' }, runtimeId: 'destination-profile' },
   ])

@@ -9,7 +9,12 @@ import {
 import type { TaskMetadata } from './task-summary.js'
 import { taskFailureVersion, threadFailureKey, threadNativeAgents } from './subagent-failures.js'
 import type { RuntimeSnapshot } from '../runtime/connection/runtime.js'
-import { botInvocationParent, botProjectThread, spawnedThreadWatch } from './thread-parent.js'
+import {
+  botInvocationParent,
+  botProjectThread,
+  invokedBotId,
+  spawnedThreadWatch,
+} from './thread-parent.js'
 
 export type ThreadTreeEntry = {
   key: string
@@ -273,9 +278,18 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   const hiddenRoots = new Set<string>()
   // Local delegation is authoritative when a remote monitor also refers to the same child.
   for (const entry of entries) {
-    const identity = knownIdentity(entry) ?? entry.source.runtimeId
-    const invocation = botInvocationParent(entry.task, knownIdentity(entry))
+    const ownerIdentity = knownIdentity(entry)
+    const identity = ownerIdentity ?? entry.source.runtimeId
+    const invocation = botInvocationParent(entry.task, ownerIdentity)
     if (invocation) {
+      const botId = invokedBotId(entry.task, ownerIdentity)
+      if (botId && ownerIdentity) {
+        const botKey = resolvePortableKey(ownerIdentity, botId)
+        if (botKey !== entry.key && entryByKey.get(botKey)?.task.bot) {
+          attach(botKey, entry.key)
+          continue
+        }
+      }
       const caller = invocation.runtimeIdentity
         ? resolvePortableKey(invocation.runtimeIdentity, invocation.threadId)
         : resolveThreadKey(identity, invocation.threadId)

@@ -1,4 +1,3 @@
-import { QueueTemplates } from './queue-templates'
 import { NativeGoal } from './native-goal'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -279,7 +278,6 @@ export function ComposerActivity(props: { task: Task; attached?: boolean }) {
     <>
       <NativeGoal key={`${props.task.id}:${props.task.sessionId}`} task={props.task} />
       <QueuedActivity {...props} />
-      <QueueTemplates key={`${props.task.repositoryId}:${props.task.id}`} task={props.task} />
     </>
   )
 }

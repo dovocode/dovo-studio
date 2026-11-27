@@ -261,10 +261,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        return yield* s.tasks.withCheckoutMutationEffect(
-          worktree,
-          removeWorktreeEffect(s, worktree, orphanOnly),
-        )
+        return yield* removeWorktreeEffect(s, worktree, orphanOnly)
       }
       if (method === 'POST' && path === '/api/scm/source/identity') {
         const input = decode(forgeSourceIdentityQuerySchema, yield* serviceResult(body(request)))

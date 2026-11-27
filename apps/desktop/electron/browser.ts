@@ -1573,6 +1573,9 @@ export function registerBrowser(
           return { action: 'deny' }
         return {
           action: 'allow',
+          // Studio owns preview cleanup. Electron must not destroy a promoted tab
+          // when its opener closes or its inactive renderer is evicted.
+          outlivesOpener: true,
           createWindow: (options) => {
             const childKey = `${created.key.slice(0, created.key.lastIndexOf(':') + 1)}${randomUUID()}`
             const child = createEntry(

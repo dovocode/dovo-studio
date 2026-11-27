@@ -1995,12 +1995,7 @@ export function taskLifecycle(
             )
           )
             continue
-          const result = yield* Effect.result(
-            s.tasks.withCheckoutMutationEffect(
-              entry.path,
-              removeWorktreeEffect(s, entry.path, true),
-            ),
-          )
+          const result = yield* Effect.result(removeWorktreeEffect(s, entry.path, true))
           if (result._tag === 'Failure') {
             console.error(`Could not remove orphaned worktree ${entry.path}`, result.failure)
             s.activity.add(

@@ -186,7 +186,7 @@ const watchedBot = owner => ({
     offline: false,
   }],
 });
-const workspace=owner=>({version:1,runtimeAddress:'http://'+owner+'.lan',tasks:[watchedBot(owner),task('chat','Normal chat '+owner,false),{...task('child','Delegated work '+owner,false),delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'x'}}],agents:[{...harness,id:'backup',name:'Backup',model:'backup-model'}],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}],automations:[]});
+const workspace=owner=>({version:1,runtimeAddress:'http://'+owner+'.lan',tasks:[watchedBot(owner),task('chat','Normal chat '+owner,false),{...task('child','Delegated work '+owner,false),delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'x'}},...(owner==='one'?[{...task('bot-call','Review requested from another computer',false),status:'running',activeRunId:'call-run',botMention:{runtimeId:owner,botId:'bot',sourceRuntimeId:'two',sourceTaskId:'chat',sourceMessageId:'call'}}]:[])],agents:[{...harness,id:'backup',name:'Backup',model:'backup-model'}],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}],automations:[]});
 const initial={one:workspace('one'),two:workspace('two')};
 function OwnerProbe(){const scope=useWorkspace();window.ownerProbe={id:scope.activeRuntimeId,read:()=>scope.request('/api/fixture/agent',{},Schema.Unknown)};return null}
 // Hold the context commit separately from switchRuntime's promise, as React can do.
@@ -350,7 +350,7 @@ try {
   )
   assert.equal(await page.locator('[data-bot-row="child"]').count(), 0)
   await page
-    .locator('[data-bot-row="bot"] [title="Subthreads for Release Bot one, 2"]')
+    .locator('[data-bot-row="bot"] [title="Subthreads for Release Bot one, 3"]')
     .first()
     .waitFor()
   assert.equal(await page.getByLabel('Related threads', { exact: true }).count(), 0)
@@ -365,7 +365,10 @@ try {
   const workOverview = page.getByRole('region', { name: 'Bot work overview' })
   await workOverview.getByRole('button', { name: 'Routines · 0', exact: true }).click()
   await page.getByText(/No routines target this Bot/).waitFor()
-  await workOverview.getByRole('button', { name: 'Workers · 0 active', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Review requested from another computer · Working' })
+    .waitFor()
+  await workOverview.getByRole('button', { name: 'Workers · 1 active', exact: true }).click()
   await page.getByRole('button', { name: 'Open native Claude thread', exact: true }).waitFor()
   await composer().pressSequentially('@Release')
   const botMention = page.getByRole('option').filter({ hasText: 'Release Bot two' })

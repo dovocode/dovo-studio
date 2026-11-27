@@ -191,8 +191,12 @@ export function listWorktreesEffect(s: WorktreeServices) {
 
 /** Removes a worktree whose task is archived or deleted. Uncommitted changes, active tasks and
  * live terminal shells are refused; the branch is always kept so no commits are lost. */
-export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOnly = false) {
-  return runtimeProgram(
+export function removeWorktreeEffect(
+  s: WorktreeServices & Pick<Services, 'tasks'>,
+  path: string,
+  orphanOnly = false,
+) {
+  const remove = runtimeProgram(
     Effect.gen(function* () {
       const { worktrees, root } = yield* listWorktreesEffect(s)
       const entry = worktrees.find((item) => item.path === path)
@@ -211,6 +215,7 @@ export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOn
         )
       const repository = s.store.get().repositories.find((item) => item.id === entry.repositoryId)
       if (!repository) throw new HttpError(404, 'Repository not found')
+      // Keep the checkout lock until Git exits, even if the request is interrupted.
       yield* runtimeOperation(async () => {
         const { path: top } = await s.git.inspect(repository.path)
         const common = (
@@ -222,7 +227,9 @@ export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOn
             'This worktree has uncommitted changes. Commit or discard them before removing it.',
           )
         const branch = `refs/heads/${entry.branch}`
-        // Git inspection yields; references must be checked against the latest workspace.
+        // Shell and Git inspection both yield. Check owners after the final await.
+        const opened = await liveShellTitles(s, path)
+        if (opened.length) throw shellInUse(opened)
         const owners = s.store
           .get()
           .tasks.filter((task) =>
@@ -235,13 +242,15 @@ export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOn
             409,
             'This worktree belongs to an active task. Archive the task first.',
           )
-        // A shell may have opened here while Git was inspecting; check right before removal.
-        const opened = await liveShellTitles(s, path)
-        if (opened.length) throw shellInUse(opened)
-        // No --force: git itself refuses anything that became dirty or locked meanwhile.
-        // A prunable entry's directory is already gone; only its registration remains.
-        await s.git.command(top, ['worktree', 'remove', path])
-        s.store.forgetWorktree(common, path)
+        const ids = owners.map((task) => task.id)
+        const reservation = s.tasks.reserveDeletion(ids)
+        try {
+          // No --force: Git refuses a checkout that became dirty or locked.
+          await s.git.command(top, ['worktree', 'remove', path])
+          s.store.forgetWorktree(common, path)
+        } finally {
+          s.tasks.releaseDeletion(ids, reservation)
+        }
         // Tidy the now-empty <owner> folder, but never the worktrees root itself.
         const parent = dirname(path)
         if (withinWorktrees(parent, root)) {
@@ -262,8 +271,9 @@ export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOn
               throw error
             })
         }
-      })
+      }).pipe(Effect.uninterruptible)
       return { ok: true }
     }),
   )
+  return s.tasks.withCheckoutMutationEffect(path, remove)
 }

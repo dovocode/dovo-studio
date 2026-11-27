@@ -1210,7 +1210,7 @@ it('hides isolated scheduled Bot workers and their descendants from overview roo
   }
 })
 
-it('only nests Bot self-calls and thread-created threads in the subthread tree', () => {
+it('nests executed Bot calls under the receiving Bot and leaves mention copies with their callers', () => {
   const bot = task('bot', {
     bot: {
       role: 'Coordinator',
@@ -1231,6 +1231,8 @@ it('only nests Bot self-calls and thread-created threads in the subthread tree',
     bot,
     task('caller'),
     task('side-call', { botMention: call }),
+    task('local-invocation', { botMention: { ...call, sourceRuntimeId: 'computer' } }),
+    task('remote-invocation', { botMention: { ...call, sourceRuntimeId: 'remote' } }),
     task('self-call', { botMention: { ...call, sourceTaskId: 'bot' } }),
     task('thread-child', { spawnParent: { runtimeId: 'computer', threadId: 'caller' } }),
     task('project-work', {
@@ -1256,7 +1258,12 @@ it('only nests Bot self-calls and thread-created threads in the subthread tree',
   expect(tree.nodes.get(key('profile', 'caller'))?.children).toMatchObject([
     { threadId: 'thread-child' },
   ])
-  expect(tree.nodes.get(key('profile', 'bot'))?.children).toMatchObject([{ threadId: 'self-call' }])
+  expect(
+    tree.nodes
+      .get(key('profile', 'bot'))
+      ?.children.map((child) => child.threadId)
+      .sort(),
+  ).toEqual(['local-invocation', 'remote-invocation', 'self-call'])
 })
 
 it('leaves Bot work visible when its exact parent is a known ordinary thread', () => {

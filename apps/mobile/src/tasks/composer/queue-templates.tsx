@@ -1,30 +1,35 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { queueTemplateSource, type Task } from '@dovo/protocol'
 import { useQueueTemplates } from '@dovo/studio-core/queue-templates'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { TextInput, View } from 'react-native'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
+import type { MenuAction } from '../../ui/controls/action-menu'
 import { Choice } from '../../ui/controls/choice'
 import { Text } from '../../ui/content/text'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 
-export function QueueTemplates({ task }: { task: Task }) {
+export function QueueTemplates({
+  task,
+  children,
+}: {
+  task: Task
+  children: (action?: MenuAction) => ReactNode
+}) {
   const uiText = useInterfaceText()
   const { styles, colors } = useTheme()
   const { snapshot, connected, read, call } = useRuntime()
   const templates = useQueueTemplates(task.id, task.repositoryId, read, call)
   const [name, setName] = useState('')
   const [deleting, setDeleting] = useState('')
-  if (
-    !snapshot?.queueTemplatesSupported ||
-    task.archived ||
-    task.archivedAt ||
-    task.machineHandoff ||
-    !snapshot.workspace.repositories.some((project) => project.id === task.repositoryId)
-  )
-    return null
+  const available =
+    snapshot?.queueTemplatesSupported &&
+    !task.archived &&
+    !task.archivedAt &&
+    !task.machineHandoff &&
+    snapshot.workspace.repositories.some((project) => project.id === task.repositoryId)
   const source = templates.open
     ? queueTemplateSource(
         snapshot?.workspace.tasks.find((item) => item.id === task.id)?.queue ?? [],
@@ -34,15 +39,18 @@ export function QueueTemplates({ task }: { task: Task }) {
   const confirmDelete = deleting === templates.selected?.id
   return (
     <>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Action
-          secondary
-          label={uiText('Queue templates')}
-          onPress={templates.show}
-          disabled={!connected}
-        />
-      </View>
-      {templates.open && (
+      {children(
+        available
+          ? {
+              title: uiText('Queue templates'),
+              label: uiText('Queue templates'),
+              icon: 'checklist',
+              disabled: !connected,
+              onPress: templates.show,
+            }
+          : undefined,
+      )}
+      {available && templates.open && (
         <Sheet title={uiText('Queue templates')} onClose={templates.close}>
           <View style={{ gap: 10 }}>
             <Text style={styles.muted}>

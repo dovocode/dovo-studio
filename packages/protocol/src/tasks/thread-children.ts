@@ -1,5 +1,5 @@
 import type { TaskMetadata } from './task-summary.js'
-import { botInvocationParent, mentionSourceTitle } from './thread-parent.js'
+import { botInvocationParent, invokedBotId, mentionSourceTitle } from './thread-parent.js'
 
 type ChildMetadata = Pick<
   TaskMetadata,
@@ -45,7 +45,9 @@ export function threadChildren<T extends ChildMetadata>(
             ? invocation.runtimeIdentity === parent.runtimeIdentity
             : !task.botMention?.sourceRuntimeId && local)
         const botChild =
-          (task.botConversation?.botId ?? task.botJob?.botId) === parent.id &&
+          (task.botConversation?.botId ??
+            task.botJob?.botId ??
+            invokedBotId(task, source.runtimeIdentity)) === parent.id &&
           (!parentTask || !!parentTask.bot) &&
           local
         if (local && task.id === parent.id) return []

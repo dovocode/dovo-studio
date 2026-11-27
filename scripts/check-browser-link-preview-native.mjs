@@ -71,7 +71,7 @@ globalThis.ready=app.whenReady().then(async()=>{
 writeFileSync(process.env.DOVO_SETTINGS_PATH!,JSON.stringify({app:{browserWorkspaceEnabled:true,browserProfiles:[{id:'default',name:'Default'}]}}));
 const host=createStudioWindow({width:900,height:700,frame:false,webPreferences:{preload:${JSON.stringify(join(directory, 'preload.cjs'))},sandbox:true,contextIsolation:true,nodeIntegration:false}});
 void host.loadURL('about:blank');
-registerBrowser(${JSON.stringify(index)});const ui=studioContents(host);globalThis.fixture={host,ui,views:()=>host.contentView.children.filter(v=>v instanceof WebContentsView&&v.webContents!==ui)};await ui.loadFile(${JSON.stringify(index)});
+registerBrowser(${JSON.stringify(index)});const ui=studioContents(host);const now=Date.now;globalThis.fixture={host,ui,setClockOffset:(ms:number)=>{Date.now=ms?()=>now()+ms:now},views:()=>host.contentView.children.filter(v=>v instanceof WebContentsView&&v.webContents!==ui)};await ui.loadFile(${JSON.stringify(index)});
 });`,
   )
   const { build: buildMain } = await import(require.resolve('vite'))
@@ -315,21 +315,81 @@ registerBrowser(${JSON.stringify(index)});const ui=studioContents(host);globalTh
   await call({ action: 'hide', key: created.key })
   assert((await read()).every((view) => !view.visible))
   await call(childCommand)
+  // Promote the actual Chromium child, then close its opener.
+  const childId = (await read()).find((view) => view.url.endsWith('/child')).id
+  await child.locator('#draft').fill('Keep the promoted page')
+  await layout(false)
+  const promotedCommand = { ...childCommand, background: undefined, bounds: sourceCommand.bounds }
+  await call(promotedCommand)
+  assert.equal((await read()).find((view) => view.id === sourceId).visible, false)
+  await call({ action: 'close', key: sourceCommand.key })
+  views = await read()
+  assert.equal(
+    views.some((view) => view.id === sourceId),
+    false,
+    'The opener was closed',
+  )
+  assert.equal(
+    views.find((view) => view.id === childId)?.visible,
+    true,
+    'The original promoted WebContents survives closing its opener',
+  )
+  assert.equal(await child.locator('#draft').inputValue(), 'Keep the promoted page')
+  await call(sourceCommand)
+  await layout(true)
+  await call(childCommand)
   await call({ action: 'close', key: created.key })
   assert(
     (await read()).every((view) => !view.visible),
     'Closing the active preview retires its background too',
   )
-  await call(childCommand)
-  // Promotion removes the retained opener without replacing the child WebContents.
-  const childId = (await read()).find((view) => view.url.endsWith('/child')).id
+  // Repeat with an unedited opener so it can be evicted by the normal idle cache.
+  await call(sourceCommand)
+  const idleSource = app
+    .context()
+    .pages()
+    .find((page) => page.url() === sourceCommand.url)
+  assert(idleSource)
+  const idleSourceId = (await read()).find((view) => view.url === sourceCommand.url).id
+  await idleSource.getByText('Open child', { exact: true }).click()
+  await ui.waitForFunction(async (key) => {
+    const state = await window.bridge.browser({ action: 'status', key })
+    window.idleChildKey = state?.createdTabs?.[0]?.key ?? window.idleChildKey
+    return !!window.idleChildKey
+  }, sourceCommand.key)
+  const idleChildKey = await ui.evaluate(() => window.idleChildKey)
+  await layout(true)
+  await call({ ...childCommand, key: idleChildKey })
+  const idleChildId = (await read()).find((view) => view.url === childCommand.url).id
   await layout(false)
-  await call({ ...childCommand, background: undefined, bounds: sourceCommand.bounds })
-  views = await read()
-  assert.equal(views.find((view) => view.id === sourceId).visible, false)
-  assert.equal(views.find((view) => view.id === childId).visible, true)
+  const promotedIdleChild = { ...promotedCommand, key: idleChildKey }
+  await call(promotedIdleChild)
+  await app.evaluate((_electron, id) => {
+    // Electron reports the fixture's automated view as captured. Model an idle,
+    // uncaptured opener so the real cache cleanup can reach it.
+    const source = globalThis.fixture.views().find((view) => view.webContents.id === id)
+    source.webContents.isBeingCaptured = () => false
+    globalThis.fixture.setClockOffset(6 * 60_000)
+  }, idleSourceId)
+  try {
+    // Showing the selected tab runs the same prune function as the periodic sweep.
+    await call(promotedIdleChild)
+    views = await read()
+    assert.equal(
+      views.some((view) => view.id === idleSourceId),
+      false,
+      'The opener was evicted',
+    )
+    assert.equal(
+      views.find((view) => view.id === idleChildId)?.visible,
+      true,
+      'The original promoted WebContents survives opener eviction',
+    )
+  } finally {
+    await app.evaluate(() => globalThis.fixture.setClockOffset(0))
+  }
   console.log(
-    'Native live link previews passed: real _blank opener, live animation, drafts, overlay controls, resize, hide, close and promotion identity.' +
+    'Native live link previews passed: real _blank opener, live animation, drafts, overlay controls, resize, hide, close and promotion that survives opener closure and eviction.' +
       (nativeInput
         ? ' X11 mouse presses, typing and background return passed.'
         : ' Native pointer and typing checks require Linux with X11.'),

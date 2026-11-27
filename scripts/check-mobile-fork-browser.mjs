@@ -181,6 +181,31 @@ try {
   await page.waitForFunction(() => !window.fork.busy && window.navigations.length === 1)
   assert.equal(await input.inputValue(), '')
   assert.equal(await page.evaluate(() => Object.keys(window.server.forks).length), 2)
+  await input.fill('Retyped fork draft')
+  await page.evaluate(() => {
+    window.mode = 'lost'
+  })
+  await page.getByRole('button', { name: 'Fork', exact: true }).click()
+  await page.waitForFunction(() => !window.fork.busy && window.fork.error.includes('Response lost'))
+  const retypedRequest = await page.evaluate(() => window.requests.at(-1).input)
+  const waitForStoredDraft = (text) =>
+    page.waitForFunction((value) => {
+      const raw = localStorage.getItem('dovo.draft.computer-a.task')
+      return raw && JSON.parse(raw.slice('dovo-draft-record-v1:'.length)).text === value
+    }, text)
+  await input.fill('New direction')
+  await waitForStoredDraft('New direction')
+  await input.fill('Retyped fork draft')
+  await waitForStoredDraft('Retyped fork draft')
+  await mount()
+  await page.waitForFunction(() => window.finish)
+  assert.deepEqual(await page.evaluate(() => window.requests[0].input), retypedRequest)
+  await page.evaluate(() => {
+    window.mode = 'success'
+    window.finish()
+  })
+  await page.waitForFunction(() => !window.fork.busy && window.navigations.length === 1)
+  assert.equal(await input.inputValue(), 'Retyped fork draft')
   // If cleanup fails after acceptance, retry never resends or clears a follow-up.
   await input.fill('Cleanup fork')
   await page.evaluate(() => {

@@ -55,6 +55,15 @@ is no longer stored, the fork keeps the message without that file.
 
 Dovo does not change files in the source checkout when it creates a fork.
 
+**New thread in this worktree** starts an empty conversation in the existing checkout. **Fork
+worktree** starts an empty conversation in a new checkout with a snapshot of the source files. If
+the source thread or checkout changes while Dovo prepares the draft, Dovo asks you to try again.
+This includes a Git commit made while **Fork worktree** takes its snapshot.
+
+On mobile, if the reply to a composer fork is lost, Dovo can retry the same fork when you reopen its
+thread. Any draft you edited while waiting stays in the source thread, even if you typed the
+original wording again.
+
 ## How the agent receives the history
 
 The fork has no provider session. Its first turn starts a fresh session and sends the copied

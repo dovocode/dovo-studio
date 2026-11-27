@@ -3,6 +3,7 @@ import { automationRunNeedsReview, type JobRun } from '../runtime/connection/run
 import type { TaskMetadata } from './task-summary.js'
 import { taskSubagents, indexTaskFamilyWorking } from './delegation.js'
 import { automationScheduleChoices } from '../automation/triggers.js'
+import { invokedBotId } from './thread-parent.js'
 
 export const botRunStatusLabels = {
   running: 'Working',
@@ -64,12 +65,20 @@ export function botRoutines(
     }))
 }
 
+function isBotWorker(task: TaskMetadata, botId: string, runtimeIdentity?: string) {
+  return (
+    task.id !== botId &&
+    (task.botJob?.botId === botId || invokedBotId(task, runtimeIdentity) === botId)
+  )
+}
+
 /** Derive from the host snapshot; a finished routine turn does not finish its workers. */
 export function botWorkSummary(
   task: TaskMetadata,
   tasks: readonly TaskMetadata[],
   automations: readonly Automation[],
   runs: readonly JobRun[],
+  runtimeIdentity?: string,
 ) {
   const routines = botRoutines(task.id, automations, runs)
   const relevant = routines.flatMap((routine) => routine.runs)
@@ -85,7 +94,8 @@ export function botWorkSummary(
     failed: routines.filter((routine) => routine.runs[0]?.status === 'failed').length,
     workers:
       taskSubagents(task, tasks, true).length +
-      tasks.filter((t) => t.botJob?.botId === task.id && t.status === 'running').length +
+      tasks.filter((t) => isBotWorker(t, task.id, runtimeIdentity) && t.status === 'running')
+        .length +
       remote.filter((watch) => !watch.offline && !watch.paused).length,
     offlineWorkers: remote.filter((watch) => watch.offline).length,
   }
@@ -116,11 +126,14 @@ export function botWorkInbox(
   automations: readonly Automation[],
   runs: readonly JobRun[],
   pendingTaskIds: readonly string[] = [],
+  runtimeIdentity?: string,
 ) {
   const children = taskSubagents(task, tasks).flatMap((child) =>
     child.source === 'dovo' ? [child.taskId ?? child.id] : [],
   )
-  const workers = tasks.filter((t) => t.botJob?.botId === task.id || children.includes(t.id))
+  const workers = tasks.filter(
+    (t) => isBotWorker(t, task.id, runtimeIdentity) || children.includes(t.id),
+  )
   const ids = new Set(workers.flatMap((t) => (t.botJob ? [t.botJob.runId] : [])))
   const flows = new Set(botRoutines(task.id, automations, []).map((r) => r.flow.id))
   const familyWorking = indexTaskFamilyWorking(tasks)

@@ -954,6 +954,52 @@ it('conditionally clears fork text against latest published keystrokes rather th
   expect(await drafts.read('runtime.task')).toBe(fork.draftText)
 })
 
+it('preserves an edited draft that matches the original fork text when the reply arrives', async () => {
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  const key = 'runtime.task'
+  await drafts.write(key, fork.draftText)
+  await runClientEffect(drafts.stageForkEffect(key, fork, ''))
+  await drafts.write(key, 'A different direction')
+  await drafts.write(key, fork.draftText)
+
+  const reopened = createDraftStorage(storage)
+  const retry = await runClientEffect(reopened.stageForkEffect(key, fork, ''))
+  expect(retry.id).toBe(fork.id)
+  await runClientEffect(reopened.confirmForkEffect(key, retry.id))
+  await runClientEffect(reopened.finishForkEffect(key, retry.id))
+  expect(await createDraftStorage(storage).read(key)).toBe(fork.draftText)
+})
+
+it('preserves retyped fork text published while confirmation waits for draft storage', async () => {
+  const storage = memoryStorage()
+  const entered = gate()
+  const release = gate()
+  let blocked = false
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      if (blocked) {
+        entered.resolve()
+        await release.promise
+      }
+      await storage.setItem(key, value)
+    },
+  })
+  const key = 'runtime.task'
+  await drafts.write(key, fork.draftText)
+  blocked = true
+  const staging = runClientEffect(drafts.stageForkEffect(key, fork, ''))
+  await entered.promise
+  const confirmation = runClientEffect(drafts.confirmForkEffect(key, fork.id))
+  const editing = drafts.write(key, 'New direction')
+  const retyping = drafts.write(key, fork.draftText)
+  release.resolve()
+  await Promise.all([staging, confirmation, editing, retyping])
+
+  expect(await createDraftStorage(storage).read(key)).toBe(fork.draftText)
+})
+
 it('stores fork acceptance with conditional clearing and retries failed disk writes without clearing newer input', async () => {
   const base = memoryStorage()
   let fail = false

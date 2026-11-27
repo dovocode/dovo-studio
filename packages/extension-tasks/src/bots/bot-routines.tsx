@@ -20,6 +20,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
         [...(snapshot?.approvals ?? []), ...(snapshot?.questions ?? [])].map(
           (input) => input.taskId,
         ),
+        snapshot?.runtimeId,
       )
     : []
   const open = (automationId: string, runId?: string) =>
