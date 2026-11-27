@@ -231,16 +231,27 @@ try {
       if (mobile) for (const listener of window.appStateListeners) listener('background')
       else window.dispatchEvent(new Event('pagehide'))
     }, mobile)
-    await page.waitForFunction(async () => {
+    // Playwright stops polling when the predicate returns a Promise, even if it resolves to false.
+    await page.evaluate(async () => {
       const { browserReadCache } = await window.cacheModule
       const { runtimeSnapshotCacheSchema } = await window.protocolModule
-      return (
-        await Promise.all(
-          window.profiles.map((profile) =>
-            browserReadCache(profile.connection).read('snapshot', runtimeSnapshotCacheSchema),
-          ),
+      const caches = window.profiles.map((profile) => ({
+        name: profile.name,
+        cache: browserReadCache(profile.connection),
+      }))
+      const deadline = performance.now() + 10000
+      for (;;) {
+        const snapshots = await Promise.all(
+          caches.map(({ cache }) => cache.read('snapshot', runtimeSnapshotCacheSchema)),
         )
-      ).every(Boolean)
+        const missing = caches.filter((_, index) => !snapshots[index])
+        if (missing.length === 0) return
+        if (performance.now() >= deadline)
+          throw new Error(
+            `Offline snapshots were not saved for ${missing.map(({ name }) => name).join(', ')}`,
+          )
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
     })
     await page.reload()
     await page.evaluate(() => (window.startupOffline = true))
