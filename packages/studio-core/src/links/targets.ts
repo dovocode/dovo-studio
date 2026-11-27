@@ -5,7 +5,12 @@ import {
   runtimeComputerName,
   type RuntimeOverview,
 } from '@dovo/protocol'
-export type LinkOrigin = { runtimeId?: string; repositoryId?: string; jiraSourceId?: string }
+export type LinkOrigin = {
+  runtimeId?: string
+  repositoryId?: string
+  jiraSourceId?: string
+  taskId?: string
+}
 export type LinkTarget = {
   label: string
   runtimeId: string

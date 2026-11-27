@@ -11,6 +11,7 @@ import {
   localMarkdownLine,
   taskImageReadSchema,
   richMarkdown,
+  markdownWithReferencePrefix,
   cachedMarkdownParts,
   localMarkdownPath,
   markdownFileName,
@@ -314,7 +315,7 @@ export function TaskMessageResponse({
               previewLink={previewLink}
               referenceResources={referenceResources}
             >
-              {part.text}
+              {markdownWithReferencePrefix(part.text, part.referencePrefix)}
             </MessageResponse>
           ) : part.kind === 'visualization' ? (
             <TaskVisualization taskId={taskId} path={part.path} label={part.label} />

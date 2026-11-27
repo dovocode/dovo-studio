@@ -57,6 +57,12 @@ export const pullSummarySchema = mutableStruct({
   head: Schema.String,
   base: Schema.String,
   labels: mutableArray(Schema.String),
+  labelColors: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.String.pipe(Schema.check(Schema.isPattern(/^#[0-9a-f]{6}$/i))),
+    ),
+  ),
   viewerIsAuthor: Schema.optional(Schema.Boolean),
   viewerIsAssigned: Schema.optional(Schema.Boolean),
   viewerIsInvolved: Schema.optional(Schema.Boolean),

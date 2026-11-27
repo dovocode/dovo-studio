@@ -625,6 +625,17 @@ In **Edit pull request**, use **Description checklist** to toggle tasks in the d
 the pull request. Each checkbox edits its own Markdown marker, including when two tasks have the
 same label.
 
+Reference-style links in pull request descriptions keep their destinations across images and code
+blocks, including when the last code fence is still open.
+
+In **PR filters**, choose **Add label** to show pull requests that have every selected label. Each
+selection shows its count among loaded pull requests before text search. Saved views remember the
+selected labels. Remove a label individually or choose **Clear labels**.
+
+In **Work → Linear issues**, expand an issue to change its status or post a comment. The actions use
+the selected computer's Linear connection. Older runtimes keep the issue preview and **Open in
+Linear** action.
+
 GitHub.com issue details load the issue and each comment page with one GraphQL query.
 
 To use different GitHub users for different projects, add a named connection in **Settings → Source
@@ -978,11 +989,17 @@ activity history remain available in these sections.
 Task triage: pinned tasks come first, then requests needing input, failures, running tasks, and
 recent activity. Settle moves a task to the collapsed Settled section (stored compatibly as
 `archived`); Reopen or sending a message returns it. Drafting leaves it settled. Reopening shows the
-latest message and follows new messages while history preloads; scrolling up pauses following.
-Archived threads still require Restore before sending. Snooze hides a task in Snoozed until its
-deadline, with presets of 1 hour, 4 hours, 24 hours, 2 days, 3 days and 7 days. Manual Unsnooze is
-available at any time. Snoozing does not stop a running agent. Hover or focus a row for project,
-branch, host, model, queue, and terminal-session details.
+latest message and follows new messages while history preloads; scrolling up pauses following. With
+inactivity settling enabled, a completed child can move to Settled once its parent holds the current
+result. The parent can stay active or pinned, and its saved result remains available. Archived
+threads still require Restore before sending. Snooze hides a task in Snoozed until its deadline,
+with presets of 1 hour, 4 hours, 24 hours, 2 days, 3 days and 7 days. Manual Unsnooze is available
+at any time. Snoozing does not stop a running agent. Hover or focus a row for project, branch, host,
+model, queue, and terminal-session details.
+
+To resume a stopped child, open the child thread, write a follow-up, and choose **Resume child with
+message**. Studio runs that message and keeps earlier child prompts paused. An idle parent picks up
+the new result automatically if its queue is active. A paused parent keeps the result in its inbox.
 
 When you load earlier messages, history stays in conversation order. If an older page and a retained
 conversation window contain the same message, Dovo shows it once and keeps the newer copy.
@@ -1126,14 +1143,14 @@ runtime as their destination. Historical turns without a recorded host show an u
 rather than attributing them to the currently connected runtime. Task rows reserve space for the
 device beside the branch.
 
-Local file links in task chat (absolute paths, relative checkout paths, and `file://` URLs) open a
-preview served by the connected runtime on desktop/web and mobile. Source line suffixes are removed
-from the file lookup. Images render inline; mobile image previews also offer the original file. The
-preview page renders images, text and sandboxed HTML, and PDFs and offers **Download original**;
-unsupported formats retain the download action. Files outside the checkout must be explicitly linked
-by the assistant in that thread. Preview URLs expire after 15 minutes, contain no device token, and
-stop working when the device is revoked. Opening a chat file never creates a checkout or runs its
-setup. HTTP runtime connections remain supported.
+Local file links in task chat (absolute paths, relative checkout paths, `file://` URLs, and
+`sandbox:/` file links) open a preview served by the connected runtime on desktop/web and mobile.
+Source line suffixes are removed from the file lookup. Images render inline; mobile image previews
+also offer the original file. The preview page renders images, text and sandboxed HTML, and PDFs and
+offers **Download original**; unsupported formats retain the download action. Files outside the
+checkout must be explicitly linked by the assistant in that thread. Preview URLs expire after 15
+minutes, contain no device token, and stop working when the device is revoked. Opening a chat file
+never creates a checkout or runs its setup. HTTP runtime connections remain supported.
 
 In a thread’s **Files** workspace, use **Preview folder** on a folder row to browse from that
 folder. Open a file to preview it beside the tree on desktop, web, and wide mobile layouts. On a
@@ -1412,12 +1429,15 @@ in-app preview sheet with browser/download fallbacks and applications on the run
 Images retain the existing native mobile image viewer. Videos have playback controls. PDFs use
 self-hosted PDF.js with page navigation and zoom, loading one page at a time without an external
 viewer service. File access uses the existing paired connection and scoped, expiring URLs; HTTP
-LAN/VPN connections remain supported. HTML/SVG file previews remain sandboxed.
+LAN/VPN connections remain supported. HTML/SVG file previews remain sandboxed. EPUB attachments keep
+their headers, footers and paragraphs separate in the text preview.
 
 Valid Codex file citations render as file links with source line ranges. Valid artifact-template
 directives render as template cards. Use template appends a prompt to the current composer draft
 without sending it; standalone Markdown surfaces offer Copy template prompt instead. Invalid or
-unfinished directives and examples inside code remain literal text.
+unfinished directives and examples inside code remain literal text. On iOS and Android, select text
+in a finished assistant reply and choose **Add quote to draft**. The citation keeps the selected
+text and a reference to the reply.
 
 ### Desktop windows and runtime connections
 
@@ -1470,8 +1490,9 @@ highlights followed by the complete changelog.
 The desktop/web composer supports rich editing and a **Markdown source** toggle (`Mod+Shift+M`).
 Formatting controls operate on the Markdown draft sent to the agent. Unedited blocks retain their
 original source; unsupported constructs stay editable in source mode. The preferred mode is saved in
-conversation settings. Draft recovery checks that the submitted draft is still current before a late
-send acknowledgement can clear it.
+conversation settings. In a rich list, use **Tab** to nest an item under the previous item and
+**Shift+Tab** to lift a nested item. Numbered lists update as you move items. Draft recovery checks
+that the submitted draft is still current before a late send acknowledgement can clear it.
 
 ## Import terminal Pi sessions
 

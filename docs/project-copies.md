@@ -22,10 +22,12 @@ runtime on the destination's loopback interface; normal Dovo device authenticati
 A project-checkout copy gets a new, unique folder under `~/.dovo/projects` on the destination. It
 includes the project checkout's files, local Git branches/tags and commits, staged changes,
 uncommitted edits and untracked files. A Git remote and a GitHub push are not required. Ignored and
-private configuration files are optional and unchecked by default. Generated untracked folders are
-excluded. Symbolic links are skipped with a visible count; projects with submodules must copy those
-separately. Git repositories need an initial commit. Hooks, Git credentials and chats are not
-copied.
+private configuration files are optional and unchecked by default. Use **Search files** to filter
+the list by path. Files you select stay selected when the search hides them. On desktop, press
+Escape in a populated search field to clear it, then press Escape again to close the dialog.
+Generated untracked folders are excluded. Symbolic links are skipped with a visible count; projects
+with submodules must copy those separately. Git repositories need an initial commit. Hooks, Git
+credentials and chats are not copied.
 
 Select **Source checkout** to copy a registered worktree instead of the project checkout. Only
 worktrees belonging to the selected project are accepted. Studio checks for the same project on the

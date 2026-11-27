@@ -51,6 +51,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   input,
   resources,
   provider,
+  antigravity,
   prompts,
   onCommand,
   onSideChat,
@@ -77,6 +78,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   input: RefObject<HTMLElement | null>
   resources: ResourceSettings & ComposerReferenceResources
   provider?: string
+  antigravity?: boolean
   prompts?: readonly SavedPrompt[]
   onCommand?: (id: ComposerCommandId) => void
   onSideChat?: () => void
@@ -288,6 +290,7 @@ export const ComposerEditor = memo(function ComposerEditor({
     rich: rich ? richHandle : null,
     resources,
     provider,
+    antigravity,
     visible: !hidden && !disabled && !submitBusy,
     prompts,
     onCommand,

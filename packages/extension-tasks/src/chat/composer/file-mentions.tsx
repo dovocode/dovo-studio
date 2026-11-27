@@ -109,6 +109,7 @@ export function useFileMentions({
   rich,
   resources,
   provider,
+  antigravity,
   visible,
   onCommand,
   onSideChat,
@@ -123,6 +124,7 @@ export function useFileMentions({
   rich?: RefObject<RichComposerHandle | null> | null
   resources: ResourceSettings
   provider?: string
+  antigravity?: boolean
   visible: boolean
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
@@ -143,8 +145,10 @@ export function useFileMentions({
   const modelMentionsSupported = useWorkspaceSelector(
     (state) => state.snapshot?.modelMentionsSupported === true,
   )
-  const nativeSkillMentionsSupported = useWorkspaceSelector(
-    (state) => state.snapshot?.nativeSkillMentionsSupported === true,
+  const nativeSkillMentionsSupported = useWorkspaceSelector((state) =>
+    antigravity
+      ? state.snapshot?.antigravitySkillMentionsSupported === true
+      : state.snapshot?.nativeSkillMentionsSupported === true,
   )
   const requestEffect = useWorkspaceSelector((state) => state.requestEffect)
   const [modelLookup, setModelLookup] = useState<{
@@ -174,10 +178,16 @@ export function useFileMentions({
     visible &&
     nativeSkillMentionsSupported &&
     connected &&
-    provider === 'opencode' &&
+    (antigravity || provider === 'opencode') &&
     dismissed !== mention?.start &&
     (trigger === '$' || (trigger === '/' && showSkillsInSlashMenu))
-  const nativeSkills = useNativeSkills(lookUpSkills, taskId, connection, requestEffect)
+  const skillSource = antigravity ? 'antigravity' : 'opencode'
+  const nativeSkills = useNativeSkills(
+    lookUpSkills && skillSource,
+    taskId,
+    connection,
+    requestEffect,
+  )
   const selectBots = useCallback(
     (state: WorkspaceContextValue) =>
       trigger === '@'

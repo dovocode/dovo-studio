@@ -15,7 +15,7 @@ export type ArtifactTemplate = {
   directory: string
 }
 export type RichMarkdownPart =
-  | { kind: 'markdown'; text: string; offset: number }
+  | { kind: 'markdown'; text: string; offset: number; referencePrefix?: string }
   | { kind: 'file'; path: string; label: string; offset: number }
   | { kind: 'image'; path: string; label: string; offset: number }
   | { kind: 'video'; path: string; label: string; offset: number }
@@ -59,8 +59,15 @@ export function markdownFileName(path: string) {
   return decoded.replaceAll('\\', '/').split('/').at(-1) || 'File'
 }
 export function markdownMediaKind(path: string): 'image' | 'video' | undefined {
-  if (localMarkdownPath(path) === undefined && !/^https?:\/\//i.test(path)) return undefined
-  const name = markdownFileName(path)
+  let filePath = path
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      filePath = new URL(path).pathname
+    } catch {
+      return undefined
+    }
+  } else if (localMarkdownPath(path) === undefined) return undefined
+  const name = markdownFileName(filePath)
   if (/\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i.test(name)) return 'image'
   if (/\.(mp4|webm|mov|m4v|ogv)$/i.test(name)) return 'video'
   return undefined
@@ -72,11 +79,35 @@ const markdownOptions = {
   extensions: [gfm(), directive()],
   mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown()],
 }
-function parse(text: string) {
-  return fromMarkdown(text, markdownOptions)
+/** Parse Markdown with offsets into the original source, including a leading BOM. */
+export function parseSharedMarkdown(text: string, flavor: 'github' | 'commonmark' = 'github') {
+  const root = fromMarkdown(text, flavor === 'github' ? markdownOptions : undefined)
+  if (text.startsWith('\uFEFF')) {
+    // micromark consumes the BOM before tracking positions.
+    const restoreOffsets = (node: Nodes) => {
+      for (const point of [node.position?.start, node.position?.end]) {
+        if (point?.offset !== undefined) point.offset++
+      }
+      if ('children' in node) node.children.forEach(restoreOffsets)
+    }
+    restoreOffsets(root)
+  }
+  return root
 }
-/** Hosted thread readers render this AST as React nodes, without HTML or remote media. */
-export const parseSharedMarkdown = parse
+
+export function markdownReferencePrefix(text: string, nodes: readonly Nodes[]) {
+  const definitions = nodes.flatMap((node) =>
+    node.type === 'definition'
+      ? [text.slice(node.position?.start.offset, node.position?.end.offset)]
+      : [],
+  )
+  // A definition placed at the end could be consumed by an unclosed fence or HTML block.
+  return definitions.length ? definitions.join('\n') + '\n\n' : ''
+}
+
+export function markdownWithReferencePrefix(text: string, prefix = '') {
+  return prefix && text.startsWith('\uFEFF') ? '\uFEFF' + prefix + text.slice(1) : prefix + text
+}
 export type SharedMarkdownNode = Nodes
 export function markdownNodeText(node: SharedMarkdownNode): string {
   if (node.type === 'text' || node.type === 'inlineCode') return node.value
@@ -101,7 +132,7 @@ function firstProse(node: SharedMarkdownNode): string {
 }
 export function workflowReplyPreview(result?: string, activity?: string) {
   if (!result) return activity ?? ''
-  const prose = firstProse(parse(result))
+  const prose = firstProse(parseSharedMarkdown(result))
   return /^.*?[.!?](?=\s|$)/u.exec(prose)?.[0] || prose || activity || ''
 }
 
@@ -134,7 +165,7 @@ function citation(node: Nodes): string | undefined {
 /** Convert only valid citations outside code/links. Unknown or incomplete directives stay literal. */
 export function renderFileCitations(text: string) {
   if (!text.includes(':codex-file-citation')) return text
-  return renderCitations(text, parse(text))
+  return renderCitations(text, parseSharedMarkdown(text))
 }
 function renderCitations(text: string, root: Nodes) {
   const edits: Array<{ start: number; end: number; text: string }> = []
@@ -180,12 +211,11 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
     !text.includes('\uE200visualize\uE202')
   )
     return [{ kind: 'markdown', text, offset: 0 }]
-  const root = parse(text)
-  const definitions = new Map(
-    root.children.flatMap((node) =>
-      node.type === 'definition' ? [[node.identifier, node.url] as const] : [],
-    ),
-  )
+  const root = parseSharedMarkdown(text)
+  const definitions = new Map<string, string>()
+  for (const node of root.children)
+    if (node.type === 'definition' && !definitions.has(node.identifier))
+      definitions.set(node.identifier, node.url)
   const parts: RichMarkdownPart[] = []
   let offset = 0
   const edits: Array<{ start: number; end: number; part: RichMarkdownPart }> = []
@@ -293,11 +323,8 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
     parts.push({ kind: 'markdown', text: renderFileCitations(text.slice(offset)), offset })
   // Each independently rendered block needs the original reference definitions.
   if (parts.length > 1 && definitions.size) {
-    const source = root.children
-      .filter((node) => node.type === 'definition')
-      .map((node) => text.slice(node.position?.start.offset, node.position?.end.offset))
-      .join('\n')
-    for (const part of parts) if (part.kind === 'markdown') part.text += `\n\n${source}`
+    const prefix = markdownReferencePrefix(text, root.children)
+    for (const part of parts) if (part.kind === 'markdown') part.referencePrefix = prefix
   }
   return parts
 }
@@ -315,6 +342,6 @@ export function richMarkdownPaths(text: string): string[] {
       for (const child of node.children)
         visit(child, inLink || node.type === 'link' || node.type === 'linkReference')
   }
-  visit(parse(text))
+  visit(parseSharedMarkdown(text))
   return paths
 }

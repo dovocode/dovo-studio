@@ -27,6 +27,7 @@ function Composer() {
   const chipResources = useMemo(() => ({...resources,agents}), [agents]);
   const [suggestion,setSuggestion] = useState(''); window.setSuggestion = setSuggestion;
   const [provider,setProvider] = useState('codex'); window.setGoalProvider = setProvider;
+  const [antigravity,setAntigravity] = useState(false); window.setAntigravity = setAntigravity;
   const [menu, setMenu] = useState(false); window.setMenuMode = setMenu;
   const [tick, setTick] = useState(0); window.runtimeTick = () => setTick(value => value + 1);
   const input = useRef(null);
@@ -35,7 +36,7 @@ function Composer() {
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   return <form data-suggestion={suggestion} data-has-text={hasText} data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
     <ComposerModeToggle input={input} menu={menu} />
-    <ComposerEditor provider={provider} controller={controller} taskId="task" input={input} resources={chipResources}
+    <ComposerEditor provider={provider} antigravity={antigravity} controller={controller} taskId="task" input={input} resources={chipResources}
       suggestion={suggestion} onDismissSuggestion={dismissSuggestion}
       messages={history} onCommand={command} onAlternativeSubmit={alternative}
       autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
@@ -66,11 +67,12 @@ createRoot(document.getElementById('app')).render(<Composer />);
           contents: path.endsWith('studio-core')
             ? `export { composerCaretRecoveryKey } from '../studio-core/src/workspace/composer-recovery';
 import { useSyncExternalStore } from 'react';
+import { Effect } from 'effect';
 const listeners = new Set(); let preferences = { sendWith: 'enter', richTextComposer: true, showSkillsInSlashMenu: true };
 export const readAppPreferences = () => preferences;
 export const updateAppPreferences = changes => { preferences = { ...preferences, ...changes }; listeners.forEach(listener => listener()) };
 export const useAppPreferences = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => preferences);
-const workspace = { workspace: {tasks:[{id:'review-bot',title:'Release helper',bot:{role:'review',state:'active'}},{id:'ordinary',title:'Release helper'}], agents:[{id:'custom-reviewer',name:'Release helper',provider:'codex'}], repositories:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files'){window.fileQueries=(window.fileQueries??0)+1;return window.filesTruncated?{files:[],truncated:true}:{files:['docs/Review Notes.md']};} if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'},{name:'Claude Opus',provider:'Claude',model:'opus',reference:'model:harness%3Aclaude/opus'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
+const workspace = { workspace: {tasks:[{id:'review-bot',title:'Release helper',bot:{role:'review',state:'active'}},{id:'ordinary',title:'Release helper'}], agents:[{id:'custom-reviewer',name:'Release helper',provider:'codex'}], repositories:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files'){window.fileQueries=(window.fileQueries??0)+1;return window.filesTruncated?{files:[],truncated:true}:{files:['docs/Review Notes.md']};} if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'},{name:'Claude Opus',provider:'Claude',model:'opus',reference:'model:harness%3Aclaude/opus'}],unavailable:[]}; } throw Error('Unexpected request') } }; workspace.requestEffect = path => path === '/api/tasks/native-skills' ? Effect.succeed([{name:'plugin-review',description:'Review from Antigravity'}]) : Effect.fail(Error('Unexpected skill request')); window.workspace = workspace;
 export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
@@ -160,6 +162,71 @@ try {
   await page.keyboard.press('Shift+Enter')
   await page.keyboard.type('use `npm test` now')
   assert.equal(await text(), '- first\n- use `npm test` now')
+
+  // Moving an ordered list item changes the numbering at both levels.
+  const numbered = '7. parent\n8. child\n9. next'
+  await setDraft(numbered)
+  const listItem = editor.locator('li > p', { hasText: 'child' })
+  await listItem.evaluate(async (paragraph) => {
+    paragraph.closest('[contenteditable]').focus()
+    const value = paragraph.firstChild
+    getSelection().setBaseAndExtent(value, value.length, value, value.length)
+    await new Promise(requestAnimationFrame)
+  })
+  await page.keyboard.press('Tab')
+  assert.equal(await editor.locator('ol ol > li').textContent(), 'child')
+  assert.equal(await text(), '7. parent\n   1. child\n8. next')
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await text(), numbered)
+  await page.keyboard.type('!')
+  assert.equal(await text(), numbered.replace('child', 'child!'))
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(
+    await text(),
+    numbered.replace('child', 'child!'),
+    'Top-level items stay in the list',
+  )
+
+  const code = editor.locator('pre code')
+  const selectCode = (anchor, head = anchor) =>
+    code.evaluate(
+      async (element, offsets) => {
+        element.closest('[contenteditable]').focus()
+        getSelection().setBaseAndExtent(
+          element.firstChild,
+          offsets.anchor,
+          element.firstChild,
+          offsets.head,
+        )
+        await new Promise(requestAnimationFrame)
+      },
+      { anchor, head },
+    )
+  const codeSelection = () =>
+    code.evaluate(() => {
+      const selection = getSelection()
+      return [selection.anchorOffset, selection.focusOffset]
+    })
+  await setDraft('```js\n  a\n  b\n```')
+  await code.waitFor()
+  await selectCode(5, 2)
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await code.textContent(), 'a\nb')
+  assert.deepEqual(await codeSelection(), [2, 0])
+  await selectCode(3, 0)
+  await page.keyboard.press('Tab')
+  assert.equal(await code.textContent(), '  a\n  b')
+  assert.deepEqual(await codeSelection(), [7, 2])
+
+  await setDraft('```js\na\n\n\n```')
+  await code.waitFor()
+  await selectCode(3)
+  await page.keyboard.press('Shift+Enter')
+  assert.equal(await code.textContent(), 'a')
+  await editor.locator('pre + p').waitFor()
+  await page.keyboard.press('ControlOrMeta+z')
+  assert.equal(await code.textContent(), 'a\n\n')
+  assert.deepEqual(await codeSelection(), [3, 3])
 
   // Untouched blocks keep their exact source when another block is edited.
   const original = '# Title\n\n\n* keep_this  *exact*  \n\nedit me'
@@ -513,6 +580,16 @@ try {
   assert.equal(await opus.innerText(), 'opus')
   await editor.press('ControlOrMeta+Shift+m')
   assert.equal(await source.inputValue(), savedOpus)
+  await page.evaluate(() => {
+    window.workspace.connected = true
+    window.workspace.connection = { address: 'http://localhost:5235', token: 'fixture-token' }
+    window.workspace.snapshot = { antigravitySkillMentionsSupported: true }
+    window.setGoalProvider('acp')
+    window.setAntigravity(true)
+  })
+  await source.fill('$plugin')
+  await page.getByRole('option').filter({ hasText: 'plugin-review' }).click()
+  assert.equal(await text(), '$plugin-review ')
   assert.deepEqual(errors, [])
   console.log('Rich composer browser checks passed')
 } finally {

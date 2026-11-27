@@ -55,7 +55,11 @@ import {
 import { taskListAction } from './endpoints/task-list-action.js'
 import { pullCommentReceiptId, pullCommentStatus } from './endpoints/pull-comment-receipts.js'
 import { pullCommentSubmissionSchema } from '@dovo/protocol'
-import { linearConnectionCommandSchema } from '@dovo/protocol'
+import {
+  linearConnectionCommandSchema,
+  linearIssueActionsQuerySchema,
+  linearIssueActionSchema,
+} from '@dovo/protocol'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { linkedThreadReadSchema, taskWaitingRequestSchema } from '@dovo/protocol'
 import { readLinkedThread } from '../studio/linked-thread.js'
@@ -2306,6 +2310,28 @@ export function route(
       if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
       if (path.startsWith('/api/scm/project-transfer/'))
         return yield* projectTransferRoute(request, path, device.id, token)
+      if (
+        method === 'POST' &&
+        (path === '/api/scm/linear/issues/actions/read' || path === '/api/scm/linear/issues/action')
+      ) {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Manage Linear issues from a paired human client.')
+        const hasProject = (id: string) =>
+          s.store
+            .get()
+            .repositories.some((project) => project.id === id && project.kind !== 'scratch')
+        const payload = yield* serviceResult(body(request, 64_000))
+        if (path.endsWith('/read')) {
+          const input = decode(linearIssueActionsQuerySchema, payload)
+          return yield* runtimeOperation(() => s.linearSettings.issueActions(input, hasProject))
+        }
+        const input = decode(linearIssueActionSchema, payload)
+        return yield* runtimeOperation(() =>
+          s.linearSettings.issueActions(input, hasProject, input, () => {
+            s.devices.authenticate(token)
+          }),
+        )
+      }
       if (method === 'POST' && path === '/api/scm/linear/key/connections') {
         if (agentDeviceAccess)
           throw new HttpError(403, 'Manage Linear connections from a paired human client.')

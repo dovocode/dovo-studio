@@ -19,7 +19,45 @@ import { cn } from './lib/utils'
 import { Schema } from 'effect'
 import { ChoicePicker } from './choice-picker'
 import { Input } from './components/ui/input'
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
+
+const effortOff = new Set(['off', 'none', 'disabled'])
+const unrankedEffort = new Set(['', 'auto', 'adaptive', 'default', 'ultra'])
+
+function reasoningIcons(
+  efforts: ReadonlyArray<{ id: string }>,
+): Readonly<Record<string, ReactNode>> {
+  const order = efforts.filter(({ id }) => !unrankedEffort.has(id))
+  if (effortOff.has(order.at(-1)?.id ?? '')) order.reverse()
+  const hasOff = effortOff.has(order[0]?.id ?? '')
+  const bars = order.length - Number(hasOff)
+  return {
+    ultra: <Rocket className="size-3.5 shrink-0" aria-hidden="true" />,
+    ...(order.length < 2 || bars > 7
+      ? {}
+      : Object.fromEntries(
+          order.map(({ id }, index) => {
+            const filled = index + Number(!hasOff)
+            return [
+              id,
+              <span
+                aria-hidden="true"
+                data-effort-bars={filled}
+                className="inline-flex h-3 shrink-0 items-end gap-px"
+              >
+                {Array.from({ length: bars }, (_, bar) => (
+                  <span
+                    key={bar}
+                    className={cn('w-0.5 rounded-full bg-current', bar >= filled && 'opacity-25')}
+                    style={{ height: `${35 + (65 * bar) / Math.max(1, bars - 1)}%` }}
+                  />
+                ))}
+              </span>,
+            ]
+          }),
+        )),
+  }
+}
 
 export function ComposerEffortColumn({
   value,
@@ -46,6 +84,7 @@ export function ComposerEffortColumn({
 }) {
   const selected = selectedCatalogModel(catalog, value.model)
   const efforts = modelReasoningLevels(catalog, value.model)
+  const icons = automatic ? undefined : reasoningIcons(efforts)
   const acpMode = acpModeControl(value, catalog)
   const current = automatic ? difficulty || 'auto' : (value.reasoning ?? '')
   const choices = automatic
@@ -67,7 +106,7 @@ export function ComposerEffortColumn({
         {choices.length > 6 ? (
           <ChoicePicker
             aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
-            icons={automatic ? undefined : { ultra: <Rocket className="size-3.5" /> }}
+            icons={icons}
             value={current}
             disabled={disabled || (automatic && !onSelectDifficulty)}
             onValueChange={(reasoning) =>
@@ -127,9 +166,7 @@ export function ComposerEffortColumn({
                     : onChange(changeModelSettings(value, { reasoning: effort.id }, catalog)))
                 }
               >
-                {!automatic && effort.id === 'ultra' && (
-                  <Rocket className="size-3.5 shrink-0" aria-hidden="true" />
-                )}
+                {icons?.[effort.id]}
                 <span className="min-w-0 flex-1 truncate">{effort.name}</span>
                 {effort.id === current ? (
                   <Check className="size-3.5 shrink-0" />

@@ -26,6 +26,10 @@ import {
   pullNextStep,
   matchesPull,
   pullNeedsAttention,
+  pullLabelChoices,
+  matchesPullLabels,
+  removePullLabel,
+  savedPullLabels,
   pullState,
   pullChecks,
   pullReview,
@@ -60,6 +64,7 @@ const pullPreferences = createDetailDrafts<{
   state: string
   search: string
   draft: string
+  pullLabels: string[]
   attention: boolean
   sort: string
 }>({ isClean: () => true })
@@ -89,11 +94,12 @@ export default function PullsScreen() {
       state: 'open',
       search: '',
       draft: 'all',
+      pullLabels: [],
       attention: false,
       sort: 'attention',
     }),
   )
-  const { repositoryId, state, search, draft, attention, sort } = preferences
+  const { repositoryId, state, search, draft, pullLabels, attention, sort } = preferences
   const setRepository = (value: string) => {
     void chooseSource(value)
       .then(() => setField('repositoryId', value))
@@ -104,10 +110,15 @@ export default function PullsScreen() {
   const setDraft = (value: string) => setField('draft', value)
   const setAttention = (value: boolean) => setField('attention', value)
   const setSort = (value: string) => setField('sort', value)
+  const setLabels = (labels: string[]) => {
+    setField('pullLabels', labels)
+    setMarked([])
+  }
   const filtersActive = !!(
     search.trim() ||
     repositoryId ||
     draft !== 'all' ||
+    pullLabels.length ||
     attention ||
     state !== 'open' ||
     Object.values(pullProjectVisibility).some((value) => value !== 'all')
@@ -118,6 +129,7 @@ export default function PullsScreen() {
     setSearch('')
     setState('open')
     setDraft('all')
+    setField('pullLabels', [])
     setAttention(false)
   }
   const [filters, setFilters] = useApplicationState(false)
@@ -146,7 +158,7 @@ export default function PullsScreen() {
     )
   }
   const query = useDeferredValue(search)
-  const matchingPulls = useMemo(
+  const scopedPulls = useMemo(
     () =>
       uniquePulls(
         pages.flatMap((page) =>
@@ -164,11 +176,14 @@ export default function PullsScreen() {
         .filter(
           (p) =>
             (state === 'all' || p.state === state) &&
-            (draft === 'all' || p.draft === (draft === 'draft')) &&
-            matchesPull(p, p.repositoryName, query),
+            (draft === 'all' || p.draft === (draft === 'draft')),
         )
         .sort((a, b) => comparePulls(a, b, sort === 'attention')),
-    [pages, state, draft, query, sort],
+    [pages, state, draft, sort],
+  )
+  const labelChoices = pullLabelChoices(scopedPulls, pullLabels)
+  const matchingPulls = scopedPulls.filter(
+    (p) => matchesPullLabels(p, pullLabels) && matchesPull(p, p.repositoryName, query),
   )
   const attentionCount = matchingPulls.filter(pullNeedsAttention).length
   const pulls = attention ? matchingPulls.filter(pullNeedsAttention) : matchingPulls
@@ -291,12 +306,13 @@ export default function PullsScreen() {
                 key: source.key,
                 identity: projectContentIdentity(source),
               }))}
-              value={{ source: repositoryId, state, search, draft, attention, sort }}
+              value={{ source: repositoryId, state, search, draft, attention, sort, pullLabels }}
               onApply={(value) => {
                 setRepository(value.source)
                 setState(value.state)
                 setSearch(value.search)
                 setDraft(value.draft ?? 'all')
+                setField('pullLabels', savedPullLabels(value))
                 setField('attention', value.attention ?? false)
                 setField('sort', value.sort)
                 setMarked([])
@@ -937,6 +953,57 @@ export default function PullsScreen() {
               })),
             ]}
           />
+          <Choice
+            label={uiText('Add label')}
+            value=""
+            disabled={!labelChoices.some(({ selected }) => !selected)}
+            onChange={(value) => setLabels([...pullLabels, value])}
+            items={[
+              { id: '', name: uiText('Add label'), disabled: true },
+              ...labelChoices
+                .filter(({ selected }) => !selected)
+                .map(({ name, count }) => ({
+                  id: name,
+                  name: `${name} (${count})`,
+                })),
+            ]}
+          />
+          {pullLabels.length > 0 && (
+            <View style={[styles.row, { flexWrap: 'wrap' }]}>
+              {labelChoices
+                .filter(({ selected }) => selected)
+                .map(({ name, count, color }) => (
+                  <Pressable
+                    key={name}
+                    accessibilityRole="button"
+                    accessibilityLabel={uiText('Remove {value0}', { value0: name })}
+                    onPress={() => setLabels(removePullLabel(pullLabels, name))}
+                    style={[
+                      styles.row,
+                      {
+                        minHeight: 44,
+                        maxWidth: '100%',
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                      },
+                    ]}
+                  >
+                    {color && (
+                      <View
+                        style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }}
+                      />
+                    )}
+                    <Text numberOfLines={1} style={{ flexShrink: 1 }}>
+                      {name} ({count})
+                    </Text>
+                    <Icon name="close" size={14} color={colors.muted} />
+                  </Pressable>
+                ))}
+              <Action label={uiText('Clear labels')} secondary onPress={() => setLabels([])} />
+            </View>
+          )}
           <Choice
             label={uiText('Draft status')}
             value={draft}

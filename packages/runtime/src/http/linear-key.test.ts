@@ -1,12 +1,129 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../index.js'
 import { randomUUID } from 'node:crypto'
-import { decode, linearConnectionsSchema, linearIssuesSchema } from '@dovo/protocol'
+import {
+  decode,
+  linearConnectionsSchema,
+  linearIssueActionsSchema,
+  linearIssuesSchema,
+} from '@dovo/protocol'
 import { fixture } from '../testing/fixture.js'
 
 afterEach(() => {
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
+})
+
+it('changes a Linear issue status and recovers a comment whose acknowledgement was lost', async () => {
+  vi.stubEnv('DOVO_LINEAR_API_KEY', 'fixture-triage-key')
+  const realFetch = globalThis.fetch
+  const issueId = randomUUID()
+  const open = { id: randomUUID(), name: 'Open' }
+  const review = { id: randomUUID(), name: 'Review' }
+  let state = open
+  let statusUpdates = 0
+  const comments = new Map<string, { id: string; body: string; issueId: string }>()
+  vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    if (input !== 'https://api.linear.app/graphql') return realFetch(input, init)
+    expect(new Headers(init?.headers).get('Authorization')).toBe('fixture-triage-key')
+    const payload = JSON.parse(String(init?.body))
+    if (payload.query.includes('query DovoIssueActions')) {
+      return Response.json({
+        data: {
+          issue:
+            payload.variables.id === issueId
+              ? {
+                  id: issueId,
+                  state,
+                  team: { key: 'ENG', states: { nodes: [open, review] } },
+                  comments: {
+                    nodes: [...comments.values()].map((comment) => ({
+                      ...comment,
+                      user: { name: 'Tester' },
+                    })),
+                  },
+                }
+              : null,
+        },
+      })
+    }
+    if (payload.query.includes('mutation DovoIssueStatus')) {
+      expect(payload.variables).toEqual({ id: issueId, input: { stateId: review.id } })
+      statusUpdates++
+      state = review
+      return Response.json({ data: { issueUpdate: { success: true } } })
+    }
+    if (payload.query.includes('mutation DovoIssueComment')) {
+      const comment = payload.variables.input
+      expect(comment.issueId).toBe(issueId)
+      if (comments.has(comment.id)) return Response.json({ data: null })
+      comments.set(comment.id, comment)
+      throw new Error('Simulated connection loss after posting')
+    }
+    if (payload.query.includes('query DovoCommentReceipt')) {
+      const comment = comments.get(payload.variables.id)
+      return Response.json({
+        data: {
+          comment: comment
+            ? {
+                id: comment.id,
+                body: comment.body,
+                issue: { id: comment.issueId },
+              }
+            : null,
+        },
+      })
+    }
+    throw new Error('Unexpected Linear request')
+  })
+  const token = 'linear-triage-test-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  try {
+    const send = (path: string, input: unknown, headers?: Record<string, string>) =>
+      realFetch(`http://127.0.0.1:${runtime.port}/api/scm/linear/issues/${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify(input),
+      })
+    const original = decode(
+      linearIssueActionsSchema,
+      await (await send('actions/read', { issueId })).json(),
+    )
+    expect(original.state).toEqual(open)
+    const target = { issueId, sourceVersion: original.sourceVersion }
+    const update = { ...target, action: 'set-status', stateId: review.id, expectedStateId: open.id }
+    expect((await send('action', update, { 'x-dovo-agent-access': '1' })).status).toBe(403)
+    expect((await send('action', { ...update, sourceVersion: '0'.repeat(64) })).status).toBe(409)
+    expect(statusUpdates).toBe(0)
+    expect(
+      decode(linearIssueActionsSchema, await (await send('action', update)).json()).state,
+    ).toEqual(review)
+    expect((await send('action', update)).status).toBe(200)
+    expect(
+      (await send('action', { ...update, stateId: open.id, expectedStateId: open.id })).status,
+    ).toBe(409)
+    expect(statusUpdates).toBe(1)
+    const comment = {
+      ...target,
+      action: 'comment',
+      commentId: randomUUID(),
+      body: 'Ready for review.',
+    }
+    for (const attempt of [comment, comment]) {
+      const next = await send('action', attempt)
+      expect(next.status).toBe(200)
+      expect(decode(linearIssueActionsSchema, await next.json()).comments).toEqual([
+        { id: comment.commentId, body: comment.body, author: 'Tester' },
+      ])
+    }
+    expect(comments.size).toBe(1)
+  } finally {
+    await runtime.close()
+  }
 })
 
 it('routes each Linear project to its saved connection and team and rejects stale reads', async () => {

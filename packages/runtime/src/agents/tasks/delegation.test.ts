@@ -77,18 +77,22 @@ it('updates an ended child to narrowed parent access and stops the running paren
     })
   }
 })
-async function setup() {
+const ownerToken = 'test-owner-token-with-at-least-32-characters'
+
+async function setupRuntime() {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
     databasePath: ':memory:',
-    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    ownerToken,
     port: 0,
   })
   cleanups.push(() => runtime.close())
   runtime.services.store.update(() => f.workspace)
-  return runtime.services
+  return runtime
 }
+
+const setup = async () => (await setupRuntime()).services
 
 it('persists requested and executed worker models through results and nested snapshots', async () => {
   const s = await setup()
@@ -986,6 +990,112 @@ it('stops children from an idle parent, rejects stale group stops, and never wak
   expect(parentTurns).toBe(1)
   expect(s.store.task(parent.id).queue ?? []).toEqual([])
 })
+
+it.each([false, true])(
+  'resumes a stopped child from its composer with parent paused=%s',
+  async (paused) => {
+    const runtime = await setupRuntime()
+    const s = runtime.services
+    const childStarted = barrier()
+    const childPrompts: string[] = []
+    const parentPrompts: string[] = []
+    let childId = ''
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (run.agent.provider === 'claude') {
+          childPrompts.push(run.prompt)
+          if (childPrompts.length === 1) {
+            childStarted.resolve()
+            await new Promise<void>((resolve) =>
+              run.signal.addEventListener('abort', () => resolve(), { once: true }),
+            )
+          } else run.onText('Result from resumed child')
+          return
+        }
+        parentPrompts.push(run.prompt)
+        if (parentPrompts.length === 1) {
+          childId = s.tasks.subagentSpawn({
+            taskId: taskId(run),
+            key: 'review',
+            name: 'Review',
+            prompt: 'Original assignment',
+            provider: 'claude',
+          }).id
+          await childStarted.promise
+        }
+        run.onText('Parent reply')
+      },
+    })
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    await s.tasks.stopAgents(parent.id, taskFamilyRunToken(s.store.get().tasks, parent.id))
+    await waitForRuntime(() => expect(s.store.task(childId).activeRunId).toBeUndefined())
+    expect(s.store.task(childId).delegation?.completion).toBe('disposed')
+    expect(parentPrompts).toHaveLength(1)
+    if (paused) s.store.updateTask(parent.id, (task) => ({ ...task, queuePaused: true }))
+    s.store.updateTask(childId, (task) => ({
+      ...task,
+      queue: [
+        {
+          id: 'held-input',
+          role: 'user',
+          text: 'Keep this queued',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }))
+    const paired = 'paired-child-resume-token-with-at-least-32-characters'
+    s.devices.add('Paired composer', paired)
+    const send = (messageId: string, credential = paired, agent = false) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/message`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${credential}`,
+          'Content-Type': 'application/json',
+          ...(agent ? { 'x-dovo-agent-access': '1' } : {}),
+        },
+        body: JSON.stringify({
+          id: childId,
+          messageId,
+          text: 'Continue this review',
+          resumeStoppedChild: null,
+        }),
+      })
+    expect((await send('resume-child')).status).toBe(200)
+    expect((await send('resume-child')).status).toBe(200)
+    await waitForRuntime(() => {
+      const child = s.store.task(childId)
+      expect(child.activeRunId).toBeUndefined()
+      expect(child.delegation?.completion).toBe(paused ? 'queued' : 'read')
+    })
+    expect(childPrompts).toHaveLength(2)
+    expect(childPrompts[1]).toContain('Continue this review')
+    expect(childPrompts[1]).not.toContain('Keep this queued')
+    expect(s.store.task(childId).queue?.map(({ id }) => id)).toEqual(['held-input'])
+    expect(s.store.task(childId).queuePaused).toBe(true)
+    if (paused) {
+      expect(s.store.task(parent.id).subagentInbox?.[0]?.text).toContain(
+        'Result from resumed child',
+      )
+      expect(s.store.task(parent.id).queuePaused).toBe(true)
+      expect(parentPrompts).toHaveLength(1)
+    } else {
+      await waitForRuntime(() => expect(parentPrompts).toHaveLength(2))
+      expect(parentPrompts[1]).toContain('Result from resumed child')
+    }
+    expect((await send('stale-child')).status).toBe(409)
+    expect((await send('agent-child', ownerToken, true)).status).toBe(403)
+    expect(s.store.task(childId).queue?.map(({ id }) => id)).toEqual(['held-input'])
+  },
+)
 
 it('waits for nested results to be incorporated before delivering the child to the root', async () => {
   const s = await setup()

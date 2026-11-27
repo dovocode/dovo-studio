@@ -228,6 +228,10 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
       drafts
         .confirmEffect(key, attempt, clear)
         .pipe(Effect.catch((error) => Effect.sync(() => report(error)))),
+    discardSubmissionEffect: (id: string) =>
+      drafts
+        .discardSubmissionEffect(key, id)
+        .pipe(Effect.catch((error) => Effect.sync(() => report(error)))),
     error,
   }
 }

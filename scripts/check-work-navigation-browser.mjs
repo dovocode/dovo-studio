@@ -7,7 +7,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const readAppPreferences=()=>({savedFilterViews:[]});export const useAppPreferences=readAppPreferences;export const updateAppPreferences=()=>true;export const useStudioHost=()=>({navigate:()=>{}});export {useLinearIssues} from '${root}packages/studio-core/src/scm/use-linear-issues';export const useWorkspace=()=>({activeRuntimeId:'a',runtimes:window.linearSources??[],request:async()=>({}),readRuntime:window.readLinear});export const WorkspaceRuntimeScope=({runtimeId,children})=><section data-owner={runtimeId}>{children}</section>;export const repositorySourceKey=(a,b)=>JSON.stringify([a,b]);export const formatDateTime=v=>v;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export const readAppPreferences=()=>({savedFilterViews:[]});export const useAppPreferences=readAppPreferences;export const updateAppPreferences=()=>true;export const useStudioHost=()=>({navigate:()=>{}});export {useLinearIssues,useLinearIssueActions} from '${root}packages/studio-core/src/scm/use-linear-issues';export const useWorkspace=()=>({activeRuntimeId:'a',runtimes:window.linearSources??[],request:async()=>({}),readRuntime:window.readLinear});export const WorkspaceRuntimeScope=({runtimeId,children})=><section data-owner={runtimeId}>{children}</section>;export const repositorySourceKey=(a,b)=>JSON.stringify([a,b]);export const formatDateTime=v=>v;`,
   '@dovo/studio-ui': `import {useState} from 'react';export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state';export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];export const useCompactLayout=()=>false;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Dialog=({children,onOpenChange})=><div><button onClick={()=>onOpenChange(false)}>Close Linear preview</button>{children}</div>;export const DialogContent=({children})=><div role="dialog">{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
   './work-sources': `export {workRemoteKey,matchesWorkSource} from '${root}packages/extension-scm/src/work/work-source-identity';export const jiraSourceKey=(a,b)=>JSON.stringify([a,'jira',b]);export const useIssueSources=()=>window.sources;`,
   './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:[{source:window.sources[0],reader:window.reader,items:[window.issue],options:{provider:'github',issues:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
@@ -79,23 +79,49 @@ try {
     window.linearSources = [
       {
         profile: { id: 'a', name: 'Computer A', connection: { address: 'http://a', token: 'a' } },
+        connected: true,
         snapshot: {
           linearIssuesSupported: true,
+          linearIssueActionsSupported: true,
           linearKeySource: 'saved',
           workspace: { repositories: [] },
         },
       },
     ]
     window.linearReads = []
+    const open = { id: 'open', name: 'Open' }
+    const review = { id: 'review', name: 'In review' }
+    const details = {
+      sourceVersion: 'fixture-version',
+      state: open,
+      states: [open, review],
+      comments: [],
+    }
     window.readLinear = async (profile, path, input) => {
-      window.linearReads.push({ profile: profile.id, path, input })
+      window.linearReads.push({
+        profile: profile.id,
+        path,
+        input: JSON.parse(JSON.stringify(input)),
+      })
+      if (path.endsWith('/actions/read')) return structuredClone(details)
+      if (path.endsWith('/action')) {
+        if (input.action === 'set-status') details.state = review
+        if (input.action === 'comment') {
+          if (!window.commentFailed) {
+            window.commentFailed = true
+            throw new Error('Connection interrupted')
+          }
+          details.comments.push({ id: input.commentId, author: 'Dominic', body: input.body })
+        }
+        return structuredClone(details)
+      }
       return {
         items: [
           {
             id: 'linear-id',
             identifier: 'DOV-42',
             title: 'Fix the timer',
-            status: 'Open',
+            status: details.state.name,
             url: 'https://linear.app/dovo/issue/DOV-42',
             description: 'Show seconds while working.',
           },
@@ -130,6 +156,31 @@ try {
     await linear.getByRole('link', { name: 'Open in Linear' }).getAttribute('href'),
     'https://linear.app/dovo/issue/DOV-42',
   )
+  const status = linear.getByRole('combobox', { name: 'Status', exact: true })
+  await status.selectOption('review')
+  await linear.getByRole('button', { name: 'Save status', exact: true }).click()
+  await linear.getByText('DOV-42 · In review', { exact: true }).waitFor()
+  const comment = linear.getByRole('textbox', { name: 'Comment', exact: true })
+  await comment.fill('Ready to review.')
+  const post = linear.getByRole('button', { name: 'Post comment', exact: true })
+  await post.click()
+  await linear.getByRole('alert').filter({ hasText: 'Connection interrupted' }).waitFor()
+  assert.equal(await comment.inputValue(), 'Ready to review.')
+  await post.click()
+  await linear.getByText('Ready to review.', { exact: true }).waitFor()
+  assert.equal(await comment.inputValue(), '')
+  const requests = await page.evaluate(() =>
+    window.linearReads.filter(({ path }) => path.endsWith('/action')),
+  )
+  assert.equal(requests[0].profile, 'a')
+  assert.deepEqual(requests[0].input, {
+    issueId: 'linear-id',
+    sourceVersion: 'fixture-version',
+    action: 'set-status',
+    expectedStateId: 'open',
+    stateId: 'review',
+  })
+  assert.equal(requests[1].input.commentId, requests[2].input.commentId)
   await page.getByRole('button', { name: 'Close Linear preview' }).click()
   await page.evaluate(() => {
     window.linearSources = []

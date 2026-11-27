@@ -1,4 +1,11 @@
-import { linearKeyResultSchema, type linearKeySourceSchema } from '@dovo/protocol'
+import {
+  linearIssueActionsSchema,
+  linearKeyResultSchema,
+  type LinearIssueAction,
+  type LinearIssueActions,
+  type RuntimeProfile,
+  type linearKeySourceSchema,
+} from '@dovo/protocol'
 import { useInterfaceText } from '../interface-language'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LinearIssue, linearIssueQuerySchema, linearIssuesSchema } from '@dovo/protocol'
@@ -54,6 +61,115 @@ export function useLinearIssues(
     error,
     go: (value: string) => load(value.trim()),
     more: () => page.next && load(search, page.next),
+    updateStatus: (id: string, status: string) =>
+      setPage((current) => ({
+        ...current,
+        items: current.items.map((item) => (item.id === id ? { ...item, status } : item)),
+      })),
+  }
+}
+
+export function useLinearIssueActions(
+  readRuntime: (
+    profile: RuntimeProfile,
+    path: string,
+    input: unknown,
+    schema: typeof linearIssueActionsSchema,
+  ) => Promise<LinearIssueActions>,
+  profile: RuntimeProfile,
+  issueId: string,
+  selection: Pick<LinearIssueAction, 'connectionId' | 'repositoryId'>,
+  createId: () => string,
+  onStatus: (status: string) => void,
+) {
+  const { connectionId, repositoryId } = selection
+  const [issue, setIssue] = useState<LinearIssueActions>()
+  const [stateId, setStateId] = useState('')
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(true)
+  const [error, setError] = useState('')
+  const pending = useRef(false)
+  const commentAttempt = useRef<{ body: string; id: string } | undefined>(undefined)
+  const read = useCallback(
+    () =>
+      readRuntime(
+        profile,
+        '/api/scm/linear/issues/actions/read',
+        { issueId, connectionId, repositoryId },
+        linearIssueActionsSchema,
+      ),
+    [readRuntime, profile, issueId, connectionId, repositoryId],
+  )
+  useEffect(() => {
+    let active = true
+    setBusy(true)
+    setError('')
+    void read()
+      .then(
+        (value) => {
+          if (active) {
+            setIssue(value)
+            setStateId(value.state.id)
+          }
+        },
+        (cause: unknown) => {
+          if (active) setError(cause instanceof Error ? cause.message : String(cause))
+        },
+      )
+      .finally(() => {
+        if (active) setBusy(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [read])
+  const submit = async (action: LinearIssueAction) => {
+    if (pending.current) return
+    pending.current = true
+    setBusy(true)
+    setError('')
+    try {
+      const value = await readRuntime(
+        profile,
+        '/api/scm/linear/issues/action',
+        action,
+        linearIssueActionsSchema,
+      )
+      setIssue(value)
+      setStateId(value.state.id)
+      onStatus(value.state.name)
+      if (action.action === 'comment') {
+        setComment('')
+        commentAttempt.current = undefined
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+  const target = issue
+    ? { issueId, connectionId, repositoryId, sourceVersion: issue.sourceVersion }
+    : undefined
+  return {
+    issue,
+    stateId,
+    setStateId,
+    comment,
+    setComment,
+    busy,
+    error,
+    saveStatus: () => {
+      if (issue && target && stateId !== issue.state.id)
+        return submit({ ...target, action: 'set-status', expectedStateId: issue.state.id, stateId })
+    },
+    postComment: () => {
+      const body = comment.trim()
+      if (!target || !body || pending.current) return
+      if (commentAttempt.current?.body !== body) commentAttempt.current = { body, id: createId() }
+      return submit({ ...target, action: 'comment', body, commentId: commentAttempt.current.id })
+    },
   }
 }
 

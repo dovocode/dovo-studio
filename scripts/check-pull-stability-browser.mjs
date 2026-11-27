@@ -135,11 +135,23 @@ try {
     list.getByRole('button').filter({ hasText: 'Improve pull request reviews' }).first().click()
 
   await page.evaluate(() => {
+    window.detail.pull.body = [
+      '\uFEFF[review-docs]: https://example.com/review',
+      'Review workflow description',
+      '![Review screenshot](https://example.com/review.png)',
+      'Open [review documentation][review-docs].',
+      '```ts\nconst draft = true',
+    ].join('\n\n')
     window.detail.pull.headSha = 'e'.repeat(40)
     window.blockedSections = ['changes', 'checks', 'stack']
   })
   await open()
   await detail.getByText('Review workflow description', { exact: true }).waitFor()
+  const reference = detail.getByRole('link', { name: 'review documentation' })
+  await reference.waitFor()
+  assert.equal(await reference.getAttribute('href'), 'https://example.com/review')
+  const attachment = detail.locator('img[alt="Review screenshot"]')
+  assert.equal(await attachment.getAttribute('src'), 'https://example.com/review.png')
   await detail.getByText('Loading stack…', { exact: true }).waitFor()
   await detail
     .locator('[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Loading checks…"]')

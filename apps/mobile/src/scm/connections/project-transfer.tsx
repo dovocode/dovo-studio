@@ -1,5 +1,5 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { Schema } from 'effect'
 import {
@@ -70,6 +70,11 @@ export function ProjectTransferSettings({
     [transport, setTransport] = useState('p2p')
   const [ignored, setIgnored] = useState<string[]>([]),
     [showIgnored, setShowIgnored] = useState(false)
+  const [ignoredSearch, setIgnoredSearch] = useState('')
+  const matchingIgnored = useMemo(() => {
+    const query = ignoredSearch.trim().toLowerCase()
+    return inspection?.ignoredFiles.filter(({ path }) => path.toLowerCase().includes(query)) ?? []
+  }, [ignoredSearch, inspection])
   const [sshHost, setSshHost] = useState(''),
     [sshUser, setSshUser] = useState('')
   const [sshPort, setSshPort] = useState('22'),
@@ -758,7 +763,17 @@ export function ProjectTransferSettings({
                       }
                     </InterfaceText>
                   </Text>
-                  {inspection.ignoredFiles.map((file) => (
+                  <Field
+                    label={uiText('Search files')}
+                    value={ignoredSearch}
+                    onChangeText={setIgnoredSearch}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {!matchingIgnored.length && (
+                    <Text style={styles.muted}>{uiText('No matching files.')}</Text>
+                  )}
+                  {matchingIgnored.map((file) => (
                     <View
                       key={file.path}
                       style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}

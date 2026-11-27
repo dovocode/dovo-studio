@@ -573,6 +573,7 @@ export const queuedMessageSchema = mutableStruct({
 })
 export const linkedCheckpointSchema = mutableStruct({
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
+  nestedWorktree: Schema.optional(Schema.Literal(true)),
   checkoutId: Schema.String,
   repositoryName: Schema.optional(Schema.String),
   repositoryId: Schema.String,

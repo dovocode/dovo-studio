@@ -9,9 +9,10 @@ import {
   toggleMark,
   wrapIn,
 } from 'prosemirror-commands'
-import { history, redo, undo } from 'prosemirror-history'
+import { closeHistory, history, redo, undo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import { Fragment, Slice, type MarkType, type Node } from 'prosemirror-model'
+import { liftListItem, sinkListItem } from 'prosemirror-schema-list'
 import { EditorState, Plugin, Selection, TextSelection, type Command } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import { cn } from '@dovo/studio-ui'
@@ -88,7 +89,66 @@ const splitListItem: Command = (state, dispatch) => {
   if (dispatch) dispatch(state.tr.delete($from.pos, $to.pos).split($from.pos, 2).scrollIntoView())
   return true
 }
-const newline = chainCommands(newlineInCode, splitListItem, breakOrParagraph)
+const exitTrailingCodeBlock: Command = (state, dispatch) => {
+  const { $from, empty } = state.selection
+  if (!empty || !$from.parent.type.spec.code || $from.parentOffset !== $from.parent.content.size)
+    return false
+  const trailing = /\n[ \t]*\n[ \t]*$/.exec($from.parent.textContent)
+  const after = $from.indexAfter(-1)
+  if (!trailing || !$from.node(-1).canReplaceWith(after, after, nodes.paragraph)) return false
+  if (dispatch) {
+    const tr = closeHistory(state.tr.delete($from.pos - trailing[0].length, $from.pos))
+    const paragraph = tr.mapping.map($from.after())
+    tr.insert(paragraph, nodes.paragraph.create())
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, paragraph + 1)).scrollIntoView())
+  }
+  return true
+}
+const newline = chainCommands(exitTrailingCodeBlock, newlineInCode, splitListItem, breakOrParagraph)
+
+const changeCodeIndent =
+  (outdent: boolean): Command =>
+  (state, dispatch) => {
+    const selection = state.selection
+    const { $from, $to } = selection
+    if (!$from.parent.type.spec.code || !$from.sameParent($to)) return false
+    if (!dispatch) return true
+    const indent = '  '
+    if (selection.empty && !outdent) {
+      dispatch(state.tr.insertText(indent).scrollIntoView())
+      return true
+    }
+    const content = $from.parent.textContent
+    const start = $from.parentOffset ? content.lastIndexOf('\n', $from.parentOffset - 1) + 1 : 0
+    const end = content.indexOf('\n', Math.max($from.parentOffset, $to.parentOffset - 1))
+    const tr = state.tr
+    let position = $from.start() + start
+    for (const line of content.slice(start, end === -1 ? content.length : end).split('\n')) {
+      const at = tr.mapping.map(position)
+      if (outdent) {
+        const prefix = /^(?: {1,2}|\t)/.exec(line)
+        if (prefix) tr.delete(at, at + prefix[0].length)
+      } else tr.insertText(indent, at)
+      position += line.length + 1
+    }
+    if (tr.docChanged) dispatch(tr.setSelection(selection.map(tr.doc, tr.mapping)).scrollIntoView())
+    return true
+  }
+const indentCode = changeCodeIndent(false)
+const outdentCode = changeCodeIndent(true)
+const liftItem = liftListItem(nodes.list_item)
+const outdentList: Command = (state, dispatch) => {
+  const { $from } = state.selection
+  let insideItem = false
+  for (let depth = $from.depth; depth > 0; depth--) {
+    if ($from.node(depth).type !== nodes.list_item) continue
+    if (insideItem) return liftItem(state, dispatch)
+    insideItem = true
+  }
+  return false
+}
+const indent = chainCommands(indentCode, sinkListItem(nodes.list_item))
+const outdent = chainCommands(outdentCode, outdentList)
 // Backspace at the start of a heading, quote or list item turns it back into a paragraph.
 const unwrapAtStart: Command = (state, dispatch) => {
   const { $from, empty } = state.selection
@@ -253,6 +313,8 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
           collapsed: selection.empty,
         })
         if (event.defaultPrevented) return true
+        if (event.key === 'Tab' && !mod && !event.altKey && !latest.current.readOnly)
+          return (event.shiftKey ? outdent : indent)(editorView.state, editorView.dispatch)
         if (event.key !== 'Enter' || event.altKey) return false
         const send = latest.current.sendWith === 'enter' ? !event.shiftKey && !mod : mod
         if (!send) return newline(editorView.state, editorView.dispatch)

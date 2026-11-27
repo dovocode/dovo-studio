@@ -16,6 +16,25 @@ export function taskDraftIdentity(
   )
 }
 
+export function taskCompactionRequest(
+  task: Pick<Task, 'id' | 'sessionId' | 'status' | 'queue' | 'archived' | 'archivedAt'>,
+  messageId: string,
+  queuePausePreservationSupported: boolean,
+) {
+  if (
+    queuePausePreservationSupported &&
+    task.sessionId &&
+    !task.archived &&
+    !task.archivedAt &&
+    (task.status === 'running' || task.queue?.length)
+  )
+    return {
+      path: '/api/tasks/message',
+      input: { id: task.id, messageId, text: '/compact', preserveQueuePause: true },
+    }
+  return { path: '/api/tasks/compact', input: { id: task.id } }
+}
+
 const id = maxValue(minValue(Schema.String, 1), 200)
 /** The configuration an unsent draft may carry into a new thread. Every other task field is
  * runtime-owned (queue, history, run, provider, session, recovery, replica and lock state),
@@ -79,6 +98,7 @@ export const taskMessageSchema = refine(
       queueOnly: Schema.optional(Schema.Boolean),
       preserveQueuePause: Schema.optional(Schema.Boolean),
       sendNow: Schema.optional(Schema.Boolean),
+      resumeStoppedChild: Schema.optional(Schema.NullOr(id)),
       runId: Schema.optional(id),
       draftIdentity: Schema.optional(minValue(maxValue(Schema.String, 64), 64)),
       selectProject: Schema.optional(Schema.Boolean),
@@ -101,7 +121,8 @@ export const taskMessageSchema = refine(
       startsCleanDraft(input.createTask) &&
       !input.attachmentIds.length &&
       !input.runId &&
-      !input.sendNow),
+      !input.sendNow &&
+      input.resumeStoppedChild === undefined),
   'Only a new draft without attachments or runtime state can start with this message',
 )
 

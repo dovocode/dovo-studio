@@ -7,12 +7,13 @@ import {
   type RuntimeOverview,
   type linearIssueQuerySchema,
 } from '@dovo/protocol'
-import { useLinearIssues } from '@dovo/studio-core'
+import { useLinearIssues, useLinearIssueActions } from '@dovo/studio-core'
+import { randomUUID } from 'expo-crypto'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
-import { SearchField } from '../../ui/controls/field'
+import { Field, SearchField } from '../../ui/controls/field'
 import { copyText } from '../../ui/content/clipboard'
 import { Text } from '../../ui/content/text'
 import { Sheet } from '../../ui/layout/sheet'
@@ -134,6 +135,14 @@ function LinearList({
               <Text selectable style={styles.text}>
                 {issue.description}
               </Text>
+              {source.snapshot?.linearIssueActionsSupported && (
+                <LinearIssueEditor
+                  source={source}
+                  selection={selection}
+                  issueId={issue.id}
+                  onStatus={(status) => issues.updateStatus(issue.id, status)}
+                />
+              )}
               <Action
                 label={uiText('Open in Linear')}
                 variant="outline"
@@ -167,6 +176,73 @@ function LinearList({
         />
       )}
       {!!notice && <Text accessibilityLiveRegion="polite">{notice}</Text>}
+    </View>
+  )
+}
+
+function LinearIssueEditor({
+  source,
+  selection,
+  issueId,
+  onStatus,
+}: {
+  source: RuntimeOverview
+  selection: Pick<typeof linearIssueQuerySchema.Type, 'connectionId' | 'repositoryId'>
+  issueId: string
+  onStatus: (status: string) => void
+}) {
+  const uiText = useInterfaceText()
+  const { styles } = useTheme()
+  const { readRuntime } = useRuntime()
+  const actions = useLinearIssueActions(
+    readRuntime,
+    source.profile,
+    issueId,
+    selection,
+    randomUUID,
+    onStatus,
+  )
+  const disabled = actions.busy || !source.connected
+  return (
+    <View style={{ gap: 6 }}>
+      {!!actions.error && <Text accessibilityRole="alert">{actions.error}</Text>}
+      {actions.issue ? (
+        <>
+          <Choice
+            label={uiText('Status')}
+            value={actions.stateId}
+            items={actions.issue.states.map(({ id, name }) => ({ id, name }))}
+            onChange={actions.setStateId}
+            disabled={disabled}
+          />
+          <Action
+            label={uiText('Save status')}
+            disabled={disabled || actions.stateId === actions.issue.state.id}
+            onPress={() => void actions.saveStatus()}
+          />
+          {actions.issue.comments.map((comment) => (
+            <View key={comment.id}>
+              <Text style={styles.muted}>{comment.author}</Text>
+              <Text selectable>{comment.body}</Text>
+            </View>
+          ))}
+          <Field
+            label={uiText('Comment')}
+            value={actions.comment}
+            onChangeText={actions.setComment}
+            editable={!actions.busy}
+            maxLength={12000}
+            multiline
+          />
+          <Action
+            label={uiText('Post comment')}
+            disabled={disabled || !actions.comment.trim()}
+            onPress={() => void actions.postComment()}
+          />
+        </>
+      ) : (
+        actions.busy && <Text style={styles.muted}>{uiText('Loading issues…')}</Text>
+      )}
     </View>
   )
 }

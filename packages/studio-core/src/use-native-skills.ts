@@ -4,7 +4,7 @@ import { nativeSkillsSchema, type NativeSkill, type RuntimeConnection } from '@d
 import type { WorkspaceRequestEffect } from './workspace/context'
 
 export function useNativeSkills(
-  enabled: boolean,
+  source: 'opencode' | 'antigravity' | false,
   taskId: string,
   connection: RuntimeConnection | null,
   request: WorkspaceRequestEffect,
@@ -12,11 +12,12 @@ export function useNativeSkills(
   const [lookup, setLookup] = useState<{
     taskId: string
     connection: RuntimeConnection
+    source: Exclude<typeof source, false>
     skills: NativeSkill[]
   }>()
   useEffect(() => {
     setLookup(undefined)
-    if (!enabled || !connection) return
+    if (!source || !connection) return
     const controller = new AbortController()
     let next: ReturnType<typeof setTimeout> | undefined
     const refresh = async () => {
@@ -25,7 +26,7 @@ export function useNativeSkills(
           request('/api/tasks/native-skills', { id: taskId }, nativeSkillsSchema),
           controller.signal,
         )
-        if (!controller.signal.aborted) setLookup({ taskId, connection, skills })
+        if (!controller.signal.aborted) setLookup({ taskId, connection, source, skills })
       } catch {
         // Keep the last catalog through a transient provider error and retry while open.
       }
@@ -36,8 +37,11 @@ export function useNativeSkills(
       controller.abort()
       clearTimeout(next)
     }
-  }, [enabled, taskId, connection, request])
-  return enabled && lookup?.taskId === taskId && lookup.connection === connection
+  }, [source, taskId, connection, request])
+  return source &&
+    lookup?.source === source &&
+    lookup.taskId === taskId &&
+    lookup.connection === connection
     ? lookup.skills
     : undefined
 }

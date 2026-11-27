@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import { parseSharedMarkdown } from '@dovo/protocol'
 import { markdownParts, splitMarkdownParts } from './markdown-parts'
 
 const text = [
@@ -50,6 +51,32 @@ it('keeps incomplete and nested fences literal after a completed diagram', () =>
       { kind: 'mermaid', text: 'graph TD', offset: 0 },
       { kind: 'markdown', text: suffix, offset: diagram.length },
     ])
+})
+
+it('resolves PR description links across attachments and keeps the source offsets', () => {
+  const attachment = '![Screenshot](https://example.com/shot.png)'
+  const fence = '```ts\nconst ready = true\n```'
+  const tail = 'Read [Docs][docs].\n\n```ts\nconst n = 1'
+  const text = ['\uFEFF[docs]: https://example.com', attachment, fence, tail].join('\n\n')
+  const parts = splitMarkdownParts(text, false)
+  expect(parts.find((part) => part.kind === 'image')).toMatchObject({
+    url: 'https://example.com/shot.png',
+    offset: text.indexOf(attachment),
+  })
+  expect(parts.find((part) => part.kind === 'code')).toMatchObject({
+    text: 'const ready = true',
+    offset: text.indexOf(fence),
+  })
+  const last = parts.at(-1)
+  if (last?.kind !== 'markdown') throw new Error('Expected Markdown after the completed fence')
+  expect(last.offset).toBe(text.indexOf(fence) + fence.length)
+  expect(parseSharedMarkdown(last.text).children.slice(-2)).toMatchObject([
+    {
+      type: 'paragraph',
+      children: [{ type: 'text' }, { type: 'linkReference', identifier: 'docs' }, { type: 'text' }],
+    },
+    { type: 'code', value: 'const n = 1' },
+  ])
 })
 
 it('preserves fragment-local image syntax when reference definitions cross a fence', () => {

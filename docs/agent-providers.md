@@ -26,6 +26,8 @@ provider retains its own credentials, configuration and release channel. SDK upd
 diagnostics report them separately from the host CLI.
 
 When you stop an ACP compact command, Dovo keeps the current context usage and compaction history.
+Choose `/compact` in an active thread to queue compaction after existing work. A paused queue stays
+paused.
 
 Copilot accepts per-session MCP servers and tool filters. Tool-free utilities exclude all builtin,
 MCP and custom tools and deny permission requests. Its optional configuration directory selects
@@ -239,10 +241,16 @@ also reads choices saved by older clients. Read-only turns use a mode that the a
 planning or read-only work. Dovo reads the configuration again after an agent announces a change. If
 the agent does not confirm a requested configuration setting, Dovo stops before sending the prompt.
 
-Antigravity uses native Auto when available. Otherwise it uses the protocol's default mode and Dovo
-applies the thread policy to permission requests. Saved ACP mode choices cannot widen Antigravity
-permissions. Kiro v3 enables Autopilot only for unrestricted Full access. Older saved Auto and
-Auto-accept edits settings run as Supervised.
+Antigravity requires CLI version 1.5.1 or newer when its ACP server reports a version. Antigravity
+uses native Auto when available. Otherwise it uses the protocol's default mode and Dovo applies the
+thread policy to permission requests. Saved ACP mode choices cannot widen Antigravity permissions.
+Kiro v3 enables Autopilot only for unrestricted Full access. Older saved Auto and Auto-accept edits
+settings run as Supervised.
+
+Type `$` in an Antigravity thread to find skills from enabled plugins in the thread computer’s
+Antigravity profile. Dovo reads each plugin’s `skills/` folder and the skill paths in its first
+manifest. Paths must stay within the installed plugin. The picker refreshes while open and shows the
+name and description. Antigravity keeps ownership of the skill files.
 
 ACP v1 stays enabled by default. Dovo also supports the draft ACP v2 baseline through the existing
 SDK 2.4.0. To try it, add `DOVO_ACP_V2=1` to an ACP agent's environment in Agent settings. The flag

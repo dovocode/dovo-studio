@@ -856,8 +856,10 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
       }
       if (method === 'POST' && (path === '/api/tasks/message' || path === '/api/tasks/steer')) {
         const input = decode(taskMessageSchema, yield* serviceResult(body(request)))
+        if (input.resumeStoppedChild !== undefined && !owner)
+          throw new HttpError(403, 'Resume a stopped child from a paired client.')
         if (
-          input.sendNow &&
+          (input.sendNow || input.resumeStoppedChild !== undefined) &&
           (input.queueOnly || input.preserveQueuePause || path === '/api/tasks/steer')
         )
           throw new HttpError(400, 'Send now cannot be combined with queueing or steering')
@@ -939,6 +941,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           'accepted',
           s.runtimeId,
           input.draftIdentity,
+          input.resumeStoppedChild,
         )
         if (firstSubmission && input.initialTitle) {
           const expectedTitle = input.initialTitle.after
@@ -1812,10 +1815,10 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         if (containerSandboxEnabled(taskContainerSandbox(task, s.defaults.get(), repository)))
           return []
         const agent = resolveTaskAgent(task, s.store.agentsFor(task.repositoryId))
-        if (agent?.provider !== 'opencode') return []
+        if (agent?.provider !== 'opencode' && agent?.provider !== 'acp') return []
         const cwd = yield* serviceResult(s.checkouts.fileDirectory(id).catch(() => undefined))
         if (!cwd) return []
-        const adapter = yield* serviceResult(s.agents.get('opencode'))
+        const adapter = yield* serviceResult(s.agents.get(agent.provider))
         return yield* serviceResult(
           adapter.nativeSkills?.(agent, cwd, AbortSignal.timeout(5_000)) ?? Promise.resolve([]),
         )

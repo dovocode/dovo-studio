@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, writeFile, rm, symlink, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { decode, taskFileShareSchema } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { runtimeIntegration } from '../testing/integration.js'
@@ -110,6 +111,23 @@ it('allows assistant-shared outside files but denies other threads, user links a
   // Grants revalidate current thread sharing rather than retaining access after a link is removed.
   runtime.services.store.updateTaskHistory('task', (task) => ({ ...task, messages: [] }))
   expect((await fetch(origin + url)).status).toBe(403)
+})
+it('previews an assistant-linked sandbox file only in the sharing thread', async () => {
+  const { runtime, origin, share } = await setup()
+  const outside = await mkdtemp(join(tmpdir(), 'dovo-sandbox-file-'))
+  cleanup.push(() => rm(outside, { recursive: true, force: true }))
+  const path = join(outside, 'result #2.txt')
+  await writeFile(path, 'First line\nSecond line')
+  const href = `sandbox:${pathToFileURL(path).pathname}#L2`
+  runtime.services.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    messages: [{ id: 'assistant', role: 'assistant', text: `View [the result](${href}).` }],
+  }))
+  expect((await share(href, token, 'other')).status).toBe(403)
+  const result = await share(href)
+  expect(result.status).toBe(200)
+  const { url } = decode(taskFileShareSchema, await result.json())
+  expect(await (await fetch(origin + url)).text()).toContain('<span id="L2"></span>Second line')
 })
 it('offers download when a binary file cannot be previewed', async () => {
   const { directory, origin, share } = await setup()

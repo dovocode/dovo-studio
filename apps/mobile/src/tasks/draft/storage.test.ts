@@ -511,6 +511,31 @@ it('does not rewrite an already durable accepted send when its snapshot confirms
   expect(await createDraftStorage(storage).read('task')).toBe('')
 })
 
+it('persists the stop version for a retry and discards only the rejected submission', async () => {
+  const storage = memoryStorage()
+  const drafts = createDraftStorage(storage)
+  const attempt = {
+    id: 'resume',
+    text: 'Continue',
+    attachmentIds: [],
+    mode: 'queue' as const,
+    resumeStoppedChild: 'stop-1',
+  }
+  await runClientEffect(drafts.stageEffect('task', attempt, attempt.text))
+  const reopened = createDraftStorage(storage)
+  expect(await runClientEffect(reopened.readRecordEffect('task'))).toMatchObject({
+    submission: { attempt, accepted: false },
+  })
+  await runClientEffect(reopened.discardSubmissionEffect('task', 'other-attempt'))
+  expect(await runClientEffect(reopened.readRecordEffect('task'))).toMatchObject({
+    submission: { attempt },
+  })
+  await runClientEffect(reopened.discardSubmissionEffect('task', attempt.id))
+  expect(await runClientEffect(createDraftStorage(storage).readRecordEffect('task'))).toEqual({
+    text: 'Continue',
+  })
+})
+
 it('keeps a native write serialized after its owning fiber is interrupted', async () => {
   const { Effect, Fiber } = await import('effect')
   const values = new Map<string, string>()

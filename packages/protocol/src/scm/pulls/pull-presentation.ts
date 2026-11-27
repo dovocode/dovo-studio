@@ -1,6 +1,55 @@
 import type { PullComment, PullDetail, PullSummary } from './pulls.js'
 export type PullTone = 'neutral' | 'positive' | 'warning' | 'danger' | 'accent'
 export type PullSignal = { label: string; tone: PullTone }
+
+const labelKey = (name: string) => name.trim().toLowerCase()
+
+export function matchesPullLabels(pull: Pick<PullSummary, 'labels'>, selected: readonly string[]) {
+  if (!selected.length) return true
+  const labels = new Set(pull.labels.map(labelKey))
+  return selected.every((name) => labels.has(labelKey(name)))
+}
+
+export function removePullLabel(selected: readonly string[], name: string) {
+  const key = labelKey(name)
+  return selected.filter((label) => labelKey(label) !== key)
+}
+
+/** Facets describe the loaded PRs before text search. A saved selection remains clearable. */
+export function pullLabelChoices(
+  pulls: readonly Pick<PullSummary, 'labels' | 'labelColors'>[],
+  selected: readonly string[],
+) {
+  const selectedKeys = new Set(selected.map(labelKey))
+  const choices = new Map<
+    string,
+    { name: string; count: number; color?: string; selected: boolean }
+  >()
+  for (const pull of pulls) {
+    const counted = new Set<string>()
+    for (const name of pull.labels) {
+      const key = labelKey(name)
+      if (!key) continue
+      const previous = choices.get(key)
+      const color =
+        pull.labelColors && Object.hasOwn(pull.labelColors, name)
+          ? pull.labelColors[name]
+          : undefined
+      choices.set(key, {
+        name: previous?.name ?? name,
+        count: (previous?.count ?? 0) + Number(!counted.has(key)),
+        color: previous?.color ?? color,
+        selected: selectedKeys.has(key),
+      })
+      counted.add(key)
+    }
+  }
+  for (const name of selected) {
+    const key = labelKey(name)
+    if (key && !choices.has(key)) choices.set(key, { name, count: 0, selected: true })
+  }
+  return [...choices.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
 export function pullCommentSignal(
   comment: Pick<PullComment, 'kind' | 'state' | 'replyTo'>,
 ): PullSignal {
@@ -167,7 +216,11 @@ export function matchesPull(pull: PullSummary, repository: string, query: string
     .toLowerCase()
     .trim()
     .split(/\s+/)
-    .every((part) => text.includes(part))
+    .every(
+      (part) =>
+        text.includes(part) ||
+        (/^#?0+\d+$/.test(part) && Number(part.replace(/^#/, '')) === pull.number),
+    )
 }
 export function checkSignal(status: string): PullSignal {
   status = status.toUpperCase()

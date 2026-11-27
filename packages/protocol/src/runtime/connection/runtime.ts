@@ -421,6 +421,7 @@ export const snapshotSchema = mutableStruct({
   textGeneratorsSupported: Schema.optional(Schema.Boolean),
   modelMentionsSupported: Schema.optional(Schema.Boolean),
   nativeSkillMentionsSupported: Schema.optional(Schema.Boolean),
+  antigravitySkillMentionsSupported: Schema.optional(Schema.Literal(true)),
   documentAttachmentPreviewSupported: Schema.optional(Schema.Boolean),
   /** Messages and queue edits accept `plan`, enforced as a read-only turn. */
   planModeSupported: Schema.optional(Schema.Literal(true)),
@@ -430,6 +431,7 @@ export const snapshotSchema = mutableStruct({
   terminalWorkspaceToolsSupported: Schema.optional(Schema.Boolean),
   /** Automatic additions can preserve a pause made by another client. */
   queuePausePreservationSupported: Schema.optional(Schema.Literal(true)),
+  stoppedChildResumeSupported: Schema.optional(Schema.Literal(true)),
   /** Send one composer message immediately while leaving the queue paused. */
   directMessageSupported: Schema.optional(Schema.Literal(true)),
   /** First title and automatic project selection travel with the durable send. */
@@ -497,6 +499,7 @@ export const snapshotSchema = mutableStruct({
   linearKeySource: Schema.optional(linearKeySourceSchema),
   linearConnections: Schema.optional(linearConnectionsSchema),
   linearIssuesSupported: Schema.optional(Schema.Literal(true)),
+  linearIssueActionsSupported: Schema.optional(Schema.Literal(true)),
   sparseWorktreesSupported: Schema.optional(Schema.Literal(true)),
   githubEventStreamsSupported: Schema.optional(Schema.Literal(true)),
   pullFileLoadingSupported: Schema.optional(Schema.Literal(true)),

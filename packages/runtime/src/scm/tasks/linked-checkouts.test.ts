@@ -1,6 +1,6 @@
 import { linkedProjectsTool } from './linked-project-tools.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { readFile, writeFile, rm, realpath, mkdtemp } from 'node:fs/promises'
+import { readFile, writeFile, rm, realpath, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -8,7 +8,7 @@ import { startRuntime } from '../../index.js'
 import { fixture } from '../../testing/fixture.js'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../git/worktrees.js'
-import type { AgentAdapter } from '../../agents/execution/types.js'
+import type { AgentAdapter, AgentRun } from '../../agents/execution/types.js'
 import { templateFromTask, templateTaskFields, type Automation } from '@dovo/protocol'
 import { WorkspaceStore } from '../../storage/workspace.js'
 
@@ -584,6 +584,101 @@ it('retries selected Git checkout finalization under a folder parent without rer
     finishParent.resolve()
     await running.done
   }
+})
+
+it('checkpoints a registered child worktree on the next turn without adding a checkout link', async () => {
+  const { s, primary, secondary } = await setup()
+  const storage = await mkdtemp(join(tmpdir(), 'dovo-registered-worktrees-'))
+  cleanups.push(() => rm(storage, { recursive: true, force: true }))
+  s.preferences.save({ worktreesRoot: storage, enableLinkedProjectsTool: true })
+  await writeFile(join(primary.directory, '.gitignore'), 'backend/\ndocs/\n')
+  await s.git.command(primary.directory, ['add', '.gitignore'])
+  await s.git.commit(primary.directory, 'Ignore independently tracked child projects')
+  const source = join(primary.directory, 'backend')
+  const otherSource = join(primary.directory, 'docs')
+  for (const checkout of [source, otherSource])
+    await s.git.command(primary.directory, ['clone', '--quiet', secondary.directory, checkout])
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories.map((repository) =>
+        repository.id === 'backend' ? { ...repository, path: source } : repository,
+      ),
+      { ...workspace.repositories[0], id: 'docs', name: 'Docs', path: otherSource },
+    ],
+  }))
+  const task = s.tasks.create({
+    title: 'Nested worktree inventory',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    execution: 'worktree',
+    objective: 'Inspect the checkouts',
+  })
+  const prompts: string[] = []
+  const grants: NonNullable<AgentRun['linkedDirectories']>[] = []
+  let candidate = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      prompts.push(run.prompt)
+      grants.push(run.linkedDirectories ?? [])
+      if (prompts.length === 1) {
+        candidate = join(run.cwd, 'backend')
+        await s.git.command(source, ['worktree', 'add', '-b', 'feature/backend', candidate])
+        const placeholder = join(run.cwd, 'docs')
+        await mkdir(placeholder)
+        await writeFile(join(placeholder, '.git'), 'not a registered worktree')
+      } else {
+        await writeFile(join(candidate, 'hello.txt'), 'changed backend\n')
+        await writeFile(join(run.cwd, 'hello.txt'), 'changed primary\n')
+      }
+      run.onText('Checked')
+    },
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(prompts[0]).not.toContain('Registered child worktrees inside this thread')
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(prompts).toHaveLength(2)
+  const discovered = { repositoryId: 'backend', path: candidate, branch: 'feature/backend' }
+  expect(prompts[1]).toContain(JSON.stringify([discovered]))
+  expect(grants).toEqual([[], []])
+  expect(s.store.task(task.id).linkedCheckouts).toBeUndefined()
+  const turn = s.store.task(task.id).turns?.at(-1)
+  const checkout = turn?.checkpoint?.linked?.[0]
+  expect(turn?.checkpoint?.files.map((file) => file.path)).toEqual(['hello.txt'])
+  expect(turn?.checkpoint?.linked).toEqual([
+    expect.objectContaining({
+      repositoryId: 'backend',
+      repositoryName: 'Backend',
+      directory: candidate,
+      files: [expect.objectContaining({ path: 'hello.txt', after: 'changed backend\n' })],
+    }),
+  ])
+  if (!turn || !checkout) throw new Error('Missing child checkpoint')
+  await expect(
+    s.tasks.filePreview(task.id, 'hello.txt', turn.id, checkout.checkoutId),
+  ).resolves.toMatchObject({ after: { text: 'changed backend\n' } })
+  await s.tasks.restoreFile(task.id, 'hello.txt', turn.id, checkout.checkoutId)
+  expect(await readFile(join(candidate, 'hello.txt'), 'utf8')).toBe('original\n')
+  expect(await readFile(join(source, 'hello.txt'), 'utf8')).toBe('original\n')
+  await expect(
+    linkedProjectsTool(s, {
+      taskId: task.id,
+      parentRunId: 'current',
+      command: { action: 'list' },
+    }),
+  ).resolves.toMatchObject({ active: [], nestedWorktrees: [discovered] })
+  const moved = join(storage, 'relocated-backend')
+  await s.git.command(source, ['worktree', 'move', candidate, moved])
+  await writeFile(join(moved, 'hello.txt'), 'started unrelated work\n')
+  await expect(
+    s.tasks.restoreFile(task.id, 'hello.txt', turn.id, checkout.checkoutId),
+  ).rejects.toThrow('The saved child worktree is unavailable')
+  expect(await readFile(join(moved, 'hello.txt'), 'utf8')).toBe('started unrelated work\n')
 })
 
 it('captures, previews, undoes and redoes both repositories without changing their commits', async () => {

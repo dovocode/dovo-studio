@@ -3,6 +3,7 @@ import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import {
   DIAGNOSTIC_RETENTION_DAYS,
+  delegatedResultId,
   taskFamilyIds,
   taskIsWorking,
   type TaskSummary,
@@ -35,6 +36,18 @@ function lastTaskActivity(task: TaskSummary) {
   )
 }
 
+function parentHoldsChildResult(task: TaskSummary, tasks: readonly TaskSummary[]) {
+  const child = task.delegation
+  if (task.status === 'draft' || !child) return false
+  if (child.completion === 'read') return true
+  if (child.completion !== 'queued') return false
+  const parent = tasks.find(({ id }) => id === child.parentTaskId)
+  const receipt = delegatedResultId(task.id, child.resultVersion)
+  return (parent?.subagentInbox ?? []).some(
+    (message) => message.id === receipt && message.subagentResultId === task.id,
+  )
+}
+
 /** Tasks to archive under "Auto-archive inactive tasks". Anything that could still need the
  * user (running, waiting for input, pinned, busy elsewhere) is never selected. */
 export function inactiveTaskIds(
@@ -42,18 +55,22 @@ export function inactiveTaskIds(
   days: number,
   now: number,
   busy: (task: TaskSummary) => boolean,
+  includeCompletedChildren = false,
 ) {
   if (!days) return []
   return tasks
     .filter((task) => {
       // Bots are persistent assistants; inactivity never settles or archives them.
-      if (task.delegation || task.example || task.archivedAt || task.bot) return false
+      if (task.example || task.archivedAt || task.bot) return false
+      if (task.delegation && (!includeCompletedChildren || !parentHoldsChildResult(task, tasks)))
+        return false
       const ids = taskFamilyIds(tasks, task.id)
       return tasks.every(
         (member) =>
           !ids.has(member.id) ||
           (!member.pinned &&
             !taskIsWorking(member) &&
+            (!task.delegation || member.delegation?.completion !== 'pending') &&
             !member.waitingForFeedback &&
             !hasPendingWork(member) &&
             !busy(member) &&
@@ -345,6 +362,7 @@ export class Housekeeping {
             currentPolicy.inactiveDays ?? 3,
             now,
             (member) => taskIsBusy(this.s, member.id),
+            true,
           ).includes(task.id)
         )
       }

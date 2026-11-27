@@ -6,6 +6,7 @@ import ./FilePages.bend as F
 import ./QuoteDraft.bend as C
 import ./TerminalPaste.bend as T
 import ./AgentSteering.bend as S
+import ./StoppedChild.bend as D
 
 def Laws.saved_reply_starts_next(reply, next, retry):
   {==}
@@ -154,4 +155,16 @@ def S.unavailable_native_turn_queues_input(paused, earlier):
   {==}
 
 def S.ready_native_turn_takes_unqueued_input():
+  {==}
+
+def D.fresh_human_input_starts_with_earlier_prompts_held(message, held):
+  {==}
+
+def D.started_retry_does_not_start_again(save_current, run_current, message, held):
+  {==}
+
+def D.a_new_stop_before_run_rejects_admission(message, held):
+  {==}
+
+def D.agent_input_cannot_resume(started, save_current, run_current, message, held):
   {==}

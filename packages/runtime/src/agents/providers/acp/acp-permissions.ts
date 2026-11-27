@@ -1,4 +1,9 @@
-import { effectivePermissionPolicy, type Agent, type PermissionPolicy } from '@dovo/protocol'
+import {
+  effectivePermissionPolicy,
+  isAntigravityAcp,
+  type Agent,
+  type PermissionPolicy,
+} from '@dovo/protocol'
 import type { AcpLaunch, AgentRun } from '../../execution/types.js'
 import { toolPolicyDisposition } from '../shared/permission-policy.js'
 import { lstat, realpath } from 'node:fs/promises'
@@ -6,12 +11,7 @@ import { dirname, isAbsolute, relative, sep } from 'node:path'
 
 export function acpPermissionProvider(launch: AcpLaunch, agent: Pick<Agent, 'acpInstallationId'>) {
   if (launch.authentication === 'grok') return 'grok'
-  if (
-    agent.acpInstallationId === 'antigravity-acp' ||
-    (/^agy(?:\.exe|\.cmd)?$/i.test(launch.command.split(/[\\/]/).at(-1) ?? '') &&
-      launch.args.includes('acp'))
-  )
-    return 'antigravity'
+  if (isAntigravityAcp(agent.acpInstallationId, launch.command, launch.args)) return 'antigravity'
   if (
     launch.args.includes('--agent-engine=v3') &&
     (agent.acpInstallationId === 'kiro' ||

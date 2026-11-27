@@ -13,6 +13,7 @@ import type {
   ListSessionsRequest,
 } from '@agentclientprotocol/sdk/unstable'
 import { openAcpTransport } from './acp-transport.js'
+import { lt, valid } from 'semver'
 export { ACP_MAX_MESSAGE_BYTES } from './acp-transport.js'
 import type { AcpLaunch } from '../../execution/types.js'
 
@@ -97,6 +98,12 @@ export async function initializeAcp(
     ])
     if (result.protocolVersion !== PROTOCOL_VERSION)
       throw new Error(`ACP protocol version ${result.protocolVersion} is unsupported`)
+    const info = result.agentInfo
+    if (info && /^(antigravity(?:[-_]acp)?|agy)$/i.test(info.name)) {
+      const version = valid(info.version.replace(/^agy_acp_server_/i, ''))
+      if (version && lt(version, '1.5.1'))
+        throw new Error(`Update Antigravity to 1.5.1 or newer. Detected version: ${version}.`)
+    }
     if (connection.authentication === 'grok') {
       const methodsAvailable = new Set(result.authMethods?.map((method) => method.id))
       const methodId =

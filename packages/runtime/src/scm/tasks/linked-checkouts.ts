@@ -4,15 +4,18 @@ import {
   requireCompleteWorktree,
 } from '../git/worktree-records.js'
 import { isDeepStrictEqual } from 'node:util'
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { createHash } from 'node:crypto'
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   decode,
   taskFamilyWorking,
   nativeAgentWorking,
   linkedCheckoutsSchema,
+  containerSandboxEnabled,
   type LinkedCheckout,
   type LinkedCheckpoint,
+  type TaskMetadata,
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { GitService } from '../git/git.js'
@@ -24,10 +27,21 @@ import { listBranches } from '../git/branches.js'
 import { defaultWorktreeBase, canChangeTaskCheckout } from '@dovo/protocol'
 import { PendingCheckouts } from './pending-checkouts.js'
 
+export type LinkedCheckpointTarget = Pick<
+  LinkedCheckpoint,
+  'checkoutId' | 'repositoryId' | 'repositoryName' | 'directory' | 'branch' | 'nestedWorktree'
+>
+
 export type ResolvedCheckout = LinkedCheckout & {
   directory: string
   name: string
   git: boolean
+  branch?: string
+}
+
+type DiscoveredWorktree = {
+  repositoryId: string
+  path: string
   branch?: string
 }
 
@@ -46,6 +60,12 @@ export class LinkedCheckouts {
     if (!repo || repo.kind) throw new HttpError(404, 'The saved checkpoint project is unavailable')
     const root = (await this.git.inspect(repo.path)).path
     if (!restore) return root
+    if (checkpoint.nestedWorktree) {
+      const record = await this.registeredNestedWorktree(root, checkpoint.directory)
+      const branch = record?.branch?.replace(/^refs\/heads\//, '')
+      if (record && branch === checkpoint.branch) return checkpoint.directory
+      throw new HttpError(409, 'The saved child worktree is unavailable or has changed branches')
+    }
     const records = worktreeRecords(
       await this.git.command(root, ['worktree', 'list', '--porcelain', '-z']),
     )
@@ -142,6 +162,119 @@ export class LinkedCheckouts {
     const task = this.store.taskSummary(id)
     if (task.delegation) return this.resolve(task.delegation.parentTaskId, signal)
     return this.pending.run(id, (sharedSignal) => this.resolveAll(id, sharedSignal), signal)
+  }
+
+  /** Locate the registered child worktree at its project-relative path, without resolving it as a link. */
+  async discoverNestedWorktrees(task: TaskMetadata, cwd?: string, signal?: AbortSignal) {
+    if (
+      !cwd ||
+      task.execution !== 'worktree' ||
+      task.delegation ||
+      task.importedCodexSession ||
+      task.importedPiSession ||
+      containerSandboxEnabled(task.containerSandbox)
+    )
+      return []
+    const repositories = this.store.get().repositories
+    const primary = repositories.find((item) => item.id === task.repositoryId)
+    if (!primary || primary.kind) return []
+    const root = await realpath(cwd).catch(() => undefined)
+    if (!root || root === resolve(primary.path)) return []
+    const linked = new Set(task.linkedCheckouts?.map((item) => item.repositoryId))
+    const discovered: DiscoveredWorktree[] = []
+    for (const repository of repositories) {
+      signal?.throwIfAborted()
+      if (repository.kind || linked.has(repository.id)) continue
+      const child = relative(primary.path, repository.path)
+      if (!child || child === '..' || child.startsWith('..' + sep) || isAbsolute(child)) continue
+      const candidate = join(root, child)
+      const worktree = await this.registeredNestedWorktree(repository.path, candidate, signal)
+      if (worktree)
+        discovered.push({
+          repositoryId: repository.id,
+          path: candidate,
+          branch: worktree.branch?.replace(/^refs\/heads\//, ''),
+        })
+    }
+    return discovered
+  }
+
+  private async registeredNestedWorktree(source: string, path: string, signal?: AbortSignal) {
+    try {
+      if ((await realpath(path)) !== path) return
+      const marker = join(path, '.git')
+      const stat = await lstat(marker)
+      if (!stat.isFile() || stat.size > 16_384) return
+      const pointer = (await readFile(marker, 'utf8')).replace(/\r?\n$/, '')
+      if (!pointer.startsWith('gitdir: ')) return
+      const registered = await this.git.readCommand(
+        source,
+        ['worktree', 'list', '--porcelain', '-z'],
+        { signal },
+      )
+      const record = worktreeRecords(registered).find(
+        (item) => item.path && resolve(item.path) === path && availableWorktree(item, source),
+      )
+      if (!record) return
+      const common = await this.git.readCommand(
+        source,
+        ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+        { signal },
+      )
+      const gitDirectory = await realpath(resolve(path, pointer.slice(8)))
+      if (
+        dirname(gitDirectory) !== (await realpath(join(common.replace(/\r?\n$/, ''), 'worktrees')))
+      )
+        return
+      const registeredMarker = (await readFile(join(gitDirectory, 'gitdir'), 'utf8')).replace(
+        /\r?\n$/,
+        '',
+      )
+      if ((await realpath(resolve(gitDirectory, registeredMarker))) === marker) return record
+    } catch {
+      signal?.throwIfAborted()
+    }
+  }
+
+  async nestedCheckpointTargets(
+    cwd: string,
+    discovered: readonly DiscoveredWorktree[],
+    signal: AbortSignal,
+  ): Promise<LinkedCheckpointTarget[]> {
+    if (!discovered.length) return []
+    const paths = discovered.map((worktree) => relative(cwd, worktree.path).split(sep).join('/'))
+    // The parent and child snapshots must own disjoint sets of files.
+    const [ignored, tracked] = await Promise.all([
+      this.git.readCommand(cwd, ['check-ignore', '-z', '--stdin'], {
+        input: `${paths.join('\0')}\0`,
+        signal,
+      }),
+      this.git.readCommand(cwd, ['--literal-pathspecs', 'ls-files', '-z', '--', ...paths], {
+        signal,
+      }),
+    ]).catch(() => ['', ''])
+    signal.throwIfAborted()
+    const ignoredPaths = new Set(ignored.split('\0'))
+    const trackedPaths = tracked.split('\0')
+    const repositories = this.store.get().repositories
+    return discovered.flatMap(({ repositoryId, path, branch }, index) => {
+      const child = paths[index]
+      if (
+        !ignoredPaths.has(child) ||
+        trackedPaths.some((entry) => entry === child || entry.startsWith(`${child}/`))
+      )
+        return []
+      return [
+        {
+          checkoutId: `nested.${createHash('sha256').update(repositoryId).digest('hex')}`,
+          repositoryId,
+          repositoryName: repositories.find((repository) => repository.id === repositoryId)?.name,
+          directory: path,
+          branch,
+          nestedWorktree: true,
+        },
+      ]
+    })
   }
 
   private async resolveAll(id: string, signal?: AbortSignal) {

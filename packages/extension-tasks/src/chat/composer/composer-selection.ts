@@ -37,6 +37,7 @@ export function selectComposerWorkspace(
           permissionPolicySupported: snapshot.permissionPolicySupported,
           promptQueueStagingSupported: snapshot.promptQueueStagingSupported,
           directMessageSupported: snapshot.directMessageSupported,
+          stoppedChildResumeSupported: snapshot.stoppedChildResumeSupported,
           queuedTurnSettingsSupported: snapshot.queuedTurnSettingsSupported,
           queuePausePreservationSupported: snapshot.queuePausePreservationSupported,
           messageSetupSupported: snapshot.messageSetupSupported,

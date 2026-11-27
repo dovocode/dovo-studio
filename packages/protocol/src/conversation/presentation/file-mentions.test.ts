@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { insertMention, mentionQuery, rankPaths } from './file-mentions.js'
+import { explicitFileMentions, insertMention, mentionQuery, rankPaths } from './file-mentions.js'
 
 it('finds the mention being typed and ignores e-mail addresses', () => {
   expect(mentionQuery('Look at @file:src/ma', 20)).toEqual({ start: 8, query: 'src/ma' })
@@ -13,6 +13,15 @@ it('inserts the chosen path in place of the query', () => {
     text: 'Fix @file:src/composer.tsx  please',
     caret: 27,
   })
+})
+
+it('preserves literal and composer-encoded separators in quoted Windows paths', () => {
+  const path = 'C:\\new folder\\test.ts'
+  const literal = `@file:"${path}"`
+  const inserted = insertMention('@file:', 0, 6, path).text
+  expect(explicitFileMentions(literal).map((file) => file.path)).toEqual([path])
+  expect(explicitFileMentions(inserted).map((file) => file.path)).toEqual([path])
+  expect(explicitFileMentions('@file:"ordinary\\nfile.ts"')[0]?.path).toBe('ordinary\nfile.ts')
 })
 
 it('ranks file-name matches first and supports letters in order', () => {

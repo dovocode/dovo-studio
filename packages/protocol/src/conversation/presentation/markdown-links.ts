@@ -28,6 +28,21 @@ export function resolveMarkdownLink(url: string, baseURL?: string, fileBaseURL?:
 /** Local Markdown destinations, including source line suffixes, retain their runtime identity. */
 export function localMarkdownPath(url: string): string | undefined {
   if (!url || url.startsWith('#') || url.startsWith('//')) return undefined
+  if (/^sandbox:/i.test(url)) {
+    const path = url
+      .slice('sandbox:'.length)
+      .split(/[?#]/)[0]!
+      .replace(/:\d+(?::\d+)?$/, '')
+    if (!path.startsWith('/')) return undefined
+    try {
+      const decoded = decodeURIComponent(path)
+      if (decoded.length < 2 || /^[/\\]{2}/.test(decoded) || /[\0\t\r\n]/.test(decoded))
+        return undefined
+      return /^\/[a-z]:[/\\]/i.test(decoded) ? path.slice(1) : path
+    } catch {
+      return undefined
+    }
+  }
   if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^file:/i.test(url) && !/^[a-z]:[\\/]/i.test(url))
     return undefined
   return url.split('#')[0]!.replace(/:\d+(?::\d+)?$/, '') || undefined

@@ -6,18 +6,20 @@ import { builtInAgentPresets, type Agent } from '@dovo/protocol'
 import { AgentRegistry } from '../../configuration/registry.js'
 
 it.skipIf(process.platform === 'win32').each([
-  { permission: 'ask', saved: 'yolo', offersAuto: true, applied: 'default' },
-  { permission: 'auto', saved: undefined, offersAuto: true, applied: 'auto' },
-  { permission: 'auto', saved: undefined, offersAuto: false, applied: 'default' },
-  { permission: 'full-access', saved: undefined, offersAuto: true, applied: 'default' },
+  { permission: 'ask', saved: 'yolo', offersAuto: true, applied: 'default', version: '1.5.1' },
+  { permission: 'auto', offersAuto: true, applied: 'auto', version: '1.5.1' },
+  { permission: 'auto', offersAuto: false, applied: 'default', version: '1.5.1' },
+  { permission: 'full-access', offersAuto: true, applied: 'default', version: '1.5.1' },
+  { permission: 'ask', offersAuto: true, applied: 'unsupported', version: '1.5.0' },
 ] satisfies {
   permission: Agent['permission']
   saved?: string
   offersAuto: boolean
   applied: string
+  version: string
 }[])(
-  'runs installed agy with $permission in $applied when Auto is advertised=$offersAuto',
-  async ({ permission, saved, offersAuto, applied }) => {
+  'runs installed agy $version with $permission in $applied when Auto is advertised=$offersAuto',
+  async ({ permission, saved, offersAuto, applied, version }) => {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-installed-agy-'))
     const executable = join(directory, 'agy')
     const record = join(directory, 'calls.json')
@@ -28,7 +30,8 @@ it.skipIf(process.platform === 'win32').each([
         `#!${process.execPath}
 const {createInterface}=require('node:readline');
 const {readFileSync,writeFileSync}=require('node:fs');
-if(process.argv[2]==='--version'){console.log('1.5.1');process.exit(0)}
+const version=${JSON.stringify(version)};
+if(process.argv[2]==='--version'){console.log(version);process.exit(0)}
 if(process.argv.slice(2).join(' ')!=='acp')process.exit(2);
 const record=process.env.DOVO_AGY_FIXTURE_RECORD;
 const calls=()=>{try{return JSON.parse(readFileSync(record,'utf8'))}catch{return []}};
@@ -39,7 +42,7 @@ configOptions.push({id:'mode',name:'Mode',type:'select',category:'mode',currentV
 let pendingPrompt;
 createInterface({input:process.stdin}).on('line',line=>{
   const input=JSON.parse(line);writeFileSync(record,JSON.stringify([...calls(),{argv:process.argv.slice(2),method:input.method,params:input.params}]));
-  if(input.method==='initialize')respond(input.id,{protocolVersion:1,agentInfo:{name:'antigravity-acp',version:'1.5.1'},agentCapabilities:{sessionCapabilities:{close:{}}}});
+  if(input.method==='initialize')respond(input.id,{protocolVersion:1,agentInfo:{name:'antigravity-acp',version},agentCapabilities:{sessionCapabilities:{close:{}}}});
   if(input.method==='session/new')respond(input.id,{sessionId:'agy-session',configOptions});
   if(input.method==='session/set_config_option'){
     const option=configOptions.find(option=>option.id===input.params.configId);
@@ -70,6 +73,15 @@ createInterface({input:process.stdin}).on('line',line=>{
         },
       }
       const adapter = await registry.get(agent.provider)
+      if (applied === 'unsupported') {
+        await expect(adapter.models?.(agent)).rejects.toThrow('Update Antigravity to 1.5.1')
+        expect(
+          JSON.parse(await readFile(record, 'utf8')).map(
+            ({ method }: { method: string }) => method,
+          ),
+        ).toEqual(['initialize'])
+        return
+      }
       expect((await adapter.models?.(agent))?.models).toEqual([
         { id: 'gemini-fixture', name: 'Gemini fixture', isDefault: true },
       ])

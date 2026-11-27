@@ -271,7 +271,16 @@ function ReasoningPart({ data }: DataMessagePartProps<unknown>) {
   return <ReasoningActivity events={decode(mutableArray(toolSchema), data)} />
 }
 function AssistantText({ text, status }: TextMessagePartProps) {
-  return <ThreadMarkdown text={text} variant="chat" streaming={status.type === 'running'} />
+  const messageId = useAuiState((state) => state.message.id)
+  const streaming = status.type === 'running'
+  return (
+    <ThreadMarkdown
+      text={text}
+      variant="chat"
+      streaming={streaming}
+      quoteMessageId={streaming ? undefined : messageId}
+    />
+  )
 }
 /** Car mode hides each turn's commands, edits and searches; only what the agent says stays. */
 function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {

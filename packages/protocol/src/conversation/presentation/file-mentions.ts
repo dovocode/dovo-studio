@@ -14,7 +14,10 @@ export function explicitFileMentions(text: string) {
   const files: { start: number; end: number; path: string }[] = []
   for (const match of text.matchAll(fileTokens)) {
     let path = match[2]
-    if (path.startsWith('"')) {
+    if (/^"[a-z]:\\(?!\\)/i.test(path)) {
+      // A pasted drive path can contain single backslashes. The picker uses JSON escaping.
+      path = path.slice(1, -1)
+    } else if (path.startsWith('"')) {
       try {
         path = JSON.parse(path)
       } catch {

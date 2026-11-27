@@ -13,6 +13,7 @@ import {
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { useConversationSelector } from '../state/provider'
+import { threadLocalPreviewOrigin } from '../../preview/thread-local-browser-preview'
 import {
   NativeReferenceMessage,
   nativeReferenceMessagesAvailable,
@@ -85,7 +86,8 @@ export function UserMessageText({ text, onLink }: { text: string; onLink: (url: 
     const appendText = (value: string) => {
       for (const part of value.split(/(https?:\/\/[^\s<>"'`]+)/gi)) {
         const url = part.replace(/[.,;:!?)\]}]+$/, '')
-        if (threadPullLink(url)) parts.push({ text: url, url }, { text: part.slice(url.length) })
+        if (threadPullLink(url) || threadLocalPreviewOrigin(url))
+          parts.push({ text: url, url }, { text: part.slice(url.length) })
         else parts.push({ text: part })
       }
     }

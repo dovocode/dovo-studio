@@ -1,12 +1,16 @@
-import { fromMarkdown } from 'mdast-util-from-markdown'
+import { markdownWithReferencePrefix, parseSharedMarkdown } from '@dovo/protocol'
 import type { Nodes } from 'mdast'
 export type MarkdownImagePart =
   | { kind: 'text'; text: string; offset: number }
   | { kind: 'image'; url: string; alt: string; offset: number }
 /** Parse Markdown images (including references) without interpreting fenced/escaped text. */
-export function markdownImages(text: string): MarkdownImagePart[] {
+export function markdownImages(text: string, definitions = ''): MarkdownImagePart[] {
   if (!text.includes('![')) return [{ kind: 'text', text, offset: 0 }]
-  return markdownImagesFromNodes(text, fromMarkdown(text).children, 0)
+  return markdownImagesFromNodes(
+    text,
+    parseSharedMarkdown(markdownWithReferencePrefix(text, definitions), 'commonmark').children,
+    definitions.length,
+  )
 }
 /** Reuse the fence tree; references still resolve only inside this rendered fragment. */
 export function markdownImagesFromNodes(
@@ -15,11 +19,10 @@ export function markdownImagesFromNodes(
   sourceOffset: number,
 ): MarkdownImagePart[] {
   if (!text.includes('![')) return [{ kind: 'text', text, offset: 0 }]
-  const definitions = new Map(
-    nodes.flatMap((node) =>
-      node.type === 'definition' ? [[node.identifier, node.url] as const] : [],
-    ),
-  )
+  const definitions = new Map<string, string>()
+  for (const node of nodes)
+    if (node.type === 'definition' && !definitions.has(node.identifier))
+      definitions.set(node.identifier, node.url)
   const images: Array<{ start: number; end: number; url: string; alt: string }> = []
   const visit = (node: Nodes, parent?: Nodes) => {
     if (node.type === 'image' || node.type === 'imageReference') {

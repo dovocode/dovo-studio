@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import {
   richMarkdown,
+  parseSharedMarkdown,
   renderFileCitations,
   richMarkdownPaths,
   markdownMediaKind,
@@ -45,8 +46,34 @@ it('resolves reference media and keeps reference definitions available in split 
   expect(
     parts
       .filter((part) => part.kind === 'markdown')
-      .every((part) => part.text.includes('[docs]: https://example.com')),
+      .every((part) => {
+        const root = parseSharedMarkdown((part.referencePrefix ?? '') + part.text)
+        return root.children.some(
+          (node) => node.type === 'definition' && node.identifier === 'docs',
+        )
+      }),
   ).toBe(true)
+})
+it.each([
+  ['plain text', ''],
+  ['a leading BOM', '\uFEFF'],
+])('keeps references and an unfinished fence intact across a media split with %s', (_, start) => {
+  const text =
+    start +
+    '[docs]: https://example.com\n\n[Shot](shot.png)\n\nRead [Docs][docs].\n\n```ts\nconst n = 1'
+  const part = richMarkdown(text).at(-1)
+  if (part?.kind !== 'markdown') throw new Error('Expected Markdown after the image')
+  expect(part.offset).toBe(text.indexOf('[Shot]') + '[Shot](shot.png)'.length)
+  const root = parseSharedMarkdown((part.referencePrefix ?? '') + part.text)
+  expect(root.children.at(-2)).toMatchObject({
+    type: 'paragraph',
+    children: [
+      { type: 'text', value: 'Read ' },
+      { type: 'linkReference', identifier: 'docs' },
+      { type: 'text', value: '.' },
+    ],
+  })
+  expect(root.children.at(-1)).toMatchObject({ type: 'code', value: 'const n = 1' })
 })
 it('retains repository links on non-task surfaces', () => {
   const text = '[Shot](shot.png)\n\n[File](src/app.ts)'
@@ -134,6 +161,9 @@ it('embeds bare media URLs without promoting sentence links or table cells', () 
   })
   for (const text of [
     'See https://example.com/clip.mp4.',
+    'https://example.mp4',
+    'https://example.com/report?file=clip.mp4',
+    'https://example.com/report#clip.mp4',
     '| Preview |\n| --- |\n| [Shot](shot.png) |',
   ])
     expect(richMarkdown(text)).toEqual([{ kind: 'markdown', text, offset: 0 }])

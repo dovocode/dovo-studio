@@ -1,13 +1,17 @@
 import { Schema } from 'effect'
 import {
   decode,
+  decodeResult,
   linearConnectionsSchema,
+  linearIssueActionsSchema,
   linearIssueQuerySchema,
   mutableArray,
   mutableStruct,
   type LinearConnectionCommand,
+  type LinearIssueAction,
+  type linearIssueActionsQuerySchema,
 } from '@dovo/protocol'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import type { linearKeySourceSchema } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
@@ -42,6 +46,63 @@ const query = `query DovoIssues($after: String, $filter: IssueFilter!, $first: I
     pageInfo { hasNextPage endCursor }
   }
 }`
+
+const stateFields = mutableStruct({ id: Schema.String, name: Schema.String })
+const issueActionsResponse = mutableStruct({
+  data: mutableStruct({
+    issue: Schema.NullOr(
+      mutableStruct({
+        id: Schema.String,
+        state: stateFields,
+        team: mutableStruct({
+          key: Schema.String,
+          states: mutableStruct({ nodes: mutableArray(stateFields) }),
+        }),
+        comments: mutableStruct({
+          nodes: mutableArray(
+            mutableStruct({
+              id: Schema.String,
+              body: Schema.String,
+              user: Schema.NullOr(mutableStruct({ name: Schema.String })),
+            }),
+          ),
+        }),
+      }),
+    ),
+  }),
+})
+const issueActionsQuery = `query DovoIssueActions($id: String!) {
+  issue(id: $id) {
+    id state { id name } team { key states(first: 100) { nodes { id name } } }
+    comments(first: 20) { nodes { id body user { name } } }
+  }
+}`
+const updateState = `mutation DovoIssueStatus($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) { success }
+}`
+const createComment = `mutation DovoIssueComment($input: CommentCreateInput!) {
+  commentCreate(input: $input) { success }
+}`
+const mutationResponse = mutableStruct({
+  data: mutableStruct({
+    issueUpdate: Schema.optional(mutableStruct({ success: Schema.Boolean })),
+    commentCreate: Schema.optional(mutableStruct({ success: Schema.Boolean })),
+  }),
+})
+const latestComment = `query DovoCommentReceipt($id: String!) {
+  comment(id: $id) { id body issue { id } }
+}`
+const commentResponse = mutableStruct({
+  data: mutableStruct({
+    comment: Schema.NullOr(
+      mutableStruct({
+        id: Schema.String,
+        body: Schema.String,
+        issue: Schema.NullOr(mutableStruct({ id: Schema.String })),
+      }),
+    ),
+  }),
+})
 
 function linearReadKey() {
   return process.env.DOVO_LINEAR_API_KEY?.trim()
@@ -175,9 +236,18 @@ export class LinearSettings {
     }
     return this.connections(projects())
   }
-  async issues(input: typeof linearIssueQuerySchema.Type, hasProject: (id: string) => boolean) {
+  private issueSource(
+    input: Pick<typeof linearIssueQuerySchema.Type, 'repositoryId' | 'connectionId'>,
+    hasProject: (id: string) => boolean,
+  ) {
     const { repositoryId, connectionId } = input
-    if (!repositoryId && !connectionId) return readLinearIssues(input, this.key())
+    const version = (...identity: string[]) =>
+      createHash('sha256').update(JSON.stringify(identity)).digest('hex')
+    if (!repositoryId && !connectionId) {
+      const key = this.key()
+      if (!key) throw new HttpError(404, 'Linear is not configured on this computer.')
+      return { key, version: version(key), current: () => this.key() === key }
+    }
     if (repositoryId && connectionId)
       throw new HttpError(400, 'Choose a Linear project or a connection.')
     const binding =
@@ -185,14 +255,69 @@ export class LinearSettings {
     const id = binding?.connectionId ?? connectionId
     const connection = id && this.connection(id)
     if (!id || !connection) throw new HttpError(404, 'This Linear source is unavailable.')
-    const result = await readLinearIssues(input, connection.key, 25, binding?.team)
-    if (
-      this.connection(id)?.revision !== connection.revision ||
-      (repositoryId &&
-        (!hasProject(repositoryId) || this.binding(repositoryId)?.revision !== binding?.revision))
-    )
-      throw new HttpError(409, 'This Linear source changed. Select it again.')
+    return {
+      key: connection.key,
+      team: binding?.team,
+      version: version(id, connection.revision, binding?.revision ?? ''),
+      current: () =>
+        this.connection(id)?.revision === connection.revision &&
+        (!repositoryId ||
+          (hasProject(repositoryId) && this.binding(repositoryId)?.revision === binding?.revision)),
+    }
+  }
+  async issues(input: typeof linearIssueQuerySchema.Type, hasProject: (id: string) => boolean) {
+    const source = this.issueSource(input, hasProject)
+    const result = await readLinearIssues(input, source.key, 25, source.team)
+    if (!source.current()) throw linearSourceChanged()
     return result
+  }
+  async issueActions(
+    input: typeof linearIssueActionsQuerySchema.Type,
+    hasProject: (id: string) => boolean,
+    action?: LinearIssueAction,
+    authorize?: () => void,
+  ) {
+    const source = this.issueSource(input, hasProject)
+    if (action && source.version !== action.sourceVersion) throw linearSourceChanged()
+    const read = () => readIssueActions(input.issueId, source.key, source.team)
+    let issue = await read()
+    if (!source.current()) throw linearSourceChanged()
+    if (action) {
+      authorize?.()
+      if (action.action === 'set-status' && issue.state.id !== action.stateId) {
+        if (issue.state.id !== action.expectedStateId)
+          throw new HttpError(409, 'The Linear issue status changed. Refresh and try again.', {
+            mutationRejected: true,
+          })
+        if (!issue.team.states.nodes.some(({ id }) => id === action.stateId))
+          throw new HttpError(400, 'Choose a status from this Linear team.', {
+            mutationRejected: true,
+          })
+        const response = await linearGraphQL(source.key, updateState, {
+          id: issue.id,
+          input: { stateId: action.stateId },
+        })
+        if (!decodeResult(mutationResponse, response).data?.data.issueUpdate?.success)
+          throw new HttpError(422, 'Linear could not change this issue status.')
+      } else if (action.action === 'comment') {
+        await postLinearComment(source.key, issue.id, action.commentId, action.body)
+      }
+      issue = await read()
+      if (!source.current())
+        throw new HttpError(
+          409,
+          'This Linear source changed after the action. Select it again to check the issue.',
+        )
+    }
+    return decode(linearIssueActionsSchema, {
+      sourceVersion: source.version,
+      state: issue.state,
+      states: issue.team.states.nodes,
+      comments: issue.comments.nodes.map(({ user, ...comment }) => ({
+        ...comment,
+        author: user?.name ?? '',
+      })),
+    })
   }
   private savedKey() {
     const key = this.db
@@ -233,6 +358,57 @@ function checkedKey(input: string) {
   return key
 }
 
+function linearSourceChanged() {
+  return new HttpError(409, 'This Linear source changed. Select it again.', {
+    mutationRejected: true,
+  })
+}
+
+async function readIssueActions(issueId: string, key: string, team?: string) {
+  const response = await linearGraphQL(key, issueActionsQuery, { id: issueId })
+  const issue = decodeResult(issueActionsResponse, response).data?.data.issue
+  if (!issue || issue.id !== issueId || (team && issue.team.key !== team))
+    throw new HttpError(404, 'This issue is unavailable from the selected Linear source.', {
+      mutationRejected: true,
+    })
+  return issue
+}
+
+async function postLinearComment(key: string, issueId: string, id: string, body: string) {
+  const response = await linearGraphQL(key, createComment, { input: { id, issueId, body } }).catch(
+    (cause: unknown) => cause,
+  )
+  if (decodeResult(mutationResponse, response).data?.data.commentCreate?.success) return
+  const receipt = await linearGraphQL(key, latestComment, { id })
+  const comment = decodeResult(commentResponse, receipt).data?.data.comment
+  if (comment?.id === id && comment.issue?.id === issueId && comment.body === body) return
+  if (response instanceof Error) throw response
+  throw new HttpError(422, 'Linear could not post this comment.')
+}
+
+async function linearGraphQL(key: string, query: string, variables: object): Promise<unknown> {
+  let response: Response
+  try {
+    response = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { Authorization: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(12_000),
+    })
+  } catch {
+    throw new HttpError(502, 'Could not reach Linear. Try again.')
+  }
+  if (response.status === 401 || response.status === 403)
+    throw new HttpError(403, 'Linear rejected this computer’s API key.')
+  if (response.status === 429)
+    throw new HttpError(429, 'Linear rate limit reached. Try again later.')
+  if (!response.ok) throw new HttpError(502, 'Linear could not complete the request.')
+  return response.json().catch(() => {
+    throw new HttpError(502, 'Linear returned an invalid response.')
+  })
+}
+
 export async function readLinearIssues(
   input: typeof linearIssueQuerySchema.Type,
   key = linearReadKey(),
@@ -249,32 +425,13 @@ export async function readLinearIssues(
       ? { title: { containsIgnoreCase: search } }
       : {}
   const scoped = team ? { ...filter, team: { key: { eq: team } } } : filter
-  let response: Response
-  try {
-    response = await fetch('https://api.linear.app/graphql', {
-      method: 'POST',
-      headers: { Authorization: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query,
-        variables: { after: input.cursor ?? null, filter: scoped, first },
-      }),
-      redirect: 'error',
-      signal: AbortSignal.timeout(12_000),
-    })
-  } catch {
-    throw new HttpError(502, 'Could not reach Linear. Try again.')
-  }
-  if (response.status === 401 || response.status === 403)
-    throw new HttpError(403, 'Linear rejected this computer’s API key.')
-  if (response.status === 429)
-    throw new HttpError(429, 'Linear rate limit reached. Try again later.')
-  if (!response.ok) throw new HttpError(502, 'Linear could not load issues.')
-  const result = await response
-    .json()
-    .then((body: unknown) => decode(responseSchema, body))
-    .catch(() => {
-      throw new HttpError(502, 'Linear returned an invalid issue list.')
-    })
+  const response = await linearGraphQL(key, query, {
+    after: input.cursor ?? null,
+    filter: scoped,
+    first,
+  })
+  const result = decodeResult(responseSchema, response).data
+  if (!result) throw new HttpError(502, 'Linear returned an invalid issue list.')
   if (result.errors?.length || !result.data)
     throw new HttpError(502, 'Linear could not read issues with this API key.')
   const { nodes, pageInfo } = result.data.issues

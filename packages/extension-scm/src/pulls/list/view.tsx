@@ -9,12 +9,16 @@ import {
   forgePullTarget,
   pullRepositoryIdentity,
   pullRepositoryKey,
+  pullLabelChoices,
+  matchesPullLabels,
+  removePullLabel,
+  savedPullLabels,
   type PullSummary,
 } from '@dovo/protocol'
 import { AddPullsToThread } from './add-to-thread'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { Plug, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
+import { Plug, Plus, RefreshCw, SlidersHorizontal, X } from 'lucide-react'
 import {
   comparePulls,
   matchesPull,
@@ -52,6 +56,7 @@ import { SourcePicker } from '../../connections/source-picker'
 import { createPullStateCache, useRetainedPullState } from '../retained-state'
 type SavedSelection = { source: Pick<RepositorySource, 'key' | 'scope'>; number: number } | null
 const filterCache = createPullStateCache<string>(100)
+const labelFilterCache = createPullStateCache<string[]>(20)
 const listScrollCache = createPullStateCache<number>(30)
 const flagCache = createPullStateCache<boolean>(40)
 const selectionCache = createPullStateCache<SavedSelection>(20)
@@ -77,6 +82,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     [state, setState] = useRetainedPullState(filterCache, listKey + ':state', 'open'),
     [search, setSearch] = useRetainedPullState(filterCache, listKey + ':search', ''),
     [draft, setDraft] = useRetainedPullState(filterCache, listKey + ':draft', 'all'),
+    [pullLabels, setPullLabels] = useRetainedPullState(labelFilterCache, listKey, []),
     [attention, setAttention] = useRetainedPullState(flagCache, listKey + ':attention', false),
     [sort, setSort] = useRetainedPullState(filterCache, listKey + ':sort', 'updated'),
     [filtersOpen, setFiltersOpen] = useRetainedPullState(
@@ -201,7 +207,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const creatingSource = sources.find(
     (source) => source.key === creating?.key && source.scope === creating.scope,
   )
-  const filteredPulls = uniquePulls(
+  const scopedPulls = uniquePulls(
     pages.flatMap((page) =>
       page.pulls.map((pull) => ({
         ...pull,
@@ -209,12 +215,21 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
         repositoryName: page.source.repository.name,
       })),
     ),
+  ).filter(
+    (p) =>
+      (state === 'all' || p.state === state) &&
+      (draft === 'all' || p.draft === (draft === 'draft')) &&
+      (!attention || pullNeedsAttention(p)),
   )
+  const labelChoices = pullLabelChoices(scopedPulls, pullLabels)
+  const setLabels = (labels: string[]) => {
+    setPullLabels(labels)
+    setMarked([])
+  }
+  const filteredPulls = scopedPulls
     .filter(
       (p) =>
-        (state === 'all' || p.state === state) &&
-        (draft === 'all' || p.draft === (draft === 'draft')) &&
-        (!attention || pullNeedsAttention(p)) &&
+        matchesPullLabels(p, pullLabels) &&
         matchesPull(p, `${p.repositoryName} ${p.source.runtimeName}`, search),
     )
     .sort((a, b) => comparePulls(a, b, sort === 'attention'))
@@ -399,6 +414,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     Number(state !== 'open') +
     Number(sort !== 'updated') +
     Number(draft !== 'all') +
+    Number(!!pullLabels.length) +
     Number(attention) +
     Number(Object.values(pullProjectVisibility).some((value) => value !== 'all'))
   return (
@@ -458,12 +474,22 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 )}
                 sources={sources.map((source) => ({ key: source.key, identity: source.scope }))}
                 requestedId={entityId}
-                value={{ source: repositoryId, state, search, draft, attention, sort, personal }}
+                value={{
+                  source: repositoryId,
+                  state,
+                  search,
+                  draft,
+                  attention,
+                  sort,
+                  personal,
+                  pullLabels,
+                }}
                 onApply={(value) => {
                   setRepository(value.source)
                   setState(value.state)
                   setSearch(value.search)
                   setDraft(value.draft ?? 'all')
+                  setPullLabels(savedPullLabels(value))
                   setAttention(value.attention ?? false)
                   setSort(value.sort)
                   setPersonal(value.personal ?? 'all')
@@ -653,6 +679,55 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       <option value="updated">Recently updated</option>
                     </ChoicePicker>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 px-3 pb-2">
+                    <ChoicePicker
+                      aria-label={uiText('Add label')}
+                      className={selectStyle}
+                      value=""
+                      disabled={!labelChoices.some(({ selected }) => !selected)}
+                      onValueChange={(value) => setLabels([...pullLabels, value])}
+                    >
+                      <option value="" disabled>
+                        {uiText('Add label')}
+                      </option>
+                      {labelChoices
+                        .filter(({ selected }) => !selected)
+                        .map(({ name, count }) => (
+                          <option key={name} value={name}>
+                            {name} ({count})
+                          </option>
+                        ))}
+                    </ChoicePicker>
+                    {labelChoices
+                      .filter(({ selected }) => selected)
+                      .map(({ name, count, color }) => (
+                        <Button
+                          key={name}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          aria-label={uiText('Remove {value0}', { value0: name })}
+                          className="min-w-0 max-w-full"
+                          onClick={() => setLabels(removePullLabel(pullLabels, name))}
+                        >
+                          {color && (
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: color }}
+                            />
+                          )}
+                          <span className="truncate">
+                            {name} ({count})
+                          </span>
+                          <X aria-hidden="true" />
+                        </Button>
+                      ))}
+                    {pullLabels.length > 0 && (
+                      <Button size="sm" variant="ghost" onClick={() => setLabels([])}>
+                        {uiText('Clear labels')}
+                      </Button>
+                    )}
+                  </div>
                   <div className="flex shrink-0 flex-col-reverse gap-3 border-b border-border/70 px-3 pb-3">
                     {!!pulls.length && (
                       <div
@@ -723,6 +798,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                             setState('open')
                             setSort('updated')
                             setDraft('all')
+                            setPullLabels([])
                             setAttention(false)
                           }}
                         >

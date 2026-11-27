@@ -29,7 +29,14 @@ import {
 import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { randomUUID, taskUndoBackupId, taskForkResultSchema, taskSchema } from '@dovo/protocol'
-import { projectPrompts, taskDraftIdentity } from '@dovo/protocol'
+import {
+  isAntigravityHarness,
+  projectPrompts,
+  taskCompactionRequest,
+  taskDraftIdentity,
+  stoppedChildVersion,
+  RuntimeRequestError,
+} from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -463,7 +470,12 @@ export function Composer({
     if (compactBusy) return
     setCompactBusy(true)
     setError('')
-    void request('/api/tasks/compact', { id: task.id }, responses.ok)
+    const { path, input } = taskCompactionRequest(
+      task,
+      randomUUID(),
+      snapshot?.queuePausePreservationSupported === true,
+    )
+    void request(path, input, responses.ok)
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setCompactBusy(false))
   }
@@ -604,6 +616,7 @@ export function Composer({
     runId?: string
     startupConfiguration?: Task
     preserveQueuePause?: boolean
+    resumeStoppedChild?: string | null
     draftIdentity?: string
   } | null>(null)
   const pendingSubmission = useRef<string | null>(null)
@@ -730,7 +743,9 @@ export function Composer({
       JSON.stringify(attachments.files.map((file) => file.id))
   const steerFirst =
     !retryAutomaticAddition && (alternative ? !defaultSteerFirst : defaultSteerFirst)
+  const childStop = stoppedChildVersion(task)
   const stageFirst =
+    childStop === undefined &&
     !retryAutomaticAddition &&
     !stopping &&
     snapshot?.promptQueueStagingSupported === true &&
@@ -862,6 +877,11 @@ export function Composer({
     if (editing) return saveEdit()
     const cancellation = pendingStop.current
     if ((cancellation || stopping) && mode === 'steer') mode = 'queue'
+    const resumeStoppedChild = mode === 'queue' || mode === 'direct' ? childStop : undefined
+    if (resumeStoppedChild !== undefined && snapshot?.stoppedChildResumeSupported !== true) {
+      setError('Update the thread computer to resume a stopped child.')
+      return
+    }
     if (mode === 'stage' && (!connected || snapshot?.promptQueueStagingSupported !== true)) return
     if (mode === 'direct' && (!connected || snapshot?.directMessageSupported !== true)) return
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
@@ -923,8 +943,10 @@ export function Composer({
         turnSettings: turnSettings ?? undefined,
         ...(plan ? { plan: true } : {}),
         runId: mode === 'steer' ? task.activeRunId : undefined,
+        resumeStoppedChild,
         preserveQueuePause:
           mode === 'queue' &&
+          resumeStoppedChild === undefined &&
           !cancellation &&
           !stopping &&
           !stageFirst &&
@@ -1034,6 +1056,9 @@ export function Composer({
             attachmentIds,
             ...(mode === 'stage' ? { queueOnly: true } : {}),
             ...(mode === 'direct' ? { sendNow: true } : {}),
+            ...(attempt.current.resumeStoppedChild !== undefined
+              ? { resumeStoppedChild: attempt.current.resumeStoppedChild }
+              : {}),
             ...(attempt.current.preserveQueuePause ? { preserveQueuePause: true } : {}),
           },
           responses.ok,
@@ -1090,6 +1115,12 @@ export function Composer({
       if (attempt.current?.accepted) {
         attempt.current = null
       } else {
+        if (
+          attempt.current?.resumeStoppedChild !== undefined &&
+          e instanceof RuntimeRequestError &&
+          e.mutationRejected
+        )
+          attempt.current = null
         pendingDraftProtections.current.delete(pending.message.id)
         setAwaitingQueuedSubmission(null)
         onPending({ ...pending, state: 'failed' })
@@ -1518,30 +1549,34 @@ export function Composer({
                   title={
                     editing
                       ? 'Save changes (Enter)'
-                      : backgroundPreview
-                        ? 'Start in background (Alt+Enter)'
-                        : stageFirst
-                          ? 'Add to queue (Enter)'
-                          : steerFirst
-                            ? `Steer agent (${submitShortcut})`
-                            : task.status === 'running'
-                              ? `Queue follow-up (${submitShortcut})`
-                              : 'Send message (Enter)'
+                      : childStop !== undefined && snapshot?.stoppedChildResumeSupported
+                        ? 'Resume child with message (Enter)'
+                        : backgroundPreview
+                          ? 'Start in background (Alt+Enter)'
+                          : stageFirst
+                            ? 'Add to queue (Enter)'
+                            : steerFirst
+                              ? `Steer agent (${submitShortcut})`
+                              : task.status === 'running'
+                                ? `Queue follow-up (${submitShortcut})`
+                                : 'Send message (Enter)'
                   }
                   aria-label={
                     editing
                       ? 'Save changes'
-                      : backgroundPreview
-                        ? 'Start in background'
-                        : stageFirst
-                          ? 'Add to queue'
-                          : steerFirst
-                            ? 'Steer agent'
-                            : task.status === 'running'
-                              ? 'Queue follow-up'
-                              : connected
-                                ? 'Send to agent'
-                                : 'Save message to thread'
+                      : childStop !== undefined && snapshot?.stoppedChildResumeSupported
+                        ? 'Resume child with message'
+                        : backgroundPreview
+                          ? 'Start in background'
+                          : stageFirst
+                            ? 'Add to queue'
+                            : steerFirst
+                              ? 'Steer agent'
+                              : task.status === 'running'
+                                ? 'Queue follow-up'
+                                : connected
+                                  ? 'Send to agent'
+                                  : 'Save message to thread'
                   }
                   disabled={submitDisabled}
                 >
@@ -1903,6 +1938,7 @@ export function Composer({
           input={input}
           resources={resources}
           provider={agent?.provider}
+          antigravity={isAntigravityHarness(agent)}
           prompts={prompts}
           onCommand={
             !editing && (task.messages.length || task.queue?.length || task.turns?.length)

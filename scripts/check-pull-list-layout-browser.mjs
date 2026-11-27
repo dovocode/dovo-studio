@@ -12,7 +12,7 @@ const mobile = root + 'apps/mobile/src/'
 const data = `
 window.prPreferences={pullProjectVisibility:{},savedFilterViews:[]};window.sources=['mac','backup'].map(id=>({key:id,scope:id,runtimeId:id,runtimeName:id==='mac'?'Mac Studio':'MacBook',computerName:id==='mac'?'Mac Studio':'MacBook',connected:true,repository:{id:'repo',name:'Dovo Studio',path:'/repo'},profile:{id,connection:{address:'http://'+id,token:'paired'}}}));
 const base={state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-23T12:00:00Z',head:'feature',base:'main',labels:['ui'],additions:24,deletions:8,commentCount:3,viewerIsAuthor:true};
-window.pulls=[{...base,number:1,title:'Fix connection',head:'fix/runtime-reconnection-and-queued-thread-continuity-with-a-long-qualified-branch',base:'feature/preserve-active-thread-context',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerReviewRequested:true,labels:['runtime','needs-review','ui'],stack:{position:2,size:3,rootNumber:6,parentNumber:6,complete:true}},{...base,number:2,title:'Ready to ship',head:'patch/focus',checksState:'SUCCESS',reviewDecision:'APPROVED'},{...base,number:3,title:'Draft feature',draft:true,head:'feature/long-project-selection-state-when-the-runtime-reconnects'},{...base,number:4,title:'Waiting for checks',checksState:'PENDING'},{...base,number:5,title:'Shipped change',state:'merged'}].map(pull=>({...pull,url:'https://github.com/team/studio/pull/'+pull.number}));
+window.pulls=[{...base,number:1,title:'Fix connection',head:'fix/runtime-reconnection-and-queued-thread-continuity-with-a-long-qualified-branch',base:'feature/preserve-active-thread-context',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerReviewRequested:true,labels:['runtime','needs-review','ui'],labelColors:{runtime:'#386c5f'},stack:{position:2,size:3,rootNumber:6,parentNumber:6,complete:true}},{...base,number:2,title:'Ready to ship',head:'patch/focus',checksState:'SUCCESS',reviewDecision:'APPROVED'},{...base,number:3,title:'Draft feature',draft:true,head:'feature/long-project-selection-state-when-the-runtime-reconnects'},{...base,number:4,title:'Waiting for checks',checksState:'PENDING'},{...base,number:5,title:'Shipped change',state:'merged'}].map(pull=>({...pull,url:'https://github.com/team/studio/pull/'+pull.number}));
 window.pages=()=>window.sources.map((source,index)=>({source,reader:source,error:window.sourceErrors?.[source.key],pulls:window.emptySources?.includes(source.key)?[]:index?window.pulls.slice(0,2).map(pull=>({...pull,url:pull.url+'/'})):window.pulls,runtimeId:source.runtimeId,runtimeName:source.runtimeName,sourceKey:source.key,connected:source.connected,readConnected:source.connected,repositoryId:'repo',name:source.repository.name}));
 window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>window.copied.push(value)}});
 `
@@ -223,6 +223,47 @@ try {
         assert.equal(await rows.count(), count, message)
       }
       await expectRows(4, 'Duplicate source rows are merged')
+      if (width === 390) {
+        const openFilters = page.getByRole('button', {
+          name: isMobile ? 'PR filters' : 'Filters',
+          exact: true,
+        })
+        await openFilters.click()
+        const label = page.getByRole(isMobile ? 'combobox' : 'button', {
+          name: 'Add label',
+          exact: true,
+        })
+        const chooseLabel = async (name, value) => {
+          if (isMobile) await label.selectOption(value)
+          else {
+            await label.click()
+            await page.getByRole('option', { name, exact: true }).click()
+          }
+        }
+        await chooseLabel('ui (4)', 'ui')
+        await expectRows(4, 'The first label matches all four open PRs')
+        await chooseLabel('runtime (1)', 'runtime')
+        await expectRows(1, 'Each result must have both labels')
+        await search.fill('Ready to ship')
+        await expectRows(0, 'Text search and label filter both apply')
+        const runtimeLabel = page.getByRole('button', { name: 'Remove runtime', exact: true })
+        const uiLabel = page.getByRole('button', { name: 'Remove ui', exact: true })
+        assert.match(await runtimeLabel.textContent(), /runtime \(1\)/)
+        assert.match(await uiLabel.textContent(), /ui \(4\)/)
+        assert.equal(
+          await runtimeLabel.locator('[style*="background-color: rgb(56, 108, 95)"]').count(),
+          1,
+        )
+        await runtimeLabel.click()
+        await expectRows(1, 'Removing one label leaves the other filter and search active')
+        await uiLabel.waitFor()
+        await page.getByRole('button', { name: 'Clear labels', exact: true }).click()
+        await expectRows(1, 'Clearing labels leaves the text search active')
+        await search.fill('')
+        await expectRows(4, 'Clearing search and label restores the list')
+        if (isMobile) await page.getByRole('button', { name: 'Close filters', exact: true }).click()
+        else await openFilters.click()
+      }
       const first = rows.filter({ hasText: 'Fix connection' }).first()
       if (isMobile) {
         const review = page.getByRole('button', { name: 'Review changes', exact: true })

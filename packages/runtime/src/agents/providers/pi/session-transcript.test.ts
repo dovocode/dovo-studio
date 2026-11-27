@@ -25,7 +25,9 @@ it('imports only the active branch, retaining links through non-conversation ent
           role: 'assistant',
           content: [
             { type: 'thinking', thinking: 'hidden' },
+            { type: 'text', text: '' },
             { type: 'text', text: 'Answer' },
+            { type: 'text', text: '' },
           ],
         },
       },

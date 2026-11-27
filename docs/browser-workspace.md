@@ -658,10 +658,11 @@ snapshot as text and restores both files when you paste in a composer.
 
 ## Open a localhost preview on a phone
 
-On iOS or Android, open an HTTP localhost page in a remote browser tab. Open **Browser options** and
-choose **Open preview on this phone**. The phone renders the page in Dovo and forwards traffic to
-the browser tab's current localhost port through the paired computer connection. Close the preview
-to stop forwarding. Dovo also stops forwarding when the app goes to the background.
+On iOS or Android, tap an HTTP localhost link in a thread to preview it on the phone. The link uses
+the thread's paired computer. You can also open an HTTP localhost page in a remote browser tab and
+choose **Open preview on this phone** in **Browser options**. The phone renders the page in Dovo and
+forwards traffic to the current localhost port through the paired computer connection. Close the
+preview to stop forwarding. Dovo also stops forwarding when the app goes to the background.
 
 Relative page resources and connections to the preview origin share the same port. Apps that use
 absolute localhost URLs for other ports still require the remote browser. The option appears when

@@ -6,6 +6,7 @@ import {
   savedFilterSourceScope,
   savedFilterViewsSchema,
   saveFilterView,
+  savedPullLabels,
   type SavedFilterView,
 } from './saved-filter-views.js'
 
@@ -68,6 +69,18 @@ it('keeps views when projects are added and isolates replaced accounts and sourc
   ).toBe(true)
   expect(savedFilterScope(['a', 'b'])).toBe(savedFilterScope(['b', 'a']))
   expect(scope).not.toContain('account')
+})
+
+it('round-trips multiple labels and reads the older single-label format', () => {
+  const pullView = {
+    ...view,
+    kind: 'pulls' as const,
+    filters: { ...view.filters, pullLabels: ['bug', 'docs'] },
+  }
+  const saved = saveFilterView([], pullView)
+  expect(savedPullLabels(decode(savedFilterViewsSchema, saved)[0].filters)).toEqual(['bug', 'docs'])
+  expect(savedPullLabels({ pullLabel: 'bug' })).toEqual(['bug'])
+  expect(savedPullLabels({ pullLabels: [], pullLabel: 'bug' })).toEqual([])
 })
 
 it('bounds device storage and accepts the same name in another source scope', () => {

@@ -85,3 +85,19 @@ it('retains runtime paths, source line suffixes, and encoded names without accep
     'docs/README.md#L20',
   )
 })
+
+it('decodes sandbox links as absolute thread files and preserves their source line', () => {
+  const href = 'sandbox:/tmp/a%20b%23c.md?download=1#L4'
+  expect(localMarkdownPath(href)).toBe('/tmp/a%20b%23c.md')
+  expect(markdownURLLocalPath(localMarkdownURL(href)!, true)).toBe('/tmp/a%20b%23c.md#L4')
+  expect(localMarkdownPath('sandbox:/C:/work/report.md:9')).toBe('C:/work/report.md')
+  for (const invalid of [
+    'sandbox:relative.md',
+    'sandbox://other-host/report.md',
+    'sandbox:/%2Fother-host/report.md',
+    'sandbox:/%5Cother-host/report.md',
+    'sandbox:/a%00b.md',
+    'sandbox:/a%ZZ.md',
+  ])
+    expect(localMarkdownPath(invalid)).toBeUndefined()
+})

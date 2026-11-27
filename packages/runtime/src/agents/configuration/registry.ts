@@ -146,7 +146,7 @@ export class AgentRegistry {
                 const launch = this.launch(resolved)
                 const blocked = await this.sandboxWritableCommand(resolved, launch)
                 if (blocked) throw new Error(sandboxWritableDetail(blocked))
-                return nativeSkills(resolved, cwd, signal)
+                return nativeSkills(resolved, cwd, signal, launch)
               },
             }
           : {}),

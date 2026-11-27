@@ -46,6 +46,7 @@ export const restPull = mutableStruct({
   labels: mutableArray(
     mutableStruct({
       name: Schema.String,
+      color: Schema.optional(Schema.NullOr(Schema.String)),
     }),
   ),
 })
@@ -134,6 +135,9 @@ export const checkRollup = mutableStruct({
   ),
 })
 export function summary(p: Schema.Schema.Type<typeof restPull>) {
+  const colors = p.labels.flatMap(({ name, color }) =>
+    color && /^[\da-f]{6}$/i.test(color) ? [[name, `#${color}`]] : [],
+  )
   return {
     number: p.number,
     title: p.title,
@@ -158,6 +162,7 @@ export function summary(p: Schema.Schema.Type<typeof restPull>) {
     head: p.head.label,
     base: p.base.label,
     labels: p.labels.map((l) => l.name),
+    ...(colors.length ? { labelColors: Object.fromEntries(colors) } : {}),
   }
 }
 

@@ -13,6 +13,9 @@ import {
   checkSignal,
   pullCommentSignal,
   pullMergeability,
+  pullLabelChoices,
+  matchesPullLabels,
+  removePullLabel,
 } from './pull-presentation.js'
 const pull = decode(pullSummarySchema, {
   number: 7,
@@ -27,6 +30,24 @@ const pull = decode(pullSummarySchema, {
   labels: ['bug'],
 })
 describe('PR presentation', () => {
+  it('counts each loaded PR once and keeps its selected label available to clear', () => {
+    expect(
+      pullLabelChoices(
+        [pull, { labels: ['Bug', 'bug', 'docs'], labelColors: { bug: '#386c5f' } }],
+        ['BUG', 'missing'],
+      ),
+    ).toEqual([
+      { name: 'bug', count: 2, color: '#386c5f', selected: true },
+      { name: 'docs', count: 1, selected: false },
+      { name: 'missing', count: 0, selected: true },
+    ])
+  })
+  it('matches every chosen label and clears a label regardless of case', () => {
+    const selected = ['Bug', 'Docs']
+    expect(matchesPullLabels({ labels: ['bug', 'docs', 'ui'] }, selected)).toBe(true)
+    expect(matchesPullLabels({ labels: ['docs', 'ui'] }, selected)).toBe(false)
+    expect(removePullLabel(selected, 'docs')).toEqual(['Bug'])
+  })
   it('distinguishes conflict-free branches from actual merge readiness', () => {
     const detail: PullDetail['pull'] = {
       ...pull,
@@ -214,6 +235,9 @@ describe('PR presentation', () => {
   })
   it('searches repositories, numbers, people and branches with multiple terms', () => {
     expect(matchesPull(pull, 'studio', 'studio #7 fix/cancel dominic')).toBe(true)
+    expect(matchesPull(pull, 'studio', 'studio #007 fix/cancel dominic')).toBe(true)
+    expect(matchesPull(pull, 'studio', '007')).toBe(true)
+    expect(matchesPull(pull, 'studio', '#070')).toBe(false)
     expect(matchesPull(pull, 'studio', 'studio absent')).toBe(false)
   })
   it('uses the latest decisive review even when comments arrive out of order', () => {

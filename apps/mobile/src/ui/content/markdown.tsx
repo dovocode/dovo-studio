@@ -244,6 +244,7 @@ export const Markdown = memo(function Markdown({
   variant = 'default',
   onLinkLongPress,
   onLinkPress,
+  onQuoteSelection,
   taskId,
   onUseTemplate,
   streaming = false,
@@ -259,6 +260,7 @@ export const Markdown = memo(function Markdown({
   variant?: 'default' | 'chat'
   onLinkPress?: (url: string) => void
   onLinkLongPress?: (url: string) => void
+  onQuoteSelection?: (text: string) => void
 }) {
   const uiText = useInterfaceText()
 
@@ -273,6 +275,18 @@ export const Markdown = memo(function Markdown({
   }
   const theme = useTheme()
   const { styles } = theme
+  const contextMenuItems = useMemo(
+    () =>
+      onQuoteSelection && Platform.OS !== 'web'
+        ? [
+            {
+              text: uiText('Add quote to draft'),
+              onPress: ({ text }: { text: string }) => onQuoteSelection(text),
+            },
+          ]
+        : undefined,
+    [onQuoteSelection, uiText],
+  )
   const { markdownStyle, chatMarkdownStyle, carMarkdownStyle, carChatMarkdownStyle } = useMemo(
     () => createMarkdownStyles(theme),
     [theme],
@@ -376,6 +390,7 @@ export const Markdown = memo(function Markdown({
             flavor="github"
             markdownStyle={style}
             selectable
+            contextMenuItems={contextMenuItems}
             enableLinkPreview={false}
             allowFontScaling
             lineBreakStrategyIOS="standard"

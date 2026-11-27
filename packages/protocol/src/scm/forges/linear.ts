@@ -97,5 +97,43 @@ export const linearIssuesSchema = mutableStruct({
 })
 export type LinearIssue = typeof linearIssueSchema.Type
 
+const linearIssueTarget = {
+  connectionId: Schema.optional(uuidSchema),
+  repositoryId: Schema.optional(id),
+  issueId: uuidSchema,
+}
+export const linearIssueActionsQuerySchema = strictStruct(linearIssueTarget)
+const issueVersion = maxValue(minValue(Schema.String, 64), 64)
+export const linearIssueActionSchema = Schema.Union([
+  strictStruct({
+    ...linearIssueTarget,
+    sourceVersion: issueVersion,
+    action: Schema.Literal('set-status'),
+    expectedStateId: uuidSchema,
+    stateId: uuidSchema,
+  }),
+  strictStruct({
+    ...linearIssueTarget,
+    sourceVersion: issueVersion,
+    action: Schema.Literal('comment'),
+    commentId: uuidSchema,
+    body: maxValue(minValue(Schema.Trim, 1), 12000),
+  }),
+])
+const linearIssueState = mutableStruct({ id: uuidSchema, name: Schema.String })
+const linearIssueComment = mutableStruct({
+  id: uuidSchema,
+  body: Schema.String,
+  author: Schema.String,
+})
+export const linearIssueActionsSchema = mutableStruct({
+  sourceVersion: issueVersion,
+  state: linearIssueState,
+  states: mutableArray(linearIssueState),
+  comments: mutableArray(linearIssueComment),
+})
+export type LinearIssueAction = typeof linearIssueActionSchema.Type
+export type LinearIssueActions = typeof linearIssueActionsSchema.Type
+
 export const linearKeySourceSchema = Schema.Literals(['none', 'saved', 'environment'])
 export const linearKeyResultSchema = mutableStruct({ source: linearKeySourceSchema })

@@ -22,6 +22,8 @@ import {
   snapshotSchema,
   taskSchema,
   taskDraftIdentity,
+  stoppedChildVersion,
+  RuntimeRequestError,
   cleanedDictationSchema,
   resolveTaskAgent,
   canChangeTaskCheckout,
@@ -501,7 +503,9 @@ export function useConversationActions(task: Task) {
     !!retryAttempt.plan === plan &&
     JSON.stringify(retryAttempt.attachmentIds) ===
       JSON.stringify(task.draftAttachments?.map((file) => file.id) ?? [])
+  const childStop = stoppedChildVersion(task)
   const defaultSendMode =
+    childStop === undefined &&
     !retryAutomaticAddition &&
     !stopping &&
     stageSupported &&
@@ -672,6 +676,11 @@ export function useConversationActions(task: Task) {
           throw new Error('The queued message edit changed. Review it and try again.')
         return yield* saveQueueEdit(current, input)
       }
+      const resumeStoppedChild = mode === 'queue' || mode === 'direct' ? childStop : undefined
+      if (resumeStoppedChild !== undefined && snapshot?.stoppedChildResumeSupported !== true)
+        return yield* Effect.fail(
+          new Error('Update the thread computer to resume a stopped child.'),
+        )
       if (composerHistory.active) {
         // Commit only after validation; cancelled browsing never overwrites the durable draft.
         updateDraft(input)
@@ -689,10 +698,12 @@ export function useConversationActions(task: Task) {
           ? { draftIdentity: taskDraftIdentity(task.draft, attachmentIds, turnSettings, plan) }
           : {}),
         runId: mode === 'steer' ? task.activeRunId : undefined,
+        resumeStoppedChild,
         turnSettings: turnSettings ?? undefined,
         ...(plan ? { plan: true } : {}),
         preserveQueuePause:
           mode === 'queue' &&
+          resumeStoppedChild === undefined &&
           !stop &&
           !stopping &&
           defaultSendMode !== 'stage' &&
@@ -778,6 +789,9 @@ export function useConversationActions(task: Task) {
               : {}),
             ...(mode === 'stage' ? { queueOnly: true } : {}),
             ...(mode === 'direct' ? { sendNow: true } : {}),
+            ...(attempt.resumeStoppedChild !== undefined
+              ? { resumeStoppedChild: attempt.resumeStoppedChild }
+              : {}),
             ...(attempt.preserveQueuePause ? { preserveQueuePause: true } : {}),
             runId: attempt.runId,
             turnSettings: attempt.turnSettings,
@@ -860,6 +874,14 @@ export function useConversationActions(task: Task) {
       }).pipe(
         Effect.catch((error) =>
           mobileWorkflow(function* () {
+            if (
+              attempt.resumeStoppedChild !== undefined &&
+              error instanceof RuntimeRequestError &&
+              error.mutationRejected
+            ) {
+              sendAttempts.discard(scope, attempt.id)
+              yield* storedDraft.discardSubmissionEffect(attempt.id)
+            }
             failedSend.current = attempt
             return yield* Effect.fail(error)
           }),

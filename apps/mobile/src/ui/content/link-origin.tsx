@@ -37,5 +37,6 @@ export function useLinkOrigin(
     runtimeId: origin.runtimeId ?? activeId ?? undefined,
     repositoryId: repositoryId ?? taskRepositoryId ?? origin.repositoryId,
     jiraSourceId: jiraSourceId ?? origin.jiraSourceId,
+    taskId,
   }
 }

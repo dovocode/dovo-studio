@@ -52,6 +52,11 @@ formatting before it undoes the text. Attachments carry the input font and text 
 and deletions restore the typing style, including when the last chip is deleted before JavaScript
 acknowledges the edit.
 
+In a desktop or web rich-composer code block, use Tab to indent and Shift+Tab to outdent. A
+selection keeps its direction and stays on the edited text. After two blank lines at the end of the
+block, press your configured newline shortcut to continue in a normal paragraph. One Undo puts the
+blank lines and caret back.
+
 In Markdown source mode, the caret moves to the end of the chosen reference when Studio inserts it.
 You can then select or replace the draft immediately.
 

@@ -69,8 +69,11 @@ import {
 } from 'react'
 import {
   REVIEW_PROMPT,
+  isAntigravityHarness,
   contextMeter,
   responses,
+  taskCompactionRequest,
+  stoppedChildVersion,
   taskResources,
   resolveScopedAgents,
   worktreeChoicesSchema,
@@ -458,10 +461,14 @@ export function Composer({
     if (commandAction.error) Alert.alert(uiText('Could not run the command'), commandAction.error)
   }, [commandAction.error])
   const runCommand = (id: ComposerCommandId) => {
-    if (id === 'compact')
-      return commandAction.act(() =>
-        commandCall('/api/tasks/compact', { id: task.id }, responses.ok),
+    if (id === 'compact') {
+      const { path, input } = taskCompactionRequest(
+        task,
+        randomUUID(),
+        snapshot?.queuePausePreservationSupported === true,
       )
+      return commandAction.act(() => commandCall(path, input, responses.ok))
+    }
     if (id === 'review')
       return commandAction.act(() =>
         commandCall(
@@ -1203,6 +1210,7 @@ export function Composer({
               taskId={task.id}
               repositoryId={agentRepository?.id}
               provider={composerAgent?.provider}
+              antigravity={isAntigravityHarness(composerAgent)}
               text={draft.text}
               caret={caret}
               resources={composerResources}
@@ -1682,7 +1690,10 @@ export function Composer({
                             ? hasInput
                               ? uiText('Queue follow-up')
                               : uiText('Stop')
-                            : uiText('Send')
+                            : snapshot?.stoppedChildResumeSupported &&
+                                stoppedChildVersion(task) !== undefined
+                              ? uiText('Resume child with message')
+                              : uiText('Send')
                   }
                   disabled={
                     machineMoving ||

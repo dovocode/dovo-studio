@@ -301,6 +301,62 @@ it('settles inactive task families using scoped policy without archiving or touc
   })
   expect(s.store.get().tasks.every((task) => task.archived && task.autoSettled)).toBe(true)
 })
+
+it('settles a completed child once its pinned parent holds the current result', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: { environment: { taskBehavior: { settleInactive: true } }, shared: [] },
+    },
+    false,
+  )
+  const result = {
+    id: 'subagent-result:child:follow-up',
+    role: 'user' as const,
+    subagentResultId: 'child',
+    text: 'Follow-up result',
+    createdAt: daysAgo(20),
+  }
+  s.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      task('parent', { pinned: true, subagentInbox: [{ ...result, id: 'subagent-result:child' }] }),
+      task('child', {
+        delegation: {
+          parentTaskId: 'parent',
+          parentRunId: 'old',
+          key: 'child',
+          completion: 'queued',
+          resultVersion: 'follow-up',
+        },
+      }),
+      task('pending-child', {
+        delegation: {
+          parentTaskId: 'parent',
+          parentRunId: 'old',
+          key: 'pending',
+          completion: 'pending',
+        },
+      }),
+    ],
+  }))
+  expect(await housekeeping.settleInactive(now)).toEqual([])
+  s.store.updateTask('parent', (parent) => ({ ...parent, subagentInbox: [result] }))
+  expect(await housekeeping.settleInactive(now)).toEqual(['child'])
+  expect(s.store.task('child')).toMatchObject({ archived: true, autoSettled: true })
+  expect(s.store.task('parent').archived).not.toBe(true)
+  expect(s.store.task('parent').subagentInbox).toEqual([result])
+  expect(s.store.task('pending-child').archived).not.toBe(true)
+  expect(await housekeeping.settleInactive(now)).toEqual([])
+  s.store.patch({
+    collection: 'tasks',
+    id: 'child',
+    changes: { archived: { before: true, after: false } },
+  })
+  expect(s.store.task('child').archived).toBe(false)
+  expect(s.store.task('parent').subagentInbox).toEqual([result])
+})
 it('revives automatically settled families when a new message is queued', async () => {
   const { s, housekeeping } = await archiveFixture()
   s.defaults.save(

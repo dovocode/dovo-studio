@@ -350,6 +350,7 @@ export function runtimeSnapshot(
       queuedTurnSettingsSupported: true,
       promptQueueStagingSupported: true,
       queuePausePreservationSupported: true,
+      stoppedChildResumeSupported: true,
       directMessageSupported: true,
       messageSetupSupported: true,
       messageDraftIdentitySupported: true,
@@ -406,6 +407,7 @@ export function runtimeSnapshot(
       linearConnections,
       linearIssuesSupported:
         linearKeySource !== 'none' || linearConnections.connections.length > 0 ? true : undefined,
+      linearIssueActionsSupported: true,
       sparseWorktreesSupported: true,
       githubEventStreamsSupported: true,
       pullFileLoadingSupported: true,
@@ -435,6 +437,7 @@ export function runtimeSnapshot(
       textGeneratorsSupported: true,
       modelMentionsSupported: true,
       nativeSkillMentionsSupported: true,
+      antigravitySkillMentionsSupported: true,
       documentAttachmentPreviewSupported: true,
       planModeSupported: true,
       persistentTurnModelsSupported: true,

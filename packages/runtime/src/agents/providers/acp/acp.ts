@@ -49,6 +49,8 @@ import { updateSubagents } from '../../execution/subagents.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { watchAntigravityOutcome } from './antigravity-outcome.js'
 import { readAntigravityTranscript } from './antigravity-transcript.js'
+import { antigravityProfile } from './antigravity-profile.js'
+import { antigravityPluginSkills } from './antigravity-skills.js'
 import { providerFailureKind } from '../../execution/provider-failure.js'
 type AcpConnection = ReturnType<typeof openAcpConnection>
 type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
@@ -92,6 +94,15 @@ export function createAcpAdapter(): AgentAdapter {
       await v2.releaseTask(taskId)
     },
     models: acpModels,
+    async nativeSkills(agent, _cwd, signal, managed) {
+      const launch = managed ?? {
+        ...legacyAcpLaunch(agent.endpoint, agent.args),
+        env: agent.env ?? {},
+      }
+      if (acpPermissionProvider(launch, agent) !== 'antigravity') return []
+      const profile = antigravityProfile(launch)
+      return profile ? antigravityPluginSkills(profile, signal) : []
+    },
     async readNativeThread(agent, id, sessionId, _cwd, sandbox, managed) {
       if (sandbox) return
       const launch = managed ?? {

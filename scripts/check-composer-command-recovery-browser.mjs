@@ -14,7 +14,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');import {Button} from '../studio-ui/src/components/ui/button';export {Button};export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
-  './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,onCommand})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <><textarea aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><button type="button" onClick={()=>onCommand('new-session')}>New session</button></>};`,
+  './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,onCommand})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <><textarea aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><button type="button" onClick={()=>onCommand('new-session')}>New session</button><button type="button" onClick={()=>onCommand('compact')}>/compact</button></>};`,
 }
 for (const [path, name] of [
   ['../../dialogs/harness-dialog', 'HarnessDialog'],
@@ -43,7 +43,7 @@ function App(){
  const [supportsReview,setSupportsReview]=useState(false);window.setSupportsReview=setSupportsReview;
  const [runtime,setRuntime]=useState(0);const [connected,setConnected]=useState(true);const [workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});
  window.setRuntime=setRuntime;window.setConnected=setConnected;window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));window.current=workspace.tasks[0];
- const value={workspace,setWorkspace,request,connected,runtimes:[],runtimeRegistry:{profiles,activeId:profiles[runtime].id},activeRuntimeId:profiles[runtime].id,connection:profiles[runtime].connection,refreshRuntime:async()=>{},flush:async()=>{},snapshot:{retryUsesCurrentFiles:supportsReview,workspace,questions:[],approvals:[],runs:[]}};
+ const value={workspace,setWorkspace,request,connected,runtimes:[],runtimeRegistry:{profiles,activeId:profiles[runtime].id},activeRuntimeId:profiles[runtime].id,connection:profiles[runtime].connection,refreshRuntime:async()=>{},flush:async()=>{},snapshot:{retryUsesCurrentFiles:supportsReview,queuePausePreservationSupported:supportsReview,workspace,questions:[],approvals:[],runs:[]}};
  return <WorkspaceHarness value={value}><Composer task={workspace.tasks[0]} onPending={()=>{}}/></WorkspaceHarness>
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -110,8 +110,31 @@ try {
   await page.getByRole('button', { name: 'Start fresh' }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.requests.at(-1).path), '/api/tasks/new-session')
+  const compact = page.getByRole('button', { name: '/compact', exact: true })
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      status: 'running',
+      sessionId: 'session',
+      queuePaused: true,
+    })),
+  )
+  await compact.click()
+  const queued = await page.evaluate(() => window.requests.at(-1))
+  assert.equal(queued.path, '/api/tasks/message')
+  assert.equal(queued.input.id, 'task')
+  assert.equal(queued.input.text, '/compact')
+  assert.equal(queued.input.preserveQueuePause, true)
+  assert.ok(queued.input.messageId)
+  assert.equal(await page.evaluate(() => window.current.draft), 'Keep this draft')
+  await page.evaluate(() => window.setSupportsReview(false))
+  await compact.click()
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1)), {
+    path: '/api/tasks/compact',
+    input: { id: 'task' },
+  })
   assert.deepEqual(errors, [])
-  console.log('Legacy Undo backup recovery and new session checks passed.')
+  console.log('Legacy Undo backup recovery, new session and queued compaction checks passed.')
 } finally {
   await browser.close()
 }

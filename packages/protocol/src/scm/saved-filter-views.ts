@@ -11,6 +11,8 @@ export const savedFilterValuesSchema = mutableStruct({
   search: maxValue(Schema.String, 300),
   sort: text,
   draft: Schema.optional(text),
+  pullLabel: Schema.optional(text),
+  pullLabels: Schema.optional(mutableArray(text)),
   attention: Schema.optional(Schema.Boolean),
   personal: Schema.optional(Schema.Literals(['all', 'authored', 'assigned', 'involved', 'review'])),
   linked: Schema.optional(text),
@@ -28,6 +30,9 @@ export const savedFilterViewSchema = mutableStruct({
 export const savedFilterViewsSchema = maxValue(mutableArray(savedFilterViewSchema), 100)
 export type SavedFilterView = typeof savedFilterViewSchema.Type
 export type SavedFilterValues = typeof savedFilterValuesSchema.Type
+export function savedPullLabels(view: Pick<SavedFilterValues, 'pullLabel' | 'pullLabels'>) {
+  return view.pullLabels ?? (view.pullLabel ? [view.pullLabel] : [])
+}
 /** Hash account/connection identities before storing the scope in local preferences. */
 export const savedFilterScope = (identities: readonly string[]) =>
   bytesToHex(sha256(utf8ToBytes(JSON.stringify([...identities].sort()))))

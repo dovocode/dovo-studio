@@ -1,7 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useEffect, useRef, useMemo, type ComponentProps } from 'react'
+import { useCallback, useEffect, useRef, useMemo, type ComponentProps } from 'react'
 import { Alert } from 'react-native'
-import { responses, threadPullLink } from '@dovo/protocol'
+import { responseSelectionReply, responses, threadPullLink } from '@dovo/protocol'
 import {
   useRuntimeSelector,
   sameRuntimeFields,
@@ -20,13 +20,22 @@ const selectLinkActions = (value: ReturnType<typeof useRuntime>) => ({
 
 export function ThreadMarkdown({
   plainText = false,
+  quoteMessageId,
   ...props
-}: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress' | 'onLinkPress'> & {
+}: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress' | 'onLinkPress' | 'onQuoteSelection'> & {
   plainText?: boolean
+  quoteMessageId?: string
 }) {
   const uiText = useInterfaceText()
 
   const appendTemplate = useAppendConversationTemplate()
+  const quoteSelection = useCallback(
+    (text: string) => {
+      if (quoteMessageId && text.trim())
+        appendTemplate(responseSelectionReply(quoteMessageId, text))
+    },
+    [appendTemplate, quoteMessageId],
+  )
   const taskId = useConversationSelector((value) => value.task.id)
   const origin = useLinkOrigin(taskId)
   const linkActions = useRef<AbortController | null>(null)
@@ -90,6 +99,7 @@ export function ThreadMarkdown({
           {...props}
           taskId={taskId}
           onUseTemplate={appendTemplate}
+          onQuoteSelection={quoteMessageId ? quoteSelection : undefined}
           onLinkPress={(url) => {
             if (!choose(url)) open(url)
           }}

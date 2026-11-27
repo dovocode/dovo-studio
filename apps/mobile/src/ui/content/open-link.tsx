@@ -9,7 +9,7 @@ import {
   type LinkTarget,
 } from '@dovo/studio-core/links'
 import * as Clipboard from 'expo-clipboard'
-import { parseStudioLink, previewUrl } from '@dovo/protocol'
+import { parseStudioLink, previewUrl, randomUUID, type RuntimeProfile } from '@dovo/protocol'
 import { useLinkOrigin, type LinkOrigin } from './link-origin'
 import { router, usePathname } from 'expo-router'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -21,6 +21,11 @@ import { Action } from '../controls/action'
 import WebView from 'react-native-webview'
 import { Text } from './text'
 import { useTheme } from '../theme'
+import {
+  prepareThreadLocalPreview,
+  threadLocalPreviewOrigin,
+} from '../../tasks/preview/thread-local-browser-preview'
+import { ThreadLinkPreview } from '../../tasks/preview/thread-link-preview'
 
 export type LinkAction = Omit<RouterAction, 'id' | 'kind'>
 const PipelinePreview = lazy(() => import('../../scm/work/pipeline-preview'))
@@ -59,7 +64,7 @@ export function useOpenAppLink(taskId?: string, repositoryId?: string, jiraSourc
           void openAppLink(url, external, origin).then(resolve, reject)
         })
       }),
-    [origin.runtimeId, origin.repositoryId, origin.jiraSourceId, navigateAfterSheet],
+    [origin.runtimeId, origin.repositoryId, origin.jiraSourceId, origin.taskId, navigateAfterSheet],
   )
 }
 
@@ -68,13 +73,19 @@ export function LinkBrowser() {
 
   const { colors } = useTheme()
 
-  const { overviews, activeId } = useRuntime()
+  const { overviews, activeId, readRuntime } = useRuntime()
   const pathname = usePathname()
   const { controller, pending } = useLinkController()
   const [pipeline, setPipeline] = useState<LinkTarget | null>(null)
+  const [localPreview, setLocalPreview] = useState<{
+    url: string
+    taskId: string
+    profile: RuntimeProfile
+  } | null>(null)
   useEffect(() => {
     controller.cancel()
     setPipeline(null)
+    setLocalPreview(null)
   }, [controller, activeId, pathname])
   const picker = useRef<SheetHandle>(null)
   const [url, setUrl] = useState<string | null>(null)
@@ -82,7 +93,19 @@ export function LinkBrowser() {
   owner.current = overviews
   useEffect(() => {
     const show = (url: string, origin?: LinkOrigin, actions?: LinkAction[]) => {
-      if (pipeline || controller.getSnapshot()) return
+      if (pipeline || localPreview || controller.getSnapshot()) return
+      if (
+        ThreadLinkPreview &&
+        origin?.taskId &&
+        !actions?.length &&
+        threadLocalPreviewOrigin(url)
+      ) {
+        const computer = owner.current.find((entry) => entry.profile.id === origin.runtimeId)
+        if (computer?.connected && computer.snapshot?.localBrowserPreviewSupported) {
+          setLocalPreview({ url, taskId: origin.taskId, profile: computer.profile })
+          return
+        }
+      }
       const targets = resolveLinkTargets(url, owner.current, origin)
       if (targets.length === 1 && targets[0].kind === 'pipeline' && !actions?.length) {
         setPipeline(targets[0])
@@ -136,12 +159,30 @@ export function LinkBrowser() {
       if (showLink === show) showLink = undefined
       if (openInternalLink === internal) openInternalLink = undefined
     }
-  }, [activeId, controller, pipeline])
+  }, [activeId, controller, localPreview, pipeline, uiText])
   useEffect(() => {
     if (pending?.closing) picker.current?.dismiss()
   }, [pending])
   return (
     <>
+      {localPreview && ThreadLinkPreview && (
+        <Suspense fallback={null}>
+          <ThreadLinkPreview
+            page={localPreview.url}
+            prepare={(signal) =>
+              prepareThreadLocalPreview(
+                readRuntime,
+                localPreview.profile,
+                localPreview.taskId,
+                randomUUID(),
+                localPreview.url,
+                signal,
+              )
+            }
+            onClose={() => setLocalPreview(null)}
+          />
+        </Suspense>
+      )}
       {pipeline && (
         <Suspense
           fallback={

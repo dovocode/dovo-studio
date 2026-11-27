@@ -6,22 +6,24 @@ import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
 import { Sheet } from '../../ui/layout/sheet'
 
-export function LocalBrowserPreview({
-  page,
-  ticket,
-  onClose,
-}: {
+type PreviewTicket = () => Promise<string>
+type Props = {
   page: string
-  ticket: () => Promise<string>
   onClose: () => void
-}) {
+} & (
+  | { ticket: PreviewTicket; prepare?: never }
+  | { prepare: (signal: AbortSignal) => Promise<PreviewTicket>; ticket?: never }
+)
+
+export function LocalBrowserPreview(props: Props) {
+  const { page, onClose } = props
   const uiText = useInterfaceText()
   const { height } = useWindowDimensions()
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
-  const latestTicket = useRef(ticket)
-  latestTicket.current = ticket
+  const latest = useRef(props)
+  latest.current = props
   useEffect(() => {
     const abort = new AbortController()
     const report = (cause: unknown) => {
@@ -37,9 +39,11 @@ export function LocalBrowserPreview({
     setUrl('')
     setError('')
     void import('./local-browser-tunnel')
-      .then(({ openLocalBrowserTunnel }) =>
-        openLocalBrowserTunnel(page, () => latestTicket.current(), abort.signal, report),
-      )
+      .then(async ({ openLocalBrowserTunnel }) => {
+        const prepare = latest.current.prepare
+        const ticket = prepare ? await prepare(abort.signal) : () => latest.current.ticket!()
+        return openLocalBrowserTunnel(page, ticket, abort.signal, report)
+      })
       .then((result) => {
         if (!abort.signal.aborted) setUrl(result.url)
       }, report)

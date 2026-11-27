@@ -6,6 +6,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const literalMessage =
   'Dovo PR feedback for https://github.com/foreign/project/pull/42/files#note.\nHead: abc123\n\nreview by Dominic (CHANGES_REQUESTED)\nKeep  two spaces, a\ttab, punctuation & <tags>, and **literal Markdown**.\n\n  Indented final line.\n'
+const localUrl = 'http://localhost:5173/docs?q=one#anchor'
 const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
@@ -14,18 +15,19 @@ export {createTask} from '${root}/packages/studio-core/src/workspace/actions.ts'
 export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>useContext(Context);
 export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',turnAnnouncements:'off',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
-export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=useWorkspace;export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
+export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=useWorkspace;export const useAppendConversationTemplate=()=>text=>window.quotes.push(text);export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
 export const useStudioHost=()=>({...useWorkspace().host,openExternalLink:async url=>{window.external.push(url)},openBrowserLink:async url=>{window.browsers.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `
 const fixture = `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {TooltipProvider} from '@radix-ui/react-tooltip';import {Effect} from 'effect';import {addTaskPullLinks} from '@dovo/protocol';import {Context} from '@dovo/studio-core';
-window.writes=[];window.copied=[];window.opened=[];window.external=[];window.browsers=[];window.alerts=[];window.fail=false;
+window.writes=[];window.copied=[];window.opened=[];window.external=[];window.browsers=[];window.alerts=[];window.previewCalls=[];window.quotes=[];window.fail=false;
 const url='https://github.com/foreign/project/pull/42/files#note';
 const initial={id:'thread',title:'Thread',repositoryId:'original-project',status:'draft',messages:[{id:'m',role:'assistant',text:url}],files:[],draft:'',example:false};
 function App(){CHOOSER_STATE const[task,setTask]=useState(initial),[connected,setConnected]=useState(true),[runtime,setRuntime]=useState('http://runtime.local'),[manage,setManage]=useState(false);window.setTask=setTask;window.connect=setConnected;window.runtime=setRuntime;
 const request=async(path,input)=>{window.writes.push({path,input,runtime});if(path==='/api/tasks/message/bookmark'){setTask(task=>({...task,messages:task.messages.map(message=>message.id===input.messageId?{...message,bookmarked:input.bookmarked}:message)}));return {ok:true}};if(path==='/api/scm/pulls/detail')return {pull:{number:input.number,title:'Resolved project PR',url:'https://github.com/original/project/pull/'+input.number,repositoryUrl:'https://github.com/original/project',provider:'github'}};if(window.fail)throw new Error('Link failed');setTask(current=>addTaskPullLinks(current,input.pulls));return {ok:true}};
-const value={host:CHOOSER_HOST,activeRuntimeId:runtime,workspace:{tasks:[task],repositories:[]},activeId:runtime,overviews:[{profile:{id:runtime,name:'Computer',connection:{address:runtime,token:'paired'}},snapshot:{workspace:{repositories:[]}}}],snapshot:{workspace:{tasks:[task]}},call:request,connected,connection:{address:runtime,token:'paired'},profile:{connection:{address:runtime,token:'paired'}},request,callEffect:(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error})};
+const readRuntime=async(profile,path,input)=>{window.previewCalls.push({computer:profile.id,path,input});if(path.endsWith('/open'))return {tabId:input.tabId};if(path.endsWith('/ticket'))return {ticket:'preview-ticket'};return {ok:true};};
+const value={readRuntime,host:CHOOSER_HOST,activeRuntimeId:runtime,workspace:{tasks:[task],repositories:[]},activeId:runtime,overviews:[{profile:{id:runtime,name:'Computer',connection:{address:runtime,token:'paired'}},connected,snapshot:{localBrowserPreviewSupported:connected,workspace:{repositories:[]}}}],snapshot:{workspace:{tasks:[task]}},call:request,connected,connection:{address:runtime,token:'paired'},profile:{connection:{address:runtime,token:'paired'}},request,callEffect:(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error})};
 return <Context.Provider value={value}>CHOOSER_DIALOG CONTENT</Context.Provider>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
 `
 async function bundle(mobile) {
@@ -51,6 +53,7 @@ async function bundle(mobile) {
     '../layout/sheet': `import {useImperativeHandle} from 'react';export const useSheetNavigation=()=>navigate=>navigate();export const Sheet=({title,children,onClose,busy,ref})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section role="dialog"><h2>{title}</h2>{children}<button disabled={busy} onClick={onClose}>Close</button></section>};`,
     '../layout/safe-modal': `export const SafeModal=({visible,children})=>visible?children:null;`,
     '../controls/action': `export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
+    '../../tasks/preview/thread-link-preview': `import {useEffect,useState} from 'react';export function ThreadLinkPreview({page,prepare,onClose}){const [socket,setSocket]=useState('');useEffect(()=>{const abort=new AbortController();void prepare(abort.signal).then(ticket=>ticket()).then(setSocket);return()=>abort.abort()},[]);return <section role="dialog" aria-label="Local preview"><output>{page}</output><output>{socket}</output><button onClick={onClose}>Close preview</button></section>}`,
     'expo-clipboard': `export const setStringAsync=async value=>window.copied.push(value);`,
     'expo-router': `export const usePathname=()=>'/thread';export const router={push:href=>window.opened.push(href.params.navigationUrl??href.params.url??href.params.repositoryId)};`,
     'react-native-webview': `export default ()=>null;`,
@@ -66,7 +69,7 @@ async function bundle(mobile) {
     './mermaid-diagram': `export const MermaidDiagram=()=>null;`,
     './task-visualization': `export const TaskVisualization=()=>null;`,
     'react-native': `export const Pressable=({children,onPress,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;export const View=({children})=><div>{children}</div>;export const Text=({children,onPress,onLongPress})=>onPress?<a href="#" onClick={e=>{e.preventDefault();onPress()}} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</a>:<span>{children}</span>;export const Keyboard={dismiss:()=>{}};export const Linking={openURL:async url=>window.external.push(url)};export const Platform={OS:'ios'};export const Alert={alert:(...args)=>window.alerts.push(args)};`,
-    'react-native-enriched-markdown': `export const EnrichedMarkdownText=({markdown,onLinkPress,onLinkLongPress})=>{const url=markdown.match(/\\]\\(<([^>]+)>\\)/)?.[1]??markdown;return <a href={url} onClick={e=>{e.preventDefault();onLinkPress({url})}} onContextMenu={e=>{e.preventDefault();onLinkLongPress?.({url})}}>{markdown.includes('&#')?url:'Thread PR'}</a>};`,
+    'react-native-enriched-markdown': `export const EnrichedMarkdownText=({markdown,onLinkPress,onLinkLongPress,contextMenuItems})=>{const url=markdown.match(/\\]\\(<([^>]+)>\\)/)?.[1]??markdown;return <><a href={url} onClick={e=>{e.preventDefault();onLinkPress({url})}} onContextMenu={e=>{e.preventDefault();onLinkLongPress?.({url})}}>{markdown.includes('&#')?url:'Thread PR'}</a>{contextMenuItems?.map(item=><button key={item.text} onClick={()=>item.onPress({text:'Selected line',selection:{start:0,end:13}})}>{item.text}</button>)}</>};`,
   }
   const ui = `${root}/packages/studio-ui/src/components`
   if (!mobile)
@@ -85,7 +88,7 @@ async function bundle(mobile) {
     )
     .replace('CHOOSER_DIALOG', mobile ? '<LinkBrowser/>' : '{chooser.dialog}')
   const entry = mobile
-    ? `import {LinkBrowser} from '${root}/apps/mobile/src/ui/content/open-link.tsx';import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${renderedFixture.replace('CONTENT', `<><ThreadMarkdown text={url} variant="chat"/><div data-literal><ThreadMarkdown text={${JSON.stringify(literalMessage)}} plainText/></div></>`)}`
+    ? `import {LinkBrowser} from '${root}/apps/mobile/src/ui/content/open-link.tsx';import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${renderedFixture.replace('CONTENT', `<><ThreadMarkdown text={url} variant="chat" quoteMessageId="reply"/><div data-local-preview><ThreadMarkdown text={${JSON.stringify(localUrl)}} variant="chat"/></div><div data-literal><ThreadMarkdown text={${JSON.stringify(literalMessage)}} plainText/></div><div data-user-local><ThreadMarkdown text={${JSON.stringify(`Preview ${localUrl}.`)}} plainText/></div></>`)}`
     : `import {resolveLinkTargets} from '@dovo/studio-core/links';import {useLinkChooser} from '${root}/packages/studio-shell/src/link-chooser.tsx';import {TaskPullLinkDialog} from '${root}/packages/extension-tasks/src/dialogs/task-pull-link-dialog.tsx';import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${renderedFixture.replace('CONTENT', '<><ChatThread task={task} onPullLink={url=>{window.opened.push(url);return true}} onManagePulls={()=>setManage(true)}/>{manage&&<TaskPullLinkDialog task={task} onClose={()=>setManage(false)}/>}</>')}`
   const result = await build({
     stdin: { contents: entry, resolveDir: root, loader: 'tsx' },
@@ -130,8 +133,53 @@ try {
     page.on('popup', (popup) => popups.push(popup.url()))
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: await bundle(mobile) })
-    const link = page.getByRole('link', { name: 'Thread PR', exact: true })
+    const link = page
+      .getByRole('link', { name: 'Thread PR', exact: true })
+      .and(page.locator(':not([data-local-preview] *)'))
     if (mobile) {
+      const localhost = page.locator('[data-local-preview]').getByRole('link')
+      await localhost.click()
+      const preview = page.getByRole('dialog', { name: 'Local preview' })
+      await preview.getByText('ws://runtime.local/ws/local-preview?ticket=preview-ticket').waitFor()
+      const [open, ticket] = await page.evaluate(() => window.previewCalls)
+      assert.equal(open.computer, 'http://runtime.local')
+      assert.deepEqual(open.input, { taskId: 'thread', url: localUrl, tabId: open.input.tabId })
+      assert.deepEqual(ticket.input, {
+        taskId: 'thread',
+        tabId: open.input.tabId,
+        origin: 'http://localhost:5173',
+      })
+      await preview.getByRole('button', { name: 'Close preview' }).click()
+      await page.waitForFunction(() => window.previewCalls.length === 3)
+      assert.deepEqual(await page.evaluate(() => window.previewCalls[2].input), {
+        taskId: 'thread',
+        tabId: open.input.tabId,
+      })
+      await page.evaluate(() => window.connect(false))
+      await localhost.click()
+      await page.getByRole('dialog').getByRole('heading', { name: 'Open link' }).waitFor()
+      assert.equal(await page.evaluate(() => window.previewCalls.length), 3)
+      await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+      await page.evaluate(() => window.connect(true))
+      const userLocalhost = page.locator('[data-user-local]')
+      assert.equal(await userLocalhost.textContent(), `Preview ${localUrl}.`)
+      await userLocalhost.getByRole('link', { name: localUrl, exact: true }).click()
+      await preview.getByText('ws://runtime.local/ws/local-preview?ticket=preview-ticket').waitFor()
+      assert.equal(await page.evaluate(() => window.previewCalls[3].input.url), localUrl)
+      await preview.getByRole('button', { name: 'Close preview' }).click()
+      await page.waitForFunction(() => window.previewCalls.length === 6)
+      await page.getByRole('button', { name: 'Add quote to draft', exact: true }).click()
+      const quotes = await page.evaluate(() => window.quotes)
+      assert.equal(quotes.length, 1)
+      assert.match(quotes[0], /Reply to assistant message "reply"/)
+      assert.ok(quotes[0].includes('> Selected line'))
+      assert.equal(
+        await page
+          .locator('[data-local-preview]')
+          .getByRole('button', { name: 'Add quote to draft' })
+          .count(),
+        0,
+      )
       await page.locator('[data-literal]').waitFor()
       assert.equal(
         await page.locator('[data-literal]').textContent(),
@@ -413,7 +461,7 @@ try {
     await page.close()
   }
   console.log(
-    'Thread PR links: desktop normal click/right-click, mobile normal tap/long-press and plain user links, normalized cross-project links, duplicate/offline/archive guards, failure recovery, native opening and runtime switching passed.',
+    'Thread PR links, paired localhost preview with offline fallback and cleanup, and mobile selection citations passed.',
   )
 } finally {
   await browser.close()

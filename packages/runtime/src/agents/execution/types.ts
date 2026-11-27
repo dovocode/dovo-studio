@@ -121,6 +121,7 @@ export interface AgentAdapter {
     agent: Agent,
     cwd: string,
     signal: AbortSignal,
+    launch?: AcpLaunch,
   ) => Promise<import('@dovo/protocol').NativeSkill[]>
   /** Cursor sessions keep a request only after its run saves its own checkpoint. */
   cursorRunCheckpointed?: (

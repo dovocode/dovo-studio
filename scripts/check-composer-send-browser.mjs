@@ -43,12 +43,12 @@ const draftIdentityOnly = process.argv.includes('--draft-identity-only')
 const built = await build({
   stdin: {
     contents: `
-import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {RunControls} from './src/chat/actions/run-controls.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
+import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {RunControls} from './src/chat/actions/run-controls.tsx';import {pendingMessageQueue,visiblePendingMessages,RuntimeRequestError} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
 const connection={address:'http://runtime',token:'token'};
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/cancel'&&window.stopFailure)throw Error(window.stopFailure);if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-thread/create'){if(window.failSideSave)throw Error('Side save failed');return new Promise((resolve,reject)=>{window.sideSaved=()=>resolve({id:'side-'+input.childId});window.sideLost=()=>reject(Error('Side chat response lost'))})};if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');const selected={...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]};return window.holdProject?new Promise(resolve=>{window.finishProject=()=>resolve(selected)}):selected};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection,flush:async()=>{},snapshot:{workspace,...inputs,runs:[],messageDraftIdentitySupported:window.guardedDraft||undefined,queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/cancel'&&window.stopFailure)throw Error(window.stopFailure);if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-thread/create'){if(window.failSideSave)throw Error('Side save failed');return new Promise((resolve,reject)=>{window.sideSaved=()=>resolve({id:'side-'+input.childId});window.sideLost=()=>reject(Error('Side chat response lost'))})};if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');const selected={...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]};return window.holdProject?new Promise(resolve=>{window.finishProject=()=>resolve(selected)}):selected};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.rejectResume?reject(new RuntimeRequestError({kind:'response',status:409,mutationRejected:true,message:'The stopped child changed.'})):window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection,flush:async()=>{},snapshot:{workspace,...inputs,runs:[],messageDraftIdentitySupported:window.guardedDraft||undefined,queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true,promptQueueStagingSupported:window.resumeScenario||undefined,stoppedChildResumeSupported:window.childResumeSupported||undefined}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -91,7 +91,10 @@ try {
     await checkDraftIdentity()
     await checkSentDraftRecovery()
   }
-  if (!forkNavigationOnly && !draftIdentityOnly) await checkComposerSend()
+  if (!forkNavigationOnly && !draftIdentityOnly) {
+    await checkComposerSend()
+    await checkStoppedChildResume()
+  }
 } finally {
   await browser.close()
 }
@@ -283,6 +286,64 @@ async function checkSentDraftRecovery() {
     await page.close()
   }
   console.log('Sending retires the saved draft in either snapshot order, including after remount.')
+}
+
+async function checkStoppedChildResume() {
+  const { page, errors } = await openComposerPage(false)
+  const input = page.getByRole('textbox', { name: 'Message' })
+  await input.waitFor()
+  await page.evaluate(() => {
+    window.resumeScenario = true
+    window.setTask((task) => ({
+      ...task,
+      status: 'cancelled',
+      queuePaused: true,
+      queue: [{ id: 'held', text: 'Held prompt', paused: true }],
+      delegation: { parentTaskId: 'parent', completion: 'disposed', resultVersion: 'stop-1' },
+    }))
+  })
+  await input.fill('Resume with this prompt')
+  await page.locator('button[type=submit]').click()
+  await page.getByText('Update the thread computer to resume a stopped child.').waitFor()
+  assert.equal(await input.inputValue(), 'Resume with this prompt')
+  assert.equal(await page.evaluate(() => window.requests.length), 0)
+  await page.evaluate(() => {
+    window.childResumeSupported = true
+    window.setTask((task) => ({ ...task }))
+  })
+  await page.getByRole('button', { name: 'Resume child with message', exact: true }).click()
+  await page.waitForFunction(() => typeof window.response === 'function')
+  const request = await page.evaluate(() => window.requests.at(-1))
+  assert.equal(request.path, '/api/tasks/message')
+  assert.equal(request.input.resumeStoppedChild, 'stop-1')
+  assert.equal(request.input.text, 'Resume with this prompt')
+  assert.equal(await page.evaluate(() => window.current.queue[0].paused), true)
+  await page.evaluate(() => {
+    window.rejectResume = true
+    window.response()
+    window.response = null
+    window.setTask((task) => ({
+      ...task,
+      delegation: { ...task.delegation, resultVersion: 'stop-2' },
+    }))
+  })
+  await page.getByText(/The stopped child changed/).waitFor()
+  assert.equal(await input.inputValue(), 'Resume with this prompt')
+  await page.getByRole('button', { name: 'Resume child with message', exact: true }).click()
+  await page.waitForFunction(() => typeof window.response === 'function')
+  const retry = await page.evaluate(() => window.requests.at(-1))
+  assert.equal(retry.input.resumeStoppedChild, 'stop-2')
+  assert.notEqual(retry.input.messageId, request.input.messageId)
+  await page.evaluate(() => {
+    window.rejectResume = false
+    window.response()
+  })
+  await page.waitForFunction(() => document.querySelector('textarea').value === '')
+  assert.deepEqual(errors, [])
+  await page.close()
+  console.log(
+    'Composer resumes a stopped child with a new prompt and retains drafts on older runtimes.',
+  )
 }
 
 async function checkComposerSend() {

@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react'
 import {
   linearIssuesSchema,
+  randomUUID,
   linearIssueSources,
   runtimeComputerName,
   type RuntimeOverview,
   type linearIssueQuerySchema,
 } from '@dovo/protocol'
-import { useLinearIssues, useWorkspace } from '@dovo/studio-core'
+import { useLinearIssues, useLinearIssueActions, useWorkspace } from '@dovo/studio-core'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button, Dialog, DialogContent, DialogTitle } from '@dovo/studio-ui'
@@ -99,6 +100,7 @@ function LinearList({
   const uiText = useInterfaceText()
   const { readRuntime } = useWorkspace()
   const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<string>()
   const [notice, setNotice] = useState('')
   const { connectionId, repositoryId } = selection
   const read = useCallback(
@@ -135,7 +137,14 @@ function LinearList({
       {issues.busy && <p role="status">{uiText('Loading issues…')}</p>}
       {!issues.busy && !issues.error && !issues.items.length && <p>{uiText('No issues found.')}</p>}
       {issues.items.map((issue) => (
-        <details key={issue.id} className="rounded border p-2">
+        <details
+          key={issue.id}
+          className="rounded border p-2"
+          onToggle={(event) => {
+            const open = event.currentTarget.open
+            setSelected((current) => (open ? issue.id : current === issue.id ? undefined : current))
+          }}
+        >
           <summary className="cursor-pointer break-words">
             <span className="text-muted-foreground">
               {issue.identifier} · {issue.status}
@@ -143,6 +152,15 @@ function LinearList({
             {issue.title}
           </summary>
           <p className="my-2 whitespace-pre-wrap break-words">{issue.description}</p>
+          {source.snapshot?.linearIssueActionsSupported && selected === issue.id && (
+            <LinearIssueEditor
+              key={issue.id}
+              source={source}
+              selection={selection}
+              issueId={issue.id}
+              onStatus={(status) => issues.updateStatus(issue.id, status)}
+            />
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <a href={issue.url} target="_blank" rel="noreferrer" className="text-primary underline">
               {uiText('Open in Linear')}
@@ -170,6 +188,90 @@ function LinearList({
         </Button>
       )}
       {notice && <p role="status">{notice}</p>}
+    </div>
+  )
+}
+
+function LinearIssueEditor({
+  source,
+  selection,
+  issueId,
+  onStatus,
+}: {
+  source: RuntimeOverview
+  selection: Pick<typeof linearIssueQuerySchema.Type, 'connectionId' | 'repositoryId'>
+  issueId: string
+  onStatus: (status: string) => void
+}) {
+  const uiText = useInterfaceText()
+  const { readRuntime } = useWorkspace()
+  const actions = useLinearIssueActions(
+    readRuntime,
+    source.profile,
+    issueId,
+    selection,
+    randomUUID,
+    onStatus,
+  )
+  const disabled = actions.busy || !source.connected
+  return (
+    <div className="my-3 grid gap-2">
+      {actions.error && <p role="alert">{actions.error}</p>}
+      {actions.issue ? (
+        <>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="grid gap-1 text-sm">
+              {uiText('Status')}
+              <select
+                className="rounded border p-2"
+                value={actions.stateId}
+                disabled={disabled}
+                onChange={(event) => actions.setStateId(event.target.value)}
+              >
+                {actions.issue.states.map(({ id, name }) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="button"
+              disabled={disabled || actions.stateId === actions.issue.state.id}
+              onClick={() => void actions.saveStatus()}
+            >
+              {uiText('Save status')}
+            </Button>
+          </div>
+          {actions.issue.comments.map((comment) => (
+            <div key={comment.id} className="min-w-0 rounded border p-2 text-sm">
+              <p className="text-muted-foreground">{comment.author}</p>
+              <p className="whitespace-pre-wrap break-words">{comment.body}</p>
+            </div>
+          ))}
+          <label className="grid gap-1 text-sm">
+            {uiText('Comment')}
+            <textarea
+              className="min-w-0 rounded border p-2"
+              rows={3}
+              maxLength={12000}
+              value={actions.comment}
+              readOnly={actions.busy}
+              onChange={(event) => actions.setComment(event.target.value)}
+            />
+          </label>
+          <Button
+            className="justify-self-start"
+            type="button"
+            disabled={disabled || !actions.comment.trim()}
+            onClick={() => void actions.postComment()}
+          >
+            {uiText('Post comment')}
+          </Button>
+        </>
+      ) : (
+        actions.busy && <p role="status">{uiText('Loading issues…')}</p>
+      )}
     </div>
   )
 }

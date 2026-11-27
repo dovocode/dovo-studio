@@ -164,6 +164,13 @@ it('loads repository-scoped pages and keeps merged and draft states', async () =
             draft: i === 0,
             state: 'closed',
             merged_at: i === 0 ? '2026-09-07T10:00:00Z' : null,
+            labels:
+              i === 0
+                ? [
+                    { name: 'bug', color: '386c5f' },
+                    { name: 'plain', color: 'invalid' },
+                  ]
+                : pull.labels,
           })),
     ),
   )
@@ -171,6 +178,9 @@ it('loads repository-scoped pages and keeps merged and draft states', async () =
   expect(page).toMatchObject({ page: 2, hasMore: true })
   expect(page.pulls[0]).toMatchObject({ state: 'merged', draft: true })
   expect(page.pulls[0].authorAvatarUrl).toBe(pull.user.avatar_url)
+  expect(page.pulls[0].labels).toEqual(['bug', 'plain'])
+  expect(page.pulls[0].labelColors).toEqual({ bug: '#386c5f' })
+  expect(page.pulls[1].labelColors).toBeUndefined()
   expect(page.pulls[1].state).toBe('closed')
   expect(run).toHaveBeenCalledWith(
     '/project/worktree',

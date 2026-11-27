@@ -1,6 +1,13 @@
 import { expect, it } from 'vite-plus/test'
 import { pullDescriptionTasks, togglePullDescriptionTask } from './description-checklist'
 
+it('toggles a checklist marker at its source offset after a leading BOM', () => {
+  const source = '\uFEFF- [ ] Ready'
+  const [task] = pullDescriptionTasks(source)
+  expect(task).toMatchObject({ offset: source.indexOf('[ ]') + 1, checked: false })
+  expect(togglePullDescriptionTask(source, task!, true)).toBe('\uFEFF- [x] Ready')
+})
+
 it('toggles the exact item when descriptions contain identical task labels', () => {
   const source = '- [ ] **Review**\n- [ ] **Review**\n\n```md\n- [ ] Example\n```'
   const tasks = pullDescriptionTasks(source)

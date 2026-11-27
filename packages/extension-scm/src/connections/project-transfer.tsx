@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Schema } from 'effect'
 import { MonitorUp, ChevronDown, Info } from 'lucide-react'
 import {
@@ -25,7 +25,15 @@ import {
   type Repository,
 } from '@dovo/protocol'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
-import { Button, Input, FormField, Dialog, DialogContent, DialogTitle } from '@dovo/studio-ui'
+import {
+  Button,
+  Input,
+  FormField,
+  SearchField,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@dovo/studio-ui'
 
 export function ProjectTransferSettings({
   repository,
@@ -60,6 +68,11 @@ export function ProjectTransferSettings({
   const [targetId, setTargetId] = useState(''),
     [transport, setTransport] = useState('p2p')
   const [ignored, setIgnored] = useState<string[]>([])
+  const [ignoredSearch, setIgnoredSearch] = useState('')
+  const matchingIgnored = useMemo(() => {
+    const query = ignoredSearch.trim().toLowerCase()
+    return inspection?.ignoredFiles.filter(({ path }) => path.toLowerCase().includes(query)) ?? []
+  }, [ignoredSearch, inspection])
   const [sshHost, setSshHost] = useState(''),
     [sshUser, setSshUser] = useState('')
   const [sshPort, setSshPort] = useState('22'),
@@ -720,8 +733,29 @@ export function ProjectTransferSettings({
                       Only select configuration and secrets you want on the destination. Generated
                       folders are excluded.
                     </p>
-                    <div className="max-h-40 space-y-1 overflow-auto">
-                      {inspection.ignoredFiles.map((file) => (
+                    <SearchField
+                      aria-label={uiText('Search files')}
+                      clearLabel={uiText('Clear search')}
+                      value={ignoredSearch}
+                      onValueChange={setIgnoredSearch}
+                      data-ignored-search
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== 'Escape' ||
+                          !ignoredSearch ||
+                          event.nativeEvent.isComposing
+                        )
+                          return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setIgnoredSearch('')
+                      }}
+                    />
+                    <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                      {!matchingIgnored.length && (
+                        <p className="text-muted-foreground">{uiText('No matching files.')}</p>
+                      )}
+                      {matchingIgnored.map((file) => (
                         <label key={file.path} className="flex items-start gap-2 break-all">
                           <input
                             type="checkbox"
@@ -821,7 +855,18 @@ export function ProjectTransferDialog({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="project-transfer-dialog max-w-xl">
+      <DialogContent
+        className="project-transfer-dialog max-w-xl"
+        onEscapeKeyDown={(event) => {
+          const input = event.target
+          if (
+            input instanceof HTMLInputElement &&
+            input.hasAttribute('data-ignored-search') &&
+            input.value
+          )
+            event.preventDefault()
+        }}
+      >
         <DialogTitle>
           {sourceTask && continuation
             ? 'Continue on another computer'

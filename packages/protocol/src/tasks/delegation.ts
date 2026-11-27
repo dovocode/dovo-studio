@@ -113,6 +113,16 @@ export function taskFamilyIds(tasks: readonly Pick<Task, 'id' | 'delegation'>[],
   return familyIds(childIds(tasks), id)
 }
 
+export function delegatedResultId(childId: string, version?: string) {
+  return `subagent-result:${childId}${version ? `:${version}` : ''}`
+}
+
+export function stoppedChildVersion(task: Pick<Task, 'delegation'>): string | null | undefined {
+  return task.delegation?.completion === 'disposed'
+    ? (task.delegation.resultVersion ?? null)
+    : undefined
+}
+
 /** Includes descendants whose saved results still need a parent turn. */
 export function taskFamilyWorking(tasks: readonly TaskMetadata[], id: string) {
   return indexTaskFamilyWorking(tasks)(id)

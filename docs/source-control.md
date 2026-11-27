@@ -53,10 +53,17 @@ Agents also have a regular `dovo_task linked_projects` tool, independent of Stud
 
 - `projects` lists registered projects on the thread's computer.
 - `worktrees` with `repositoryId` lists existing worktrees.
-- `list` returns active links and any pending configuration.
+- `list` returns active links, any pending configuration, and registered child worktrees found
+  inside the thread's directory.
 - `add` accepts a `checkout` with a stable `id`, `repositoryId`, `execution` (`main` or `worktree`)
   and `access` (`read-only` or `edit`). New worktrees may specify `branch` and `baseBranch`;
   existing ones use `existingWorktreePath`.
+
+Host worktree threads discover a registered child project's Git worktree at the same relative path
+as its original checkout. If the primary worktree ignores that path and tracks no files there,
+changes in later turns appear under the child project in the turn diff. Restore a file from that
+diff while the child worktree is still at its saved path and branch. When the linked projects tool
+is enabled, fresh turns and the `list` action include the discovered paths.
 
 This works for General threads too. Additions made during a turn are saved for the next fresh turn;
 the current agent's folders, permissions and checkpoints stay unchanged. A follow-up message starts

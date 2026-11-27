@@ -244,7 +244,8 @@ it('previews EPUB and DOCX text through the attachment reader and preserves the 
     },
     {
       name: 'book.epub',
-      expected: 'Opening line\nHeading\n\nCover image\n\nSecond chapter',
+      expected:
+        'Opening line\nChapter header\n\nHeading\n\nCover image\n\nChapter footer\nThe end\n\nSecond chapter',
       entries: {
         'META-INF/container.xml':
           '<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>',
@@ -252,7 +253,7 @@ it('previews EPUB and DOCX text through the attachment reader and preserves the 
           '<package><manifest><item id="two" href="text/second.xhtml" media-type="application/xhtml+xml"/><item id="one" href="text/first%20chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="one"/><itemref idref="two"/></spine></package>',
         'OPS/text/second.xhtml': chapter('<p>Second chapter</p>'),
         'OPS/text/first chapter.xhtml': chapter(
-          '<span>Opening line</span><h2>Heading</h2><p hidden="hidden">Hidden passage</p><figure><img src="cover.jpg" alt="Cover image"/></figure>',
+          '<span>Opening line</span><header>Chapter header</header><h2>Heading</h2><p hidden="hidden">Hidden passage</p><figure><img src="cover.jpg" alt="Cover image"/></figure><footer>Chapter footer</footer><span>The end</span>',
         ),
       },
     },

@@ -57,6 +57,7 @@ const recordSchema = mutableStruct({
         turnSettings: Schema.optional(turnSettingsSchema),
         plan: Schema.optional(Schema.Boolean),
         preserveQueuePause: Schema.optional(Schema.Boolean),
+        resumeStoppedChild: Schema.optional(Schema.NullOr(Schema.String)),
       }),
       accepted: Schema.Boolean,
       editedAfterStage: Schema.optional(Schema.Boolean),
@@ -567,6 +568,15 @@ export function createDraftStorage(storage: Storage) {
     discardRestoreEffect,
     stageEffect,
     confirmEffect,
+    discardSubmissionEffect: (key: string, id: string) =>
+      serialize(
+        key,
+        Effect.gen(function* () {
+          const previous = yield* load(key)
+          if (previous?.submission?.attempt.id === id && !previous.submission.accepted)
+            yield* save(key, { ...previous, submission: undefined })
+        }),
+      ),
     flushEffect,
     read: (key: string, legacyKey?: string) => runClientEffect(readEffect(key, legacyKey)),
     write: (key: string, value: string) => runClientEffect(writeEffect(key, value)),

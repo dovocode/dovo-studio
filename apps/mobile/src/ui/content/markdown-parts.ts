@@ -1,10 +1,12 @@
 import {
   cachedMarkdownParts,
+  markdownReferencePrefix,
+  markdownWithReferencePrefix,
+  parseSharedMarkdown,
   richMarkdown,
   type ImmutableMarkdownParts,
   type RichMarkdownPart,
 } from '@dovo/protocol'
-import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Nodes } from 'mdast'
 import { markdownImages, markdownImagesFromNodes, type MarkdownImagePart } from './markdown-images'
 import { completedMarkdownFence, type MarkdownCodePart } from './markdown-code-blocks'
@@ -17,6 +19,12 @@ export type NativeMarkdownPart =
 function containsDefinition(node: Nodes): boolean {
   return (
     node.type === 'definition' || ('children' in node && node.children.some(containsDefinition))
+  )
+}
+function containsLinkReference(node: Nodes): boolean {
+  return (
+    node.type === 'linkReference' ||
+    ('children' in node && node.children.some(containsLinkReference))
   )
 }
 /** A completed top-level fence that may become a streaming cut, in rendered part coordinates. */
@@ -50,36 +58,67 @@ function splitRichPart(
     result.push(rich)
     return
   }
-  const appendImages = (parts: MarkdownImagePart[], offset: number) => {
+  const inheritedPrefix = rich.referencePrefix ?? ''
+  const source = rich.text
+  const hasFence = /(?:^|\n) {0,3}(?:`{3,}|~{3,})/.test(source)
+  if (!hasFence && !source.includes('![')) {
+    result.push({
+      kind: 'markdown',
+      text: markdownWithReferencePrefix(source, inheritedPrefix),
+      offset: rich.offset,
+    })
+    return
+  }
+  const root = parseSharedMarkdown(source, 'commonmark')
+  const definitions =
+    inheritedPrefix ||
+    (root.children.some(containsLinkReference)
+      ? markdownReferencePrefix(source, root.children)
+      : '')
+  const appendImages = (parts: MarkdownImagePart[], offset: number, split: boolean) => {
+    const prefix = split || parts.length > 1 ? definitions : inheritedPrefix
     for (const image of parts)
       result.push(
         image.kind === 'text'
-          ? { kind: 'markdown', text: image.text, offset: offset + image.offset }
+          ? {
+              kind: 'markdown',
+              text: markdownWithReferencePrefix(image.text, prefix),
+              offset: offset + image.offset,
+            }
           : { ...image, offset: offset + image.offset },
       )
   }
-  if (!/(?:^|\n) {0,3}(?:`{3,}|~{3,})/.test(rich.text)) {
-    appendImages(markdownImages(rich.text), rich.offset)
+  if (!hasFence) {
+    appendImages(
+      inheritedPrefix
+        ? markdownImages(source, inheritedPrefix)
+        : markdownImagesFromNodes(source, root.children, 0),
+      rich.offset,
+      false,
+    )
     return
   }
   // One tree supplies diagrams, code and images. Keep each text fragment's own
   // definitions, matching the independently rendered Markdown boundaries.
-  const diagrams = /(?:^|\n) {0,3}(?:`{3,}|~{3,})mermaid(?:\s|$)/i.test(rich.text)
-  const root = fromMarkdown(rich.text)
-  const references = rich.text.includes('![') && root.children.some(containsDefinition)
+  const diagrams = /(?:^|\n) {0,3}(?:`{3,}|~{3,})mermaid(?:\s|$)/i.test(source)
+  const references =
+    source.includes('![') && (!!inheritedPrefix || root.children.some(containsDefinition))
   let offset = 0
   let nodes: Nodes[] = []
   const appendText = (end: number) => {
-    const text = rich.text.slice(offset, end)
+    const text = source.slice(offset, end)
     // A reference defined across a fence can change image/link nesting in the full
     // tree. Those fragments still parse independently, preserving their exact syntax.
     appendImages(
-      references ? markdownImages(text) : markdownImagesFromNodes(text, nodes, offset),
+      references
+        ? markdownImages(text, inheritedPrefix)
+        : markdownImagesFromNodes(text, nodes, offset),
       rich.offset + offset,
+      offset > 0 || end < source.length,
     )
   }
   for (const node of root.children) {
-    const fence = completedMarkdownFence(rich.text, node)
+    const fence = completedMarkdownFence(source, node)
     if (!fence) {
       nodes.push(node)
       continue
@@ -95,7 +134,7 @@ function splitRichPart(
     offset = fence.end
     nodes = []
   }
-  if (offset < rich.text.length || offset === 0) appendText(rich.text.length)
+  if (offset < source.length || offset === 0) appendText(source.length)
 }
 
 /** Split rich parts, Mermaid, fenced code and images; text parts stay native Markdown. */

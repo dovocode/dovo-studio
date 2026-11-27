@@ -20,12 +20,21 @@ export async function linkedProjectsTool(s: Services, value: unknown) {
     }
   if (command.action === 'worktrees')
     return runClientEffect(worktreeChoicesEffect(s, command.repositoryId))
-  if (command.action === 'list')
+  if (command.action === 'list') {
+    const nestedWorktrees =
+      task.execution === 'worktree' && !task.delegation
+        ? await s.checkouts.linked.discoverNestedWorktrees(
+            task,
+            await s.checkouts.reviewDirectory(taskId),
+          )
+        : []
     return {
       active: task.linkedCheckouts ?? [],
       pending: task.pendingLinkedCheckouts,
       activation: task.pendingLinkedCheckouts ? 'next-turn' : undefined,
+      ...(nestedWorktrees.length ? { nestedWorktrees } : {}),
     }
+  }
   if (task.delegation)
     throw new HttpError(403, 'Child agents inherit their parent’s linked projects')
   if (task.archived || task.archivedAt)

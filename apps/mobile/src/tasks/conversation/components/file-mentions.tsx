@@ -56,6 +56,7 @@ export function FileMentions({
   resources,
   agents,
   provider,
+  antigravity,
   onChange,
   onCommand,
   onSideChat,
@@ -68,6 +69,7 @@ export function FileMentions({
   resources: ResourceSettings
   agents: readonly Pick<Agent, 'id' | 'name' | 'provider'>[]
   provider?: string
+  antigravity?: boolean
   onChange: (text: string) => void
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
@@ -95,11 +97,14 @@ export function FileMentions({
   const trigger = mention?.trigger
   const query = mention?.query
   const lookUpSkills =
-    snapshot?.nativeSkillMentionsSupported === true &&
+    (antigravity
+      ? snapshot?.antigravitySkillMentionsSupported
+      : snapshot?.nativeSkillMentionsSupported) === true &&
     connected &&
-    provider === 'opencode' &&
+    (antigravity || provider === 'opencode') &&
     (trigger === '$' || trigger === '/')
-  const nativeSkills = useNativeSkills(lookUpSkills, taskId, connection, readEffect)
+  const skillSource = antigravity ? 'antigravity' : 'opencode'
+  const nativeSkills = useNativeSkills(lookUpSkills && skillSource, taskId, connection, readEffect)
   const threadOnly = trigger === '@' && query?.toLowerCase().startsWith('thread:') === true
   const modelQuery = trigger === '@' && !threadOnly ? query : undefined
   const runtimeId = snapshot?.runtimeId ?? connection?.runtimeId ?? activeId

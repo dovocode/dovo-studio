@@ -62,6 +62,7 @@ export function parsePiTranscript(text: string) {
         : (decodeResult(Schema.Array(objectSchema), message.content).data ?? [])
             .filter((part) => part.type === 'text')
             .map((part) => string(part.text))
+            .filter(Boolean)
             .join('\n')
     if (!content.trim()) continue
     const at = string(row.timestamp)

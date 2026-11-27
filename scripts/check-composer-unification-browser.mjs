@@ -61,7 +61,7 @@ const built = await build({
         if(path==='/api/snapshot'&&window.failNextSnapshot){window.failNextSnapshot=false;throw Error('Computer unavailable')}
         if(path==='/api/snapshot')return window.holdSnapshots?new Promise(resolve=>window.pendingSnapshots.push(()=>resolve(snapshots[profile.id]))):snapshots[profile.id];
         if(path==='/api/agents/models/cached')return null;
-        if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:window.manyEfforts?[{id:'none',name:'None'},{id:'minimal',name:'Minimal'},{id:'low',name:'Low'},{id:'medium',name:'Medium'},{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}]:[{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}],serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[],codex:{fastModeBlocked:false,daybreakPrograms:[]}};
+        if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:window.manyEfforts?[{id:'xhigh',name:'Extra High'},{id:'high',name:'High'},{id:'medium',name:'Medium'},{id:'low',name:'Low'},{id:'minimal',name:'Minimal'},{id:'none',name:'None'}]:[{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}],serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[],codex:{fastModeBlocked:false,daybreakPrograms:[]}};
         if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
         if(path==='/api/workspace')return {revision:1};
         if(path==='/api/tasks/message')return new Promise((resolve,reject)=>{window.pendingMessage={resolve,reject}});
@@ -395,10 +395,22 @@ try {
     'Keyboard reaches the compact effort selector',
   )
   await manyEfforts.click()
-  await page
-    .getByRole('dialog', { name: 'Reasoning level', exact: true })
-    .getByRole('option', { name: 'High', exact: true })
-    .click()
+  const effortChoices = page.getByRole('dialog', { name: 'Reasoning level', exact: true })
+  for (const [name, bars] of [
+    ['None', '0'],
+    ['Low', '2'],
+    ['High', '4'],
+    ['Extra High', '5'],
+  ]) {
+    assert.equal(
+      await effortChoices
+        .getByRole('option', { name, exact: true })
+        .locator('[data-effort-bars]')
+        .getAttribute('data-effort-bars'),
+      bars,
+    )
+  }
+  await effortChoices.getByRole('option', { name: 'High', exact: true }).click()
   await page.evaluate(() => (window.manyEfforts = false))
   await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
   await page.getByRole('radio', { name: 'High', exact: true }).waitFor()

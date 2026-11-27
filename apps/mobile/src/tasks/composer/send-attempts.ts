@@ -10,6 +10,7 @@ type SendInput = DraftContent & {
   turnSettings?: TurnSettings
   plan?: boolean
   preserveQueuePause?: boolean
+  resumeStoppedChild?: string | null
   draftIdentity?: string
 }
 export type SendAttempt = SendInput & { id: string; title?: string }
@@ -67,6 +68,9 @@ export function createSendAttempts(createId: () => string) {
         turnSettings: input.turnSettings,
         ...(input.plan ? { plan: true } : {}),
         ...(input.preserveQueuePause ? { preserveQueuePause: true } : {}),
+        ...(input.resumeStoppedChild !== undefined
+          ? { resumeStoppedChild: input.resumeStoppedChild }
+          : {}),
       }
       attempts.set(key(scope), attempt)
       return attempt
@@ -80,6 +84,9 @@ export function createSendAttempts(createId: () => string) {
       if (attempt && attempt.text !== text.trim()) attempts.delete(key(scope))
     },
     acknowledge,
+    discard(scope: SendScope, id: string) {
+      if (attempts.get(key(scope))?.id === id) attempts.delete(key(scope))
+    },
     isConfirmed: (attempt: SendAttempt) => confirmed.has(attempt),
     deliverEffect,
     deliver: (scope: SendScope, attempt: SendAttempt, send: () => Promise<unknown>) =>

@@ -22,7 +22,7 @@ function App(){
   const [state,setState]=useState({text:'@file:old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},agents:[],call,readEffect});
   window.update=changes=>setState(previous=>({...previous,...changes}));
   window.runtime=state;
-  return <FileMentions provider={state.provider} taskId={state.taskId} repositoryId={state.repositoryId} agents={state.agents} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
+  return <FileMentions provider={state.provider} antigravity={state.antigravity} taskId={state.taskId} repositoryId={state.repositoryId} agents={state.agents} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
 }
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -161,6 +161,22 @@ try {
   await page.clock.runFor(10_000)
   assert.equal(await nativeCount(), 3)
   assert.equal(await nativeSkill('late-native').count(), 0)
+  await update({
+    text: '$plugin',
+    provider: 'acp',
+    antigravity: true,
+    snapshot: { nativeSkillMentionsSupported: true, workspace: { tasks: [] } },
+  })
+  await page.clock.runFor(5_000)
+  assert.equal(await nativeCount(), 3)
+  await update({ snapshot: { antigravitySkillMentionsSupported: true, workspace: { tasks: [] } } })
+  await page.waitForFunction(
+    () => window.requests.filter(({ path }) => path === '/api/tasks/native-skills').length === 4,
+  )
+  await replyWithSkills(['plugin-review'])
+  await nativeSkill('plugin-review').click()
+  assert.equal(await page.evaluate(() => window.runtime.text), '$plugin-review ')
+  await update({ antigravity: false })
   await update({ text: '@review', snapshot: undefined })
   const server = page.getByRole('button', { name: 'Mention MCP server review-server' })
   await server.waitFor()

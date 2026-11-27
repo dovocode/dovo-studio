@@ -58,7 +58,7 @@ try {
           },
           {
             path: '@dovo/studio-ui',
-            contents: `export {Button} from './packages/studio-ui/src/components/ui/button';export {Input} from './packages/studio-ui/src/components/ui/input';export {FormField} from './packages/studio-ui/src/components/form-field';export * from './packages/studio-ui/src/components/ui/dialog';`,
+            contents: `export {Button} from './packages/studio-ui/src/components/ui/button';export {Input} from './packages/studio-ui/src/components/ui/input';export {SearchField} from './packages/studio-ui/src/search-field';export {FormField} from './packages/studio-ui/src/components/form-field';export * from './packages/studio-ui/src/components/ui/dialog';`,
           },
         ]
     const built = await bundleBrowser(
@@ -179,6 +179,15 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       ? page.getByRole('checkbox', { name: 'Include .env.local', exact: true })
       : page.locator('label').filter({ hasText: '.env.local' }).getByRole('checkbox')
     await config.check()
+    const ignoredSearch = page.getByLabel('Search files', { exact: true })
+    await ignoredSearch.fill('PRIVATE')
+    await config.waitFor({ state: 'hidden' })
+    const privateFile = mobile
+      ? page.getByRole('checkbox', { name: 'Include private.key', exact: true })
+      : page.locator('label').filter({ hasText: 'private.key' }).getByRole('checkbox')
+    assert.equal(await privateFile.isChecked(), false)
+    await ignoredSearch.fill('')
+    assert.equal(await config.isChecked(), true)
     await copy.click()
     await page.getByText('Copying to Desktop · 10%', { exact: true }).waitFor()
     assert.equal(await page.getByLabel('Destination computer').isDisabled(), true)
@@ -466,6 +475,14 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .scrollIntoViewIfNeeded()
         await page.screenshot({ path: root + 'work/dialogs/project-transfer-' + width + '.png' })
       }
+      const transferDialog = page.getByRole('dialog', { name: 'Add to another computer' })
+      await transferDialog.locator('summary').click()
+      const dialogSearch = transferDialog.getByLabel('Search files', { exact: true })
+      await dialogSearch.fill('missing')
+      await transferDialog.getByText('No matching files.', { exact: true }).waitFor()
+      await dialogSearch.press('Escape')
+      assert.equal(await dialogSearch.inputValue(), '')
+      assert.equal(await transferDialog.isVisible(), true)
       await page.keyboard.press('Escape')
       await page.getByRole('dialog').waitFor({ state: 'hidden' })
     }
