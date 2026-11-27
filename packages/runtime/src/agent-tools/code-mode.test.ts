@@ -10,7 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { CallToolResultSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { PermissionPolicy } from '@dovo/protocol'
 import { fixture } from '../testing/fixture.js'
-import { runtimeIntegration } from '../testing/integration.js'
+import { deferred, runtimeIntegration } from '../testing/integration.js'
 import { startRuntime } from '../index.js'
 import { taskToolsServer } from './config.js'
 
@@ -530,6 +530,54 @@ it('recovers completed large MCP output through the authorized result reader', a
     ).status,
   ).toBe(401)
   expect(execute).toHaveBeenCalledTimes(1)
+})
+
+it.each([
+  ['same run', 200],
+  ['credential rotated', 401],
+  ['run replaced', 401],
+  ['thread archived', 401],
+  ['permissions narrowed', 401],
+] as const)('checks access when an MCP tool returns to the %s', async (event, status) => {
+  const { command, s, task, issue } = await setup()
+  const started = deferred<void>()
+  const finish = deferred<void>()
+  const execute = vi.spyOn(s.mcpApps, 'codeTools').mockImplementation(async () => {
+    started.resolve()
+    await finish.promise
+    return { content: [{ type: 'text', text: 'fixture output '.repeat(400_000) }] }
+  })
+  const pending = command({ source: 'mcp', server: 'fixture', name: 'read_report' })
+  try {
+    await Promise.race([
+      started.promise,
+      pending.then(({ status }) => {
+        throw new Error(`Tool returned before dispatch (${status})`)
+      }),
+    ])
+    if (event === 'credential rotated') issue()
+    if (event === 'run replaced')
+      s.store.updateTask(task.id, (saved) => ({ ...saved, activeRunId: 'replacement-run' }))
+    if (event === 'thread archived')
+      s.store.updateTask(task.id, (saved) => ({ ...saved, archived: true }))
+    if (event === 'permissions narrowed')
+      s.store.update((workspace) => ({
+        ...workspace,
+        agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
+      }))
+  } finally {
+    finish.resolve()
+    await pending
+  }
+  const result = await pending
+  expect(result.status).toBe(status)
+  const allowed = status === 200
+  expect(typeof result.value.resultId === 'string').toBe(allowed)
+  expect(result.value.retained === true).toBe(allowed)
+  expect(result.value.toolCompleted === true).toBe(allowed)
+  expect(typeof result.value.error === 'string').toBe(!allowed)
+  expect(JSON.stringify(result.value).includes('fixture output')).toBe(allowed)
+  expect(execute).toHaveBeenCalledOnce()
 })
 
 it('keeps recovery details when an MCP discovery catalog exceeds the code value limit', async () => {

@@ -21,6 +21,12 @@ from this model. The admission guarantee is per message ID.
 [SQLite workspace transaction](../packages/runtime/src/storage/workspace.ts) ·
 [Thread creation](../packages/runtime/src/http/endpoints/thread-start.ts)
 
+Lean generates 32 cases with two submission orders, four queue changes, and four restart points
+around the change and retries. The HTTP tests replay the original sends and try a conflicting
+payload after a queue entry was kept, edited, removed, or moved. They check that each retry leaves
+the newer draft, paused queue, and conversation intact.
+[Queue receipt tests](../packages/runtime/src/http/endpoints/thread-start.test.ts)
+
 ## Turn completion
 
 [ThreadLifecycle.lean](../verification/ThreadLifecycle.lean) follows an admitted input from its
@@ -126,12 +132,25 @@ that an old session cannot reopen the warning after a new sign-in.
 
 ## Linked thread reads
 
-The [Bend linked-read model](../verification/thread/LinkedRead.bend) checks that the exact thread
-and saved link authorize the response. Unlinking or replacing a link while a read is underway keeps
-the returned page out of the client. The runtime rechecks the link and the parent pairing after
-forwarding a read. The [runtime test](../packages/runtime/src/studio/subagents.test.ts) serves an
-eligible transcript through a paired computer, rejects a different thread or computer, and rejects
-later reads after unlinking.
+The model checks the reader pairing, peer pairing, exact thread identity, and saved link generation
+when the response arrives. The HTTP tests hold a successful peer response while one of those
+conditions changes. They check that a fresh read succeeds after relinking while the old reply is
+still held, and that reading works again after reconnecting. They also reject inconsistent thread
+IDs and references. [Bend laws](../verification/thread/LinkedRead.bend) ·
+[Paired HTTP tests](../packages/runtime/src/studio/subagents.test.ts)
+
+## Agent tool replies
+
+The Code mode tests hold an MCP tool reply while a run credential rotates, another run starts, the
+thread is archived, or access is narrowed. A valid run receives the retained output reference. An
+invalidated run receives an authorization error without the output or reference.
+[Code mode tests](../packages/runtime/src/agent-tools/code-mode.test.ts)
+
+The dispatcher tests a failed script with three calls already in flight. They release the replies in
+all six possible orders. The result waits for all three outcomes and reports the two confirmed calls
+and the call whose response was lost. Further cases let a pending call settle after the script fails
+and check that its continuation cannot dispatch a follow-up.
+[Dispatcher tests](../packages/runtime/src/agent-tools/code-dispatch.test.ts)
 
 ## First visible thread frame
 
@@ -151,10 +170,16 @@ The [HTTP regression](../packages/runtime/src/jobs/jobs.test.ts) checks a shared
 two and one, FIFO selection, queued cancellation and retry receipts through a runtime restart backed
 by SQLite.
 
-[Step pool laws](../verification/automation/StepPool.bend) model one slot and candidates in saved
-step-arrival order. A reservation can dispatch once after restart. A step that had already begun
-dispatch enters interrupted recovery. The SQLite test reverses run creation and step arrival across
-two workflows and checks that a cancelling worker holds the slot until it exits.
+The step pool model has one slot and a saved queue in step-arrival order. A paused request stays in
+place while the next eligible step reserves the slot. After that step finishes, resuming the paused
+request lets it dispatch once. A reservation can dispatch once after restart. A step that had
+already begun dispatch enters interrupted recovery.
+[Step pool laws](../verification/automation/StepPool.bend)
+
+The runtime test reverses run creation and step arrival across two workflows. It checks that a
+cancelling worker holds its slot until exit and that a request paused through HTTP stays queued
+across SQLite restart, then creates one task when resumed.
+[Automation runtime test](../packages/runtime/src/jobs/jobs.test.ts)
 
 [Run control laws](../verification/automation/RunControl.bend) model a pause at a completed step,
 clearing a pause request before that step ends, and fencing an old CI result across pause and
@@ -246,7 +271,35 @@ fence replaces even a different, older transfer ID. A stale moved projection cle
 has returned. A destination can activate a restored staged thread only when the activation record
 matches both the transfer ID and the task ID. A discard takes precedence over the backup receipt.
 
+The SQLite conformance test applies the 17 generated cases to the runtime's backup merge and startup
+reconciliation. It checks the saved fence or receipt and the resulting thread state on two
+successive startups.
+[SQLite conformance test](../packages/runtime/src/scm/repositories/project-transfer-ownership-model.test.ts)
+
+TLC checks at most one executable copy for one source thread and two transfer IDs. The model
+separates saving a source fence, sending activation, and applying activation on the destination. A
+discard receipt can be applied repeatedly. Startup uses the source fence to reconcile the saved
+thread state. Disabling the transfer ID check when clearing the fence lets an old discard clear a
+newer move. TLC traces how both copies can execute after restart.
+[Handoff.tla](../verification/tla/Handoff.tla)
+
+The HTTP regression repeats Cancel for the first move after the second move completes, restarts the
+source, and checks that the source still rejects thread execution.
+[HTTP regression](../packages/runtime/src/scm/repositories/project-transfers.test.ts)
+
 [Thread handoff and restore behavior](thread-handoffs.md)
+
+## Replication repair replay
+
+The TLA+ model replays a repaired record in a three-page journal that the receiver already
+acknowledged. It covers peers with and without repair generation receipts and allows up to two
+connection interruptions. TLC checks that the receiver has the repair before certifying the replay
+or reporting completion, and that the exchange settles when delivery, replies, and reconnection can
+progress. Resuming replay from the old acknowledgement skips the repaired page and violates the
+receipt invariant. [RepairReplay.tla](../verification/tla/RepairReplay.tla)
+
+The runtime suite exercises repair delivery to a caught-up peer through the replication protocol.
+[Replication tests](../packages/durable-connections/src/state.test.ts)
 
 ## Provider actions after restart
 
@@ -331,16 +384,31 @@ bash verification/check.sh
 ```
 
 The `lean` job in the Check workflow runs the same command with the pinned toolchain. When changing
-an executable model, regenerate its cases and run the related implementation test:
+an executable model, regenerate its cases and run the related implementation test.
 
 ```sh
+(cd verification && lean -DwarningAsError=true --run ChatThreads.lean > chat-thread-queue-cases.jsonl)
+pnpm exec vp test packages/runtime/src/http/endpoints/thread-start.test.ts
 (cd verification && lean -DwarningAsError=true --run ProviderRecovery.lean > provider-recovery-cases.jsonl)
 pnpm exec vp test packages/runtime/src/storage/provider-recovery-model.test.ts
+(cd verification && lean -DwarningAsError=true --run ThreadHandoff.lean > thread-handoff-cases.jsonl)
+pnpm exec vp test packages/runtime/src/scm/repositories/project-transfer-ownership-model.test.ts
 (cd verification && lean -DwarningAsError=true --run RuntimeRegistry.lean > runtime-registry-cases.jsonl)
 pnpm exec vp test packages/studio-core/src/workspace/runtime-registry.test.ts
 (cd verification && lean -DwarningAsError=true --run SendReceipts.lean > send-receipt-cases.jsonl)
 pnpm exec vp test packages/runtime/src/http/endpoints/thread-start.test.ts
 ```
+
+With Java 21 on PATH, run TLC with the same TLA+ tools v1.7.4 used by the `tla` job.
+
+```sh
+curl -fsSL -o /tmp/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+bash verification/tla/check.sh /tmp/tla2tools.jar
+```
+
+The script runs each bounded model and prints a counterexample from its intentionally weakened
+configuration. It fails if a normal configuration reports an error or a weakened configuration fails
+to violate the expected invariant.
 
 Exercise the implementation from the repository root:
 

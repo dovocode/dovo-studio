@@ -1,10 +1,11 @@
-import Std
+import Lean
 
 namespace Dovo.ChatThreads
 
 structure Submission where
   id : Nat
   fingerprint : Nat
+  deriving Lean.ToJson
 
 abbrev Receipts := List Submission
 
@@ -131,4 +132,47 @@ theorem restartPreservesThread {before after : Thread}
   cases transition
   rfl
 
+private inductive QueueChange where
+  | keep | edit | remove | move
+  deriving Lean.ToJson
+
+private inductive RestartPoint where
+  | beforeChange | afterChange | afterMatchingRetry | afterConflictingRetry
+  deriving Lean.ToJson
+
+private def changeQueue (change : QueueChange) (queue : List Submission) : List Submission :=
+  match change with
+  | .keep => queue
+  | .edit => queue.map fun entry => if entry.id = 1 then { entry with fingerprint := 2 } else entry
+  | .remove => queue.filter fun entry => entry.id != 1
+  | .move => (queue.filter fun entry => entry.id != 1) ++ (queue.filter fun entry => entry.id == 1)
+
+private def retryStatus (receipts : Receipts) (message : Submission) : Nat :=
+  if receiptFor receipts message.id = some message.fingerprint then 200 else 409
+
+private def queueCase (reverse : Bool) (change : QueueChange) (restart : RestartPoint) :
+    Lean.Json :=
+  let original : Submission := ⟨1, 1⟩
+  let other : Submission := ⟨2, 1⟩
+  let changed : Submission := { original with fingerprint := 2 }
+  let submissions := if reverse then [other, original] else [original, other]
+  -- A queue edit changes pending input. Retrying a send checks its original receipt.
+  Lean.Json.mkObj [
+    ("submissions", Lean.toJson submissions),
+    ("change", Lean.toJson change),
+    ("restart", Lean.toJson restart),
+    ("queue", Lean.toJson (changeQueue change submissions)),
+    ("matchingRetry", Lean.toJson (retryStatus submissions original)),
+    ("conflictingRetry", Lean.toJson (retryStatus submissions changed)),
+    ("otherRetry", Lean.toJson (retryStatus submissions other))]
+
+def renderCases : String :=
+  let changes := [QueueChange.keep, .edit, .remove, .move]
+  let restarts := [RestartPoint.beforeChange, .afterChange, .afterMatchingRetry, .afterConflictingRetry]
+  let cases := [false, true].flatMap fun reverse => changes.flatMap fun change =>
+    restarts.map fun restart => (queueCase reverse change restart).compress
+  String.intercalate "\n" cases
+
 end Dovo.ChatThreads
+
+def main : IO Unit := IO.println Dovo.ChatThreads.renderCases

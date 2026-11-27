@@ -1,0 +1,17 @@
+{"source":{"name":"current fence keeps the same move","currentFence":1,"backup":{"moved":{"transfer":1}}},"restored":{"moved":{"transfer":1}}}
+{"source":{"name":"newer fence replaces an older move","currentFence":2,"backup":{"moved":{"transfer":1}}},"restored":{"moved":{"transfer":2}}}
+{"source":{"name":"fence blocks a backup made before the move","currentFence":1,"backup":"owned"},"restored":{"moved":{"transfer":1}}}
+{"source":{"name":"fence replaces a preparing move","currentFence":1,"backup":"blocked"},"restored":{"moved":{"transfer":1}}}
+{"source":{"name":"returned ownership clears the backup move","currentFence":null,"backup":{"moved":{"transfer":1}}},"restored":"owned"}
+{"source":{"name":"no fence leaves a preparing move blocked","currentFence":null,"backup":"blocked"},"restored":"blocked"}
+{"source":{"name":"no fence keeps an owned thread","currentFence":null,"backup":"owned"},"restored":"owned"}
+{"source":{"name":"fence survives a backup without the thread","currentFence":1,"backup":null},"restored":null}
+{"restored":{"active":{"task":1}},"receipt":{"activated":{"task":1}},"destination":{"transfer":1,"name":"matching activation releases a staged thread","current":{"activated":{"task":1}},"backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":{"staged":{"task":1}}}}
+{"restored":{"staged":{"transfer":1,"task":1}},"receipt":{"activated":{"task":1}},"destination":{"transfer":2,"name":"receipt for a different transfer keeps the thread staged","current":{"activated":{"task":1}},"backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":{"staged":{"task":1}}}}
+{"restored":{"staged":{"transfer":1,"task":1}},"receipt":{"activated":{"task":2}},"destination":{"transfer":1,"name":"receipt for a different task keeps the thread staged","current":{"activated":{"task":2}},"backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":{"staged":{"task":1}}}}
+{"restored":{"staged":{"transfer":1,"task":1}},"receipt":null,"destination":{"transfer":1,"name":"activation without a backup receipt keeps the thread staged","current":{"activated":{"task":1}},"backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":null}}
+{"restored":null,"receipt":{"activated":{"task":1}},"destination":{"transfer":1,"name":"activation cannot recreate a missing backup thread","current":{"activated":{"task":1}},"backupTask":null,"backupReceipt":{"staged":{"task":1}}}}
+{"restored":{"staged":{"transfer":1,"task":1}},"receipt":"discarded","destination":{"transfer":1,"name":"discard replaces the backup receipt and keeps the thread staged","current":"discarded","backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":{"staged":{"task":1}}}}
+{"restored":{"staged":{"transfer":1,"task":1}},"receipt":"discarded","destination":{"transfer":1,"name":"discard is carried even without a backup receipt","current":"discarded","backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":null}}
+{"restored":{"active":{"task":1}},"receipt":{"activated":{"task":1}},"destination":{"transfer":1,"name":"no current receipt keeps the backup decision","current":null,"backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":{"activated":{"task":1}}}}
+{"restored":{"active":{"task":1}},"receipt":{"activated":{"task":1}},"destination":{"transfer":1,"name":"a current staged receipt leaves a backup activation in force","current":{"staged":{"task":1}},"backupTask":{"staged":{"transfer":1,"task":1}},"backupReceipt":{"activated":{"task":1}}}}

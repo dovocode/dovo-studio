@@ -10,10 +10,11 @@ import {
   threadFailureKey,
   taskFailureVersion,
   linkedThreadPageSchema,
+  studioReference,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
-import { runtimeIntegration, waitForRuntime } from '../testing/integration.js'
+import { deferred, runtimeIntegration, waitForRuntime } from '../testing/integration.js'
 import type { AgentAdapter, AgentRun } from '../agents/execution/types.js'
 import { threadSnapshot } from './thread-snapshot.js'
 import { MutationReceipts } from '../storage/mutation-receipts.js'
@@ -209,6 +210,118 @@ it('reads only a saved linked thread through the paired parent and stops serving
   source.s.threadWatch.stop(source.parent.id, target.s.runtimeId, child.threadId)
   expect((await post(body)).status).toBe(403)
 })
+
+it.each([
+  ['unchanged', 200],
+  ['unlinked', 403],
+  ['relinked', 409],
+  ['unpaired', 409],
+  ['reader revoked', 401],
+  ['wrong thread ID', 409],
+  ['wrong reference ID', 409],
+  ['wrong reference runtime', 409],
+  ['wrong reference kind', 409],
+] as const)(
+  'checks a linked transcript again when its in-flight reply returns %s',
+  async (event, status) => {
+    const source = await setup()
+    const target = await setup()
+    const { register } = await pair(source, target)
+    const body = {
+      parentTaskId: source.parent.id,
+      runtimeIdentity: target.s.runtimeId,
+      threadId: target.parent.id,
+    }
+    const watch = () =>
+      source.s.threadWatch.watch(body.parentTaskId, body.runtimeIdentity, body.threadId, 'Peer')
+    watch()
+    await waitForRuntime(async () => {
+      await source.s.threadWatch.tick()
+      expect(source.s.threadWatch.list(body.parentTaskId)[0]?.snapshot?.runtimeId).toBe(
+        body.runtimeIdentity,
+      )
+    })
+
+    const readerToken = randomUUID()
+    const reader = source.s.devices.add('Paired transcript reader', readerToken)
+    const arrived = deferred<void>()
+    const deliver = deferred<void>()
+    const originalFetch = globalThis.fetch
+    let firstReplyHeld = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (resource, init) => {
+      const response = await originalFetch(resource, init)
+      const url = new URL(resource instanceof Request ? resource.url : resource)
+      if (url.href !== target.origin + '/api/studio/forward' || typeof init?.body !== 'string')
+        return response
+      const command = JSON.parse(init.body).command
+      if (command?.action !== 'read' || firstReplyHeld) return response
+      expect(response.status).toBe(200)
+      firstReplyHeld = true
+      arrived.resolve()
+      await deliver.promise
+      const altered: Partial<Record<typeof event, { id?: string; reference?: string }>> = {
+        'wrong thread ID': { id: 'another-thread' },
+        'wrong reference ID': {
+          reference: studioReference(body.runtimeIdentity, 'thread', 'another-thread'),
+        },
+        'wrong reference runtime': {
+          reference: studioReference('another-computer', 'thread', body.threadId),
+        },
+        'wrong reference kind': {
+          reference: studioReference(body.runtimeIdentity, 'browser', body.threadId),
+        },
+      }
+      const override = altered[event]
+      if (!override) return response
+      const page = (await response.json()) as { thread: { id: string; reference: string } }
+      return Response.json({ ...page, thread: { ...page.thread, ...override } })
+    })
+
+    const read = () =>
+      fetch(source.origin + '/api/threads/linked/read', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${readerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const expectTranscript = async (response: Response, status: number) => {
+      expect(response.status).toBe(status)
+      const value: unknown = await response.json()
+      const page =
+        value && typeof value === 'object' && 'history' in value
+          ? decode(linkedThreadPageSchema, value)
+          : undefined
+      expect(!!page).toBe(status === 200)
+      expect(page?.history.messages.some(({ text }) => text === 'Coordinate work') ?? false).toBe(
+        status === 200,
+      )
+    }
+    const pending = read()
+    try {
+      await Promise.race([
+        arrived.promise,
+        pending.then((reply) => {
+          throw new Error(`Read finished before the peer reply was held (${reply.status})`)
+        }),
+      ])
+      if (event === 'unlinked' || event === 'relinked')
+        source.s.threadWatch.stop(body.parentTaskId, body.runtimeIdentity, body.threadId)
+      if (event === 'relinked') {
+        watch()
+        await expectTranscript(await read(), 200)
+      }
+      if (event === 'unpaired') await register(false)
+      if (event === 'reader revoked') source.s.devices.revoke(reader)
+    } finally {
+      deliver.resolve()
+      await pending
+    }
+    await expectTranscript(await pending, status)
+    if (event === 'unpaired') {
+      await register(true)
+      await expectTranscript(await read(), 200)
+    }
+  },
+)
 
 it('runs a project child from General in its own checkout and consumes its answer without duplicate delivery', async () => {
   const source = await setup()

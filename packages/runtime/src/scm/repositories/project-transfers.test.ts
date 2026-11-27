@@ -1668,6 +1668,13 @@ it('lets the current decision win when the source restores a snapshot after a re
   await waitForRuntime(() => expect(job(restored, second.id)?.state).toBe('completed'))
   const moved = job(restored, second.id)!.targetTaskId
   expect(target.services.store.task(moved!).machineHandoff).toBeUndefined()
+  // Replaying move 1's discard must preserve move 2's fence across startup.
+  expect((await restored.post('cancel', { id: input.id })).status).toBe(200)
+  await restored.close()
+  restored = await host(path)
+  expect(restored.services.store.task(task.id).machineHandoff?.id).toBe(second.id)
+  await expect(restored.services.tasks.start(task.id)).rejects.toThrow(/another computer/)
+  expect(target.services.store.task(moved!).machineHandoff).toBeUndefined()
   restored = await restore(restored)
   expect(restored.services.store.task(task.id).machineHandoff).toMatchObject({
     id: second.id,

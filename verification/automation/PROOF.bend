@@ -35,6 +35,9 @@ def R.saved_review_cannot_be_replaced(allow, reason, other, replacement):
 def S.reserving_takes_first_unpaused_step(paused, first, rest, starts):
   {==}
 
+def S.paused_step_resumes_once_after_restart(paused, first, rest, starts):
+  {==}
+
 def S.reserved_step_survives_restart_and_dispatches_once(step, requests, starts):
   {==}
 

@@ -47,6 +47,27 @@ const receiptCases = (
       },
   )
 
+type Submission = { id: number; fingerprint: number }
+type QueueCase = {
+  submissions: [Submission, Submission]
+  change: 'keep' | 'edit' | 'remove' | 'move'
+  restart: 'beforeChange' | 'afterChange' | 'afterMatchingRetry' | 'afterConflictingRetry'
+  queue: Submission[]
+  matchingRetry: number
+  conflictingRetry: number
+  otherRetry: number
+}
+
+const queueCases = (
+  await readFile(
+    new URL('../../../../../verification/chat-thread-queue-cases.jsonl', import.meta.url),
+    'utf8',
+  )
+)
+  .trim()
+  .split('\n')
+  .map((line) => JSON.parse(line) as QueueCase)
+
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'dovo-thread-start-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
@@ -404,6 +425,70 @@ it('preserves the follow-up identity after dequeue and restart', async () => {
   expect(f.sent(task.id)).toEqual(accepted)
   expect(f.runtime.run).not.toHaveBeenCalled()
 })
+
+it.each(queueCases)(
+  'preserves send receipts through $change and restart at $restart (first input $submissions.0.id)',
+  async ({ submissions, change, restart, queue, matchingRetry, conflictingRetry, otherRetry }) => {
+    const f = await setup()
+    const text = ({ id, fingerprint }: Submission) => `Input ${id}, revision ${fingerprint}`
+    const messageId = (id: number) => `input-${id}`
+    const task = f.draft(text(submissions[0]))
+    const send = ({ id, fingerprint }: Submission) => {
+      const input = { text: text({ id, fingerprint }), queueOnly: true }
+      return id === submissions[0].id
+        ? f.startThread(task, messageId(id), { ...input, initialTitle: undefined })
+        : f.request('/api/tasks/message', { ...input, id: task.id, messageId: messageId(id) })
+    }
+    const draft = 'A separate draft typed after both sends'
+    const expectQueue = (expected: Submission[]) => {
+      const saved = f.runtime.services.store.task(task.id)
+      expect(saved.draft).toBe(draft)
+      expect(saved.queuePaused).toBe(true)
+      expect(saved.queue?.map(({ id, text }) => ({ id, text }))).toEqual(
+        expected.map((message) => ({ id: messageId(message.id), text: text(message) })),
+      )
+      expect(saved.messages).toEqual([])
+      expect(f.runtime.run).not.toHaveBeenCalled()
+    }
+    for (const submission of submissions) expect((await send(submission)).status).toBe(200)
+    f.runtime.services.store.updateTask(task.id, (saved) => ({ ...saved, draft }))
+    if (restart === 'beforeChange') await f.restart()
+    expectQueue(submissions)
+
+    const original: Submission = { id: 1, fingerprint: 1 }
+    const edited: Submission = { id: 1, fingerprint: 2 }
+    const other: Submission = { id: 2, fingerprint: 1 }
+    const changes = {
+      keep: undefined,
+      edit: { action: 'edit', text: text(edited), expectedText: text(original) },
+      remove: { action: 'remove' },
+      move: { action: 'move', beforeMessageId: null },
+    }
+    const applyChange = async (input: NonNullable<(typeof changes)[typeof change]>) => {
+      const response = await f.request('/api/tasks/queue', {
+        ...input,
+        id: task.id,
+        messageId: messageId(original.id),
+      })
+      expect(response.status).toBe(200)
+    }
+    const edit = changes[change]
+    if (edit) await applyChange(edit)
+    expectQueue(queue)
+
+    const retry = async (submission: Submission, status: number) => {
+      const response = await send(submission)
+      expect(response.status).toBe(status)
+      expectQueue(queue)
+    }
+    if (restart === 'afterMatchingRetry') await retry(original, matchingRetry)
+    if (restart === 'afterConflictingRetry') await retry(edited, conflictingRetry)
+    if (restart !== 'beforeChange') await f.restart()
+    expectQueue(queue)
+    await Promise.all([retry(original, matchingRetry), retry(other, otherRetry)])
+    await retry(edited, conflictingRetry)
+  },
+)
 
 it('preserves an existing thread instead of overwriting it', async () => {
   const f = await setup()

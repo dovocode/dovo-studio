@@ -162,7 +162,7 @@ export async function runToolCode(options: {
     .consume((handle) => context.setProp(context.global, '__print', handle))
   context
     .newFunction('__call', (value) => {
-      if (closed || signal.aborted) throw new Error('Tool code is no longer active')
+      if (closed || signal.aborted || failure) throw new Error('Tool code is no longer active')
       const number = ++calls
       if (number > 100 || active >= 8)
         throw new Error('Tool code supports 100 calls and 8 concurrent calls')
@@ -186,6 +186,8 @@ export async function runToolCode(options: {
       void Promise.resolve()
         .then(() => {
           signal.throwIfAborted()
+          // A guest job can request a call in the same batch that reports the script's failure.
+          if (failure) throw failure
           dispatched.set(number, 'unconfirmed')
           return options.call(call, signal)
         })

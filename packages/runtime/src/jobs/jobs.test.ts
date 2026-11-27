@@ -1010,7 +1010,7 @@ it('holds a cancelled run slot while its worker is still stopping', async () => 
   })
   expect(started).toBe(2)
 })
-it('restores shared step order from when runs reached the pool, independently of run order', async () => {
+it.each(['ready', 'paused'])('restores step order with the first request %s', async (state) => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const options = {
@@ -1057,6 +1057,17 @@ it('restores shared step order from when runs reached the pool, independently of
   const jobs = () => runtime.services.jobs
   const tick = () => jobs().tick()
   const detail = (id: string) => jobs().detail(id)
+  const control = async (action: 'pause' | 'resume', id: string) => {
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/jobs/${action}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id }),
+    })
+    expect(response.status).toBe(200)
+  }
   const enqueue = (id: string) =>
     waitForJob(() => {
       tick()
@@ -1075,6 +1086,7 @@ it('restores shared step order from when runs reached the pool, independently of
   await enqueue(firstStepRequest)
   jobs().approve(olderRun, true)
   await enqueue(olderRun)
+  if (state === 'paused') await control('pause', firstStepRequest)
   expect(() => jobs().approve(firstStepRequest, true)).toThrow('not waiting for review')
   await jobs().cancel(holder)
   await waitForJob(() => expect(aborted).toBe(true))
@@ -1086,19 +1098,42 @@ it('restores shared step order from when runs reached the pool, independently of
   exit()
   await closing
   runtime = await startRuntime(options)
+  const restoredWorker = vi.fn<AgentAdapter['run']>(async (run) => run.onText('Done'))
   vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (run) => run.onText('Done'),
+    run: restoredWorker,
   })
   expect(detail(firstStepRequest).waitingForStepPool).toBe('builders')
   expect(detail(olderRun).waitingForStepPool).toBe('builders')
+  const [first, second] =
+    state === 'paused' ? [olderRun, firstStepRequest] : [firstStepRequest, olderRun]
+  const waitForStep = (id: string) =>
+    waitForJob(() =>
+      expect(detail(id)).toMatchObject(
+        id === firstStepRequest
+          ? { status: 'waiting', waitingNodeId: 'review' }
+          : { status: 'completed' },
+      ),
+    )
   tick()
-  expect(detail(firstStepRequest).status).toBe('running')
-  expect(detail(olderRun).waitingForStepPool).toBe('builders')
-  await waitForJob(() => expect(detail(firstStepRequest).waitingNodeId).toBe('review'))
+  expect(detail(first).status).toBe('running')
+  expect(detail(second)).toMatchObject({
+    status: 'waiting',
+    waitingForStepPool: 'builders',
+    taskIds: [],
+  })
+  await waitForStep(first)
+  expect(detail(firstStepRequest).pause?.phase).toBe(state === 'paused' ? 'paused' : undefined)
+  expect(restoredWorker).toHaveBeenCalledOnce()
+  if (state === 'paused') await control('resume', firstStepRequest)
   tick()
-  await waitForJob(() => expect(detail(olderRun).status).toBe('completed'))
-  expect(detail(firstStepRequest).status).toBe('waiting')
+  await waitForStep(second)
+  tick()
+  const resumed = detail(firstStepRequest)
+  expect(resumed).toMatchObject({ status: 'waiting', waitingNodeId: 'review' })
+  expect(resumed.pause).toBeUndefined()
+  expect(resumed.taskIds).toHaveLength(1)
+  expect(restoredWorker).toHaveBeenCalledTimes(2)
 })
 it('pauses at a completed step, restores the pause and still requires review after resume', async () => {
   const f = await fixture()

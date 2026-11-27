@@ -99,6 +99,12 @@ def A.unlink_discards_in_flight_read(body):
 def A.relink_cannot_publish_an_old_read(body):
   {==}
 
+def A.revoked_reader_cannot_receive_in_flight_read(body):
+  {==}
+
+def A.unpaired_peer_cannot_publish_in_flight_read(body):
+  {==}
+
 def A.verified_link_publishes_read(body):
   {==}
 
