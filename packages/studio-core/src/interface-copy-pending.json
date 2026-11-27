@@ -1,6 +1,8 @@
 [
   "Close inspector",
   "Stop all simulators and emulators",
+  "Live preview unavailable",
+  "Ready",
   "Could not stop {value0}",
   "Copy path",
   "Copy relative path",
