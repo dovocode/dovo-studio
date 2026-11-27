@@ -3,6 +3,7 @@ import { studioDataDirectory } from './dashboards/data-sources.js'
 import { StudioExtensions } from './studio-extensions/extensions.js'
 import { HarnessPlugins } from './agents/plugins/harness-plugins.js'
 import { Dashboards } from './dashboards/dashboards.js'
+import { QueueTemplates } from './agents/tasks/queue-templates.js'
 import { piSessionStorage, recoverPiSessionCopies } from './agents/providers/pi/session-copies.js'
 import { reconcileTransferOwnership } from './scm/repositories/project-transfer-fences.js'
 import { LinearSettings } from './scm/work/linear-issues.js'
@@ -666,6 +667,7 @@ export function createServices(
     peers: (peerConnections = new PeerConnections(db, devices, policy)),
     mcpApps,
     dashboards: new Dashboards(db, mcpApps, store, dataDirectory),
+    queueTemplates: new QueueTemplates(db),
     harnessPlugins,
     studioExtensions: new StudioExtensions(
       db,
@@ -845,6 +847,7 @@ export interface Services {
   questions: Questions
   secureInputs: SecureInputs
   tasks: Tasks
+  queueTemplates: QueueTemplates
   jobs: Jobs
   tickets: SocketTickets
   deviceHosts: DeviceHosts

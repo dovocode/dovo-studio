@@ -1,3 +1,4 @@
+import { pullRevisionComparisonSchema } from '@dovo/protocol'
 import { readPullDetail } from '@dovo/studio-core/pull-reads'
 import { pullDetailReadSchema, pullSectionInterval } from '@dovo/protocol'
 import {
@@ -463,6 +464,7 @@ export function usePullDetail(
   options: { tab?: string; discussionInOverview?: boolean } = {},
 ) {
   const target = usePullReadTarget(repositoryId, number, connectionId, true)
+  const { requestEffect } = useWorkspace()
   const tab = options.tab ?? 'overview'
   const overview = usePullSection(target, repositoryId, number, connectionId, 'overview', true)
   const revision = overview.detail ? pullRevision(overview.detail) : undefined
@@ -573,6 +575,25 @@ export function usePullDetail(
   return {
     ...overview,
     detail,
+    compareRevisions: (previousHead: string, head: string, expectedDestination?: string) => {
+      const reader = target.reader
+      const load = (guard: SourceReadGuard) =>
+        (reader?.requestEffect ?? requestEffect)(
+          '/api/scm/pulls/compare-revisions',
+          {
+            repositoryId: reader?.repository.id ?? repositoryId,
+            number,
+            connectionId,
+            previousHead,
+            head,
+            ...guard,
+          },
+          pullRevisionComparisonSchema,
+        )
+      return Effect.runPromise(
+        reader ? guardedSourceRead(reader, load) : load({ expectedDestination }),
+      )
+    },
     sections,
     refreshing: overview.refreshing || active.refreshing,
     refresh: () => {

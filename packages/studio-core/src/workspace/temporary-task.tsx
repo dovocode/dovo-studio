@@ -53,6 +53,7 @@ export function TemporaryTaskWorkspace({
         (path.startsWith('/api/tasks/') &&
           path !== '/api/tasks/title' &&
           path !== '/api/tasks/waiting' &&
+          path !== '/api/tasks/queue-templates/list' &&
           path !== '/api/tasks/dictation/cleanup') ||
         path.startsWith('/api/attachments/')
       if (needsTask && !committed.current && starting.current)

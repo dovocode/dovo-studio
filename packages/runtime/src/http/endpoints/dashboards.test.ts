@@ -511,3 +511,30 @@ it('reads saved CLI stdout only through the paired command data endpoint', async
   ).toBe(200)
   expect((await post('dashboards/command-data', automatic)).status).toBe(403)
 })
+
+it('returns the acknowledged revision when a paired client repeats an uncertain save', async () => {
+  const { post, definition } = await setup()
+  const requestId = '20000000-0000-4000-8000-000000000001'
+  const original = { dashboard: definition('true'), expectedRevision: 0, requestId }
+  const first = await post('dashboards/save', original)
+  expect(first.status).toBe(200)
+  const { dashboard } = decode(dashboardSaveResultSchema, await first.json())
+  const update = { dashboard: { ...dashboard, title: 'Updated' }, expectedRevision: 1 }
+  expect((await post('dashboards/save', update)).status).toBe(200)
+  const retry = await post('dashboards/save', original)
+  expect(retry.status).toBe(200)
+  expect(await retry.json()).toEqual({ dashboard })
+  expect(
+    (
+      await post('dashboards/save', {
+        ...original,
+        dashboard: { ...dashboard, title: 'Different' },
+      })
+    ).status,
+  ).toBe(409)
+  expect((await post('dashboards/save', update)).status).toBe(409)
+  const list = decode(dashboardListResultSchema, await (await post('dashboards/list', {})).json())
+  expect(list.dashboards.map(({ id, title, revision }) => ({ id, title, revision }))).toEqual([
+    { id, title: 'Updated', revision: 2 },
+  ])
+})

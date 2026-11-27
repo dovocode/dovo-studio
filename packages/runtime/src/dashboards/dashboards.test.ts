@@ -8,6 +8,7 @@ import { SCRATCH_PROJECT_ID, type Dashboard, type DashboardTile } from '@dovo/pr
 import { openDatabase } from '../storage/database.js'
 import { HttpError } from '../errors.js'
 import { Dashboards } from './dashboards.js'
+import { agentDashboardCommand } from './agent-command.js'
 
 const cleanups: Array<() => Promise<void> | void> = []
 afterEach(async () => {
@@ -422,4 +423,30 @@ it('lists readable dashboards past an unreadable row, and never overwrites or de
   expect(db.prepare('SELECT definition FROM dashboards WHERE id=?').get(unreadableId)).toEqual({
     definition: JSON.stringify(newer),
   })
+})
+
+it('reuses an agent result and its generated IDs after a restart', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-dashboard-receipts-'))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'runtime.sqlite')
+  const first = setup(undefined, path)
+  const command = {
+    action: 'create',
+    requestId: '20000000-0000-4000-8000-000000000001',
+    dashboard: {
+      title: 'Run status',
+      tiles: [{ kind: 'threads', title: 'Threads', span: 1, height: 1 }],
+    },
+  }
+  const original = agentDashboardCommand(first, command)
+  const reopened = setup(undefined, path)
+  expect(agentDashboardCommand(reopened, command)).toEqual(original)
+  expect(reopened.list()).toHaveLength(1)
+  expect(
+    agentDashboardCommand(reopened, {
+      ...command,
+      requestId: '20000000-0000-4000-8000-000000000002',
+    }),
+  ).not.toEqual(original)
+  expect(reopened.list()).toHaveLength(2)
 })

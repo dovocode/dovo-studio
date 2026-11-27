@@ -75,39 +75,40 @@ it('authors dashboards and extension drafts through dovo_task without running an
   await client.connect(clientTransport)
   cleanups.push(() => client.close())
 
-  const created = resultText(
-    await client.callTool({
-      name: 'dashboards',
-      arguments: {
-        action: 'create',
-        dashboard: {
-          title: 'Ops',
-          tiles: [
-            {
-              title: 'Tests',
-              kind: 'command',
-              span: 2,
-              height: 1,
-              repositoryId: 'repo',
-              command: 'touch ran',
-            },
-            {
-              title: 'Local metrics',
-              kind: 'cli',
-              span: 2,
-              height: 1,
-              repositoryId: 'repo',
-              command: 'metrics --json',
-              chart: 'number',
-              pointer: '/total',
-              refreshSeconds: 60,
-              panels: [{ title: 'Recent results', pointer: '/history', chart: 'line' }],
-            },
-          ],
+  const command = {
+    action: 'create',
+    requestId: '20000000-0000-4000-8000-000000000001',
+    dashboard: {
+      title: 'Ops',
+      tiles: [
+        {
+          title: 'Tests',
+          kind: 'command',
+          span: 2,
+          height: 1,
+          repositoryId: 'repo',
+          command: 'touch ran',
         },
-      },
-    }),
-  )
+        {
+          title: 'Local metrics',
+          kind: 'cli',
+          span: 2,
+          height: 1,
+          repositoryId: 'repo',
+          command: 'metrics --json',
+          chart: 'number',
+          pointer: '/total',
+          refreshSeconds: 60,
+          panels: [{ title: 'Recent results', pointer: '/history', chart: 'line' }],
+        },
+      ],
+    },
+  }
+  const create = async () =>
+    resultText(await client.callTool({ name: 'dashboards', arguments: command }))
+  const created = await create()
+  expect(await create()).toEqual(created)
+  expect(s.dashboards.list()).toHaveLength(1)
   expect(created.isError).toBe(false)
   const { dashboard } = decode(dashboardSaveResultSchema, JSON.parse(created.text))
   expect(dashboard.tiles[1]).toMatchObject({

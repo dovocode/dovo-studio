@@ -5,7 +5,7 @@ import {
 import { MobileDataSource } from './studio-data-source'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { MobileExtensionTile } from './studio-extensions'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { Alert, Pressable, ScrollView, View } from 'react-native'
@@ -32,6 +32,7 @@ import {
   isDashboardDisplay,
   readDashboardDataSource,
   dashboardTileLabels,
+  dashboardTileGroups,
   moveDashboardTile,
   newDashboardTile,
   useDashboardTile,
@@ -60,9 +61,6 @@ import { Sheet, type SheetHandle } from '../ui/layout/sheet'
 import { useTheme } from '../ui/theme'
 import { MobileRemoteDesktop } from './remote-desktop'
 
-const tileKinds = Object.keys(dashboardTileLabels).filter((kind): kind is DashboardTile['kind'] =>
-  Object.hasOwn(dashboardTileLabels, kind),
-)
 const row = { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } as const
 
 export default function DashboardsScreen() {
@@ -110,7 +108,14 @@ function Board({
   const { focused } = useNavigation()
   const { colors } = useTheme()
   const dataSources = snapshot?.studioDataSourcesSupported === true
-  const state = useDashboards(read, connected, readCache, focused, dataSources)
+  const state = useDashboards(
+    read,
+    connected,
+    readCache,
+    focused,
+    dataSources,
+    snapshot?.dashboardSaveReceiptsSupported === true,
+  )
   const { dashboard, draft } = state
   useSettingsDraft(state.dirty, !!draft && state.pending)
   const confirmNavigation = useConfirmSettingsNavigation()
@@ -126,9 +131,12 @@ function Board({
     extensionComponentVersion(snapshot),
   )
   const extensionOptions = extensionTileOptions(extensions.entries)
-  const availableKinds = tileKinds.filter(
-    (kind) => (kind !== 'extension' || supported) && (kind !== 'cli' || dataSources),
-  )
+  const tileGroups = dashboardTileGroups.map(({ label, kinds }) => ({
+    label,
+    kinds: kinds.filter(
+      (kind) => (kind !== 'extension' || supported) && (kind !== 'cli' || dataSources),
+    ),
+  }))
   const needsUpdate = !!draft && !dataSources && needsStudioDataSources(draft)
 
   const [editingTile, setEditingTile] = useState<string>()
@@ -180,7 +188,7 @@ function Board({
   function openTemplate(source: string) {
     const imported = importDashboardTemplate(source)
     state.beginEdit(imported)
-    setEditingTile(imported.tiles[0]?.id)
+    setEditingTile(undefined)
     setImportedId(imported.id)
     setTemplate(undefined)
     setTemplateError('')
@@ -194,6 +202,15 @@ function Board({
       setTemplateError(cause instanceof Error ? cause.message : String(cause))
     }
   }
+  function editBoard() {
+    if (!dashboard) return
+    setEditingTile(undefined)
+    state.beginEdit(dashboard)
+  }
+
+  const selectedIndex = draft?.tiles.findIndex((tile) => tile.id === editingTile) ?? -1
+  const selectedTile = draft?.tiles[selectedIndex]
+
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -279,10 +296,7 @@ function Board({
                 label={uiText('Edit dashboard')}
                 variant="outline"
                 disabled={state.pending || fileBusy}
-                onPress={() => {
-                  setEditingTile(dashboard.tiles[0]?.id)
-                  state.beginEdit(dashboard)
-                }}
+                onPress={editBoard}
               />
             )}
             <Action
@@ -416,113 +430,164 @@ function Board({
           </View>
           {menu === 'tiles' && (
             <Sheet ref={sheet} title={uiText('Add tile')} onClose={() => setMenu(undefined)}>
-              {availableKinds.map((kind) => (
-                <Action
-                  key={kind}
-                  label={uiText(dashboardTileLabels[kind])}
-                  secondary
-                  onPress={() =>
-                    choose(() => {
-                      const tile = newDashboardTile(kind)
-                      state.edit({ ...draft, tiles: [...draft.tiles, tile] })
-                      setEditingTile(tile.id)
-                    })
-                  }
-                />
+              {tileGroups.map(({ label, kinds }) => (
+                <View key={label} style={{ gap: 6 }}>
+                  <Text
+                    accessibilityRole="header"
+                    style={{ color: colors.muted, fontWeight: '600' }}
+                  >
+                    {uiText(label)}
+                  </Text>
+                  {kinds.map((kind) => (
+                    <Action
+                      key={kind}
+                      label={uiText(dashboardTileLabels[kind])}
+                      secondary
+                      onPress={() =>
+                        choose(() => {
+                          const tile = newDashboardTile(kind)
+                          state.edit({ ...draft, tiles: [...draft.tiles, tile] })
+                          setEditingTile(tile.id)
+                        })
+                      }
+                    />
+                  ))}
+                </View>
               ))}
             </Sheet>
           )}
-          {draft.tiles.map((tile, index) => {
-            const expanded = editingTile === tile.id
-            const label = uiText(dashboardTileLabels[tile.kind])
-            return (
-              <View
-                key={tile.id}
-                style={{
-                  backgroundColor: colors.surface,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
+          {draft.tiles.length ? (
+            <DashboardGrid
+              editing
+              tiles={draft.tiles}
+              render={(tile) => (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityState={{ expanded }}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                    minHeight: 48,
-                    paddingHorizontal: 12,
-                  }}
-                  onPress={() => setEditingTile(expanded ? undefined : tile.id)}
+                  accessibilityLabel={tile.title || uiText(dashboardTileLabels[tile.kind])}
+                  disabled={state.pending}
+                  onPress={() => setEditingTile(tile.id)}
+                  style={{ flex: 1, minHeight: 84 + tile.height * 24, padding: 12, gap: 6 }}
                 >
-                  <Icon name="artifact" size={18} color={colors.muted} />
-                  <Text numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
-                    {tile.title || label}
+                  <Icon name="artifact" size={18} color={colors.accent} />
+                  <Text numberOfLines={2} style={{ fontWeight: '600' }}>
+                    {tile.title || uiText(dashboardTileLabels[tile.kind])}
                   </Text>
-                  {tile.title && tile.title !== label && (
-                    <Text style={{ color: colors.muted, fontSize: 12 }}>{label}</Text>
-                  )}
-                  <Icon name={expanded ? 'down' : 'next'} size={18} color={colors.muted} />
+                  <Text style={{ color: colors.muted, marginTop: 'auto' }}>
+                    {uiText('{width} × {height}', { width: tile.span, height: tile.height })}
+                  </Text>
                 </Pressable>
-                {expanded && (
-                  <TileEditor
-                    extensionOptions={extensionOptions}
-                    tile={tile}
-                    disabled={state.pending}
-                    change={(updated) =>
-                      state.edit({
-                        ...draft,
-                        tiles: draft.tiles.map((entry) => (entry.id === tile.id ? updated : entry)),
-                      })
-                    }
-                    move={(offset) =>
-                      state.edit({ ...draft, tiles: moveDashboardTile(draft.tiles, index, offset) })
-                    }
-                    first={index === 0}
-                    last={index === draft.tiles.length - 1}
-                    remove={() => {
-                      const remaining = draft.tiles.filter((entry) => entry.id !== tile.id)
-                      state.edit({ ...draft, tiles: remaining })
-                      setEditingTile(remaining[Math.min(index, remaining.length - 1)]?.id)
-                    }}
-                  />
-                )}
-              </View>
-            )
-          })}
+              )}
+            />
+          ) : (
+            <Text style={{ color: colors.muted }}>
+              {uiText('Add a tile to start arranging this dashboard.')}
+            </Text>
+          )}
+          {selectedTile && (
+            <Sheet title={uiText('Tile settings')} onClose={() => setEditingTile(undefined)}>
+              <TileEditor
+                key={selectedTile.id}
+                extensionOptions={extensionOptions}
+                tile={selectedTile}
+                disabled={state.pending}
+                change={(tile) =>
+                  state.edit({
+                    ...draft,
+                    tiles: draft.tiles.map((entry) => (entry.id === tile.id ? tile : entry)),
+                  })
+                }
+                move={(offset) =>
+                  state.edit({
+                    ...draft,
+                    tiles: moveDashboardTile(draft.tiles, selectedIndex, offset),
+                  })
+                }
+                first={selectedIndex === 0}
+                last={selectedIndex === draft.tiles.length - 1}
+                remove={() => {
+                  state.edit({
+                    ...draft,
+                    tiles: draft.tiles.filter((tile) => tile.id !== selectedTile.id),
+                  })
+                  setEditingTile(undefined)
+                }}
+              />
+            </Sheet>
+          )}
         </>
       ) : dashboard?.tiles.length ? (
-        dashboard.tiles.map((tile) => (
-          <View
-            key={`${dashboard.id}:${tile.id}:${dashboard.revision}`}
-            style={{
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 14,
-              padding: 12,
-              gap: 8,
-            }}
-          >
-            <Text accessibilityRole="header" style={{ fontWeight: '600' }}>
-              {tile.title}
-            </Text>
-            <TileContent dashboard={dashboard} tile={tile} />
-          </View>
-        ))
+        <DashboardGrid
+          tiles={dashboard.tiles}
+          render={(tile) => (
+            <View
+              key={`${dashboard.id}:${tile.id}:${dashboard.revision}`}
+              style={{ padding: 12, gap: 8 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Icon name="artifact" size={16} color={colors.accent} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text accessibilityRole="header" style={{ fontWeight: '600' }}>
+                    {tile.title}
+                  </Text>
+                  {tile.title !== uiText(dashboardTileLabels[tile.kind]) && (
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>
+                      {uiText(dashboardTileLabels[tile.kind])}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <TileContent dashboard={dashboard} tile={tile} />
+            </View>
+          )}
+        />
       ) : (
         <View style={{ alignItems: 'center', gap: 8, padding: 24 }}>
           <Icon name="artifact" size={24} color={colors.muted} />
           <Text style={{ color: colors.muted }}>
             {dashboard
-              ? uiText('Edit this dashboard to add tiles.')
+              ? uiText('This dashboard has no tiles yet.')
               : uiText('Create a dashboard to add your first tile.')}
           </Text>
+          {dashboard && <Action label={uiText('Add tiles')} onPress={editBoard} />}
         </View>
       )}
     </ScrollView>
+  )
+}
+
+function DashboardGrid({
+  tiles,
+  editing = false,
+  render,
+}: {
+  tiles: DashboardTile[]
+  editing?: boolean
+  render: (tile: DashboardTile) => ReactNode
+}) {
+  const { colors } = useTheme()
+  const [width, setWidth] = useState(0)
+  const columns = width >= (editing ? 300 : 620) ? 2 : 1
+  const gap = 10
+  return (
+    <View
+      onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
+      style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}
+    >
+      {tiles.map((tile) => (
+        <View
+          key={tile.id}
+          style={{
+            width: columns === 2 && tile.span <= 2 ? (width - gap) / 2 : '100%',
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 14,
+          }}
+        >
+          {render(tile)}
+        </View>
+      ))}
+    </View>
   )
 }
 
@@ -548,7 +613,6 @@ function TileEditor({
   const uiText = useInterfaceText()
   const { snapshot, read, connected } = useRuntime()
   const workspace = snapshot?.workspace
-  const { colors } = useTheme()
   const appSources = useMarketplaceSources(
     read,
     tile.kind === 'app' ? tile.taskId : undefined,
@@ -557,7 +621,7 @@ function TileEditor({
   const apps = appSources?.data?.apps ?? []
   const [editAppId, setEditAppId] = useState(false)
   return (
-    <View style={{ borderColor: colors.border, borderTopWidth: 1, padding: 12, gap: 8 }}>
+    <View style={{ gap: 10 }}>
       <Field
         label={uiText('Tile title')}
         value={tile.title}
@@ -565,6 +629,31 @@ function TileEditor({
         editable={!disabled}
         onChangeText={(title) => change({ ...tile, title })}
       />
+      {(['span', 'height'] as const).map((key) => (
+        <Choice
+          key={key}
+          label={key === 'span' ? uiText('Desktop width') : uiText('Desktop height')}
+          value={String(tile[key])}
+          disabled={disabled}
+          items={['1', '2', '3', '4'].map((id) => ({ id, name: id }))}
+          onChange={(size) => change({ ...tile, [key]: Number(size) })}
+        />
+      ))}
+      <View style={row}>
+        <Action
+          label={uiText('Move earlier')}
+          secondary
+          disabled={disabled || first}
+          onPress={() => move(-1)}
+        />
+        <Action
+          label={uiText('Move later')}
+          secondary
+          disabled={disabled || last}
+          onPress={() => move(1)}
+        />
+        <Action label={uiText('Remove tile')} secondary disabled={disabled} onPress={remove} />
+      </View>
       {tile.kind === 'extension' && (
         <Choice
           label={uiText('Extension contribution')}
@@ -688,31 +777,6 @@ function TileEditor({
           disabled={disabled}
         />
       )}
-      {(['span', 'height'] as const).map((key) => (
-        <Choice
-          key={key}
-          label={key === 'span' ? uiText('Desktop width') : uiText('Desktop height')}
-          value={String(tile[key])}
-          disabled={disabled}
-          items={['1', '2', '3', '4'].map((id) => ({ id, name: id }))}
-          onChange={(size) => change({ ...tile, [key]: Number(size) })}
-        />
-      ))}
-      <View style={row}>
-        <Action
-          label={uiText('Move earlier')}
-          secondary
-          disabled={disabled || first}
-          onPress={() => move(-1)}
-        />
-        <Action
-          label={uiText('Move later')}
-          secondary
-          disabled={disabled || last}
-          onPress={() => move(1)}
-        />
-        <Action label={uiText('Remove tile')} secondary disabled={disabled} onPress={remove} />
-      </View>
     </View>
   )
 }

@@ -23,6 +23,9 @@ import {
   agentTodosSchema,
   turnSettingsSchema,
   nextQueuedMessage,
+  queueTemplateCommandSchema,
+  queueTemplateListRequestSchema,
+  queueTemplateSource,
 } from '@dovo/protocol'
 import { localCommitRoute } from './local-commit-routes.js'
 import { codexSessionRoute } from './codex-session-routes.js'
@@ -964,6 +967,52 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           )
         }
         return input.createTask ? threadStartAcknowledgement(s, result) : result
+      }
+      if (
+        method === 'POST' &&
+        (path === '/api/tasks/queue-templates/list' || path === '/api/tasks/queue-templates')
+      ) {
+        if (!owner) throw new HttpError(403, 'Manage queue templates from a paired client.')
+        const raw = yield* serviceResult(body(request))
+        const requireProject = (repositoryId: string) => {
+          if (!s.store.get().repositories.some((repo) => repo.id === repositoryId))
+            throw new HttpError(400, 'Open a project thread to use queue templates.')
+        }
+        if (path.endsWith('/list')) {
+          const { repositoryId } = decode(queueTemplateListRequestSchema, raw)
+          requireProject(repositoryId)
+          return { templates: s.queueTemplates.list(repositoryId) }
+        }
+        const input = decode(queueTemplateCommandSchema, raw)
+        const task = s.store.taskSummary(input.taskId)
+        requireProject(task.repositoryId)
+        if (input.action === 'stage') {
+          s.tasks.queue.stageTemplate(
+            input.taskId,
+            input.requestId,
+            input.id,
+            () => s.queueTemplates.get(task.repositoryId, input.id).steps,
+          )
+        } else if (input.action === 'delete') {
+          s.queueTemplates.delete(task.repositoryId, input.id)
+        } else {
+          s.queueTemplates.save(
+            task.repositoryId,
+            input.id,
+            input.name,
+            input.queueFingerprint,
+            () => {
+              const source = queueTemplateSource(task.queue ?? [])
+              if (!source || source.fingerprint !== input.queueFingerprint)
+                throw new HttpError(
+                  409,
+                  'The queue changed. Review its text before saving the template.',
+                )
+              return source.steps
+            },
+          )
+        }
+        return { ok: true as const }
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
         const input = decode(

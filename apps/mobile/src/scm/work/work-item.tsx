@@ -27,6 +27,9 @@ import {
   mutableStruct,
   forgeIssueDetailSchema,
   forgePipelineDetailSchema,
+  forgePipelineComparisonSchema,
+  pipelineRevision,
+  pipelineSignal,
   forgeWorkResultSchema,
   issueLabel,
   pipelineActionAllowed,
@@ -47,6 +50,7 @@ import { Markdown } from '../../ui/content/markdown'
 import { WorkMenu, type WorkMenuAction } from './work-menu'
 import { WorkTaskAction } from './work-task-action'
 import { JiraIssueProject } from './jira-issue-project'
+import { PipelineComparison } from './pipeline-comparison'
 import { WorkForm } from './work-form'
 import { assertWorkSource, workCacheKey } from './work-cache'
 import { formatDateTime } from '../../ui/content/format-date'
@@ -1112,6 +1116,33 @@ function WorkItemContent({
         {pipeline && (
           <>
             <PipelineRunInfo key={pipeline.run.id} run={pipeline.run} />
+            {snapshot?.githubPipelineComparisonSupported &&
+              options?.provider === 'github' &&
+              pipelineSignal(pipeline.run.status).tone === 'danger' && (
+                <PipelineComparison
+                  key={JSON.stringify([
+                    pipeline.destination,
+                    pipeline.run.url,
+                    pipelineRevision(pipeline.run),
+                  ])}
+                  connected={connected && !stale}
+                  onOpen={open}
+                  load={() =>
+                    runClientEffect(
+                      readEffect(
+                        '/api/scm/work/pipelines/compare',
+                        {
+                          repositoryId,
+                          id: pipeline.run.id,
+                          revision: pipelineRevision(pipeline.run),
+                          expectedDestination: pipeline.run.destination ?? pipeline.destination,
+                        },
+                        forgePipelineComparisonSchema,
+                      ),
+                    )
+                  }
+                />
+              )}
             <WorkTaskAction
               key={`${pipeline.run.url}:${pipeline.run.sha}`}
               repositoryId={repositoryId}

@@ -280,6 +280,11 @@ export const forgePipelineDetailSchema = mutableStruct({
   ...cached,
 })
 export type ForgePipelineDetail = Schema.Schema.Type<typeof forgePipelineDetailSchema>
+export const forgePipelineComparisonSchema = mutableStruct({
+  current: forgePipelineDetailSchema,
+  baseline: Schema.NullOr(forgePipelineDetailSchema),
+})
+export type ForgePipelineComparison = typeof forgePipelineComparisonSchema.Type
 /** Attempt-less providers reuse IDs on retry; their update time distinguishes job snapshots. */
 export function pipelineRevision(run: ForgePipeline) {
   return JSON.stringify([run.sha, run.attempt ?? run.updatedAt])

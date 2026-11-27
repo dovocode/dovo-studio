@@ -37,7 +37,10 @@
     "./jira-reads": "./src/scm/jira-reads.ts",
     "./interface-language": "./src/interface-language.tsx",
     "./working-change-preview": "./src/use-working-change-preview.ts",
-    "./file-pages": "./src/scm/use-file-pages.ts"
+    "./file-pages": "./src/scm/use-file-pages.ts",
+    "./comparison": "./src/scm/use-comparison.ts",
+    "./pipeline-comparison": "./src/scm/pipeline-comparison.ts",
+    "./queue-templates": "./src/use-queue-templates.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

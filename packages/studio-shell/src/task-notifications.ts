@@ -5,6 +5,8 @@ import {
   taskNotificationStates,
   enqueueTaskNotices,
   taskSectionIndicators,
+  taskNoticeInput,
+  taskNoticeStillWaiting,
   type TaskNotice,
   type TaskState,
   type NotificationTarget,
@@ -70,26 +72,46 @@ export function useTaskNotifications(
     [preview, onOpen],
   )
   const previous = useRef<Map<string, TaskState> | null>(null)
+  const background = useRef(
+    new Map<string, { notification: Notification; input: NonNullable<TaskNotice['input']> }>(),
+  )
+  useEffect(
+    () => () => {
+      for (const { notification } of background.current.values()) notification.close()
+      background.current.clear()
+    },
+    [],
+  )
   useEffect(() => {
     if (!enabled) {
       previous.current = null
+      setNotices([])
+      for (const { notification } of background.current.values()) notification.close()
+      background.current.clear()
       return
     }
     const current = taskNotificationStates(runtimes)
     const before = previous.current
     previous.current = current
-    if (!before) return
-    if (!document.hidden && document.hasFocus()) {
-      if (readAppPreferences().inAppNotifications) {
-        const events = taskNotificationEvents(before, current)
-        if (events.length)
-          setNotices((pending) => enqueueTaskNotices(pending, events, activeTarget))
-      }
-      return
+    for (const [key, { notification, input }] of background.current) {
+      if (taskNoticeStillWaiting(current, input)) continue
+      background.current.delete(key)
+      notification.close()
     }
+    const focused = !document.hidden && document.hasFocus()
+    const events = before ? taskNotificationEvents(before, current) : []
+    const appPreferences = readAppPreferences()
+    setNotices((pending) => {
+      if (!appPreferences.inAppNotifications) return pending.length ? [] : pending
+      const next = enqueueTaskNotices(pending, focused ? events : [], activeTarget, current)
+      return next.length === pending.length && next.every((item, index) => item === pending[index])
+        ? pending
+        : next
+    })
+    if (!before || focused) return
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-    const { notifyInput, notifyDone, notifyAutomations, notifySound } = readAppPreferences()
-    for (const event of taskNotificationEvents(before, current)) {
+    const { notifyInput, notifyDone, notifyAutomations, notifySound } = appPreferences
+    for (const event of events) {
       if (
         event.automation ? !notifyAutomations : event.kind === 'input' ? !notifyInput : !notifyDone
       )
@@ -109,7 +131,15 @@ export function useTaskNotifications(
                 : `${subject} finished`,
         { body: event.title, tag: event.key, silent: !notifySound },
       )
+      const input = taskNoticeInput(event)
+      if (input) background.current.set(event.key, { notification, input })
+      notification.onclose = () => {
+        if (background.current.get(event.key)?.notification === notification)
+          background.current.delete(event.key)
+      }
       notification.onclick = () => {
+        const current = previous.current
+        if (input && (!current || !taskNoticeStillWaiting(current, input))) return
         window.focus()
         notification.close()
         onOpen(event.target)
@@ -122,19 +152,7 @@ export function useTaskNotifications(
     activeTarget?.viewId,
     activeTarget?.entityId,
     enabled,
-  ])
-  useEffect(() => {
-    setNotices((pending) =>
-      enabled && preferences.inAppNotifications
-        ? enqueueTaskNotices(pending, [], activeTarget)
-        : [],
-    )
-  }, [
-    enabled,
     preferences.inAppNotifications,
-    activeTarget?.runtimeId,
-    activeTarget?.viewId,
-    activeTarget?.entityId,
   ])
   useEffect(() => {
     if (!notice) return

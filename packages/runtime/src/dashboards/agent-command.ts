@@ -9,12 +9,17 @@ const draft = Schema.Record(Schema.String, Schema.Unknown)
 const commands = {
   list: strictStruct({ action: Schema.Literal('list') }),
   read: strictStruct({ action: Schema.Literal('read'), id: uuidSchema }),
-  create: strictStruct({ action: Schema.Literal('create'), dashboard: draft }),
+  create: strictStruct({
+    action: Schema.Literal('create'),
+    dashboard: draft,
+    requestId: Schema.optionalKey(uuidSchema),
+  }),
   update: strictStruct({
     action: Schema.Literal('update'),
     id: uuidSchema,
     expectedRevision: revision,
     dashboard: draft,
+    requestId: Schema.optionalKey(uuidSchema),
   }),
   delete: strictStruct({
     action: Schema.Literal('delete'),
@@ -75,16 +80,26 @@ export function agentDashboardCommand(dashboards: Dashboards, command: unknown) 
   }
   if (action === 'create') {
     const input = decode(commands.create, command)
-    return { dashboard: dashboards.save(definition(input.dashboard, randomUUID(), 0), 0) }
+    const save = () => dashboards.save(definition(input.dashboard, randomUUID(), 0), 0)
+    return {
+      dashboard: input.requestId
+        ? dashboards.saveOnce(`agent:${input.requestId}`, input, save)
+        : save(),
+    }
   }
   if (action === 'update') {
     const input = decode(commands.update, command)
-    if (!dashboards.get(input.id)) throw new HttpError(404, 'Dashboard not found')
-    return {
-      dashboard: dashboards.save(
+    const save = () => {
+      if (!dashboards.get(input.id)) throw new HttpError(404, 'Dashboard not found')
+      return dashboards.save(
         definition(input.dashboard, input.id, input.expectedRevision),
         input.expectedRevision,
-      ),
+      )
+    }
+    return {
+      dashboard: input.requestId
+        ? dashboards.saveOnce(`agent:${input.requestId}`, input, save)
+        : save(),
     }
   }
   const input = decode(commands.delete, command)

@@ -47,3 +47,14 @@ composer or update Dovo on that device.
 
 If a reorder unblocks a prompt but the runtime cannot start it, the new order stays saved and the
 queue pauses with a resumable error. The successful reorder is still acknowledged.
+
+## Queue templates
+
+Open **Queue templates** in a project thread on desktop, web, or mobile. To save a sequence, queue
+its plain-text messages in order, enter a name, and choose **Save queue as template**. Each template
+belongs to that project on its computer. You can remove it from the same dialog.
+
+In another thread from the project, select the template, review its messages, and choose **Add
+template to queue**. Studio appends editable copies in order and pauses the queue, including any
+existing messages. Edit, reorder, or remove the copies before you choose **Run queue**. Your
+composer draft stays in place.

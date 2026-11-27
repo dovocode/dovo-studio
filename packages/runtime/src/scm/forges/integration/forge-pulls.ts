@@ -45,6 +45,8 @@ import {
 import {
   pullActionResultSchema,
   pullDetailSchema,
+  pullRevisionComparisonSchema,
+  type pullRevisionComparisonInputSchema,
   pullPageSchema,
   pullStackSchema,
 } from '@dovo/protocol'
@@ -177,6 +179,10 @@ export class ForgePullRequests {
         )
       case 'detail':
         return adapter()?.detail(operation.number) ?? github().detail(cwd, operation.number)
+      case 'compare-revisions':
+        if (scope.provider !== 'github')
+          throw new HttpError(400, 'Revision comparison is available for GitHub pull requests.')
+        return github().compareRevisions(cwd, operation)
       case 'file': {
         const source = adapter()
         if (!source?.file)
@@ -997,6 +1003,21 @@ export class ForgePullRequests {
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
     return this.sectionInContext(cwd, number, section, scope)
+  }
+  async compareRevisionsInContext(
+    cwd: string,
+    input: typeof pullRevisionComparisonInputSchema.Type,
+    scope: SourceContext,
+  ) {
+    scope.validate()
+    const result = await this.operation(
+      cwd,
+      scope,
+      { kind: 'compare-revisions', ...input },
+      pullRevisionComparisonSchema,
+    )
+    scope.validate()
+    return result
   }
   /** The request already verified this credential; still validate the binding before dispatch. */
   async fileInContext(

@@ -80,6 +80,7 @@ export const dashboardListRequestSchema = strictStruct({
 export const dashboardSaveRequestSchema = strictStruct({
   dashboard: dashboardSchema,
   expectedRevision: revision,
+  requestId: Schema.optionalKey(uuidSchema),
 })
 export const dashboardDeleteRequestSchema = strictStruct({
   id: uuidSchema,

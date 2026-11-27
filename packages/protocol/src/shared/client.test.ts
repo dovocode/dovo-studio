@@ -966,9 +966,11 @@ it('never retries mutations or rejected reads', async () => {
 })
 
 it.each([
+  '/api/tasks/queue-templates/list',
   '/api/scm/source/identity',
   '/api/agents/models/cached',
   '/api/scm/pulls/detail',
+  '/api/scm/pulls/compare-revisions',
   '/api/scm/pulls/overview',
   '/api/scm/pulls/options/read',
   '/api/scm/inspect',
@@ -979,6 +981,7 @@ it.each([
   '/api/scm/work/issues/detail',
   '/api/scm/work/pipelines/list',
   '/api/scm/work/pipelines/detail',
+  '/api/scm/work/pipelines/compare',
   '/api/scm/work/pipelines/definitions',
 ])('retries the safe POST read %s after a transient gateway failure', async (path) => {
   const transport = vi

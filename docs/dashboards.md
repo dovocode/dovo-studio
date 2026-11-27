@@ -6,16 +6,21 @@ runtime. Dashboard definitions live on the selected computer. Paired devices can
 dashboard over HTTP or HTTPS. Older runtimes do not offer the workspace.
 
 1. Choose a computer and select **New dashboard**.
-2. Give the dashboard a name. Select **Add tile**, then choose a tile type.
-3. Configure the tile. Select another tile to open its settings. Use **Move earlier** and **Move
-   later** to change its position. The width sets how many of the four grid columns the tile uses on
-   desktop and web. Phones show tiles in order and open interactive views at full size.
+2. Name the dashboard and choose **Add tile**. Tile types are grouped into data sources, project
+   activity, and interactive tiles.
+3. Select a tile in the layout to edit its settings. Change **Width** and **Height** to see how many
+   columns and rows it occupies. On desktop and web, drag the handle onto another tile to change its
+   position. **Move earlier** and **Move later** work with the keyboard and on mobile.
 4. Select **Save dashboard**. Use **Reload** in **Dashboard actions** to fetch dashboard edits from
-   other devices or agents. If a save conflicts, Studio keeps the current draft. Reload the saved
-   version after copying your edits or save the draft as a new dashboard.
+   other devices or agents. If the connection drops during a save, press **Save dashboard** again
+   with the same draft. A runtime with save receipts returns the original saved revision. If a save
+   conflicts, Studio keeps the current draft. Reload the saved version after copying your edits or
+   save the draft as a new dashboard.
 
-Use **Expand** for a larger tile on desktop or web. A previously loaded dashboard list remains
-available offline. Data and command actions need a connection to the owning computer.
+Desktop and web boards use up to four columns, with fewer columns when the pane narrows. Mobile
+shows two columns when there is room and keeps interactive views full screen. Use **Expand** for a
+larger tile on desktop or web. A previously loaded dashboard list remains available offline. Data
+and command actions need a connection to the owning computer.
 
 ## Tile types
 
@@ -117,7 +122,7 @@ The paired API uses POST for each operation.
 | Path                           | Input                                         | Result                |
 | ------------------------------ | --------------------------------------------- | --------------------- |
 | `/api/dashboards/list`         | `{ dataSources: true }`                       | `{ dashboards }`      |
-| `/api/dashboards/save`         | `{ dashboard, expectedRevision }`             | `{ dashboard }`       |
+| `/api/dashboards/save`         | `{ dashboard, expectedRevision, requestId? }` | `{ dashboard }`       |
 | `/api/dashboards/delete`       | `{ id, expectedRevision }`                    | `{ ok: true }`        |
 | `/api/dashboards/read`         | `{ id, tileId, expectedRevision }`            | `{ data, updatedAt }` |
 | `/api/dashboards/command-data` | `{ id, tileId, expectedRevision }`            | `{ data, updatedAt }` |
@@ -184,8 +189,9 @@ TUI from the dashboard.
 
 The runtime assigns IDs. For an update, first read the dashboard. Send the ID and `expectedRevision`
 beside the replacement `dashboard` object. Keep the existing tile IDs and omit the ID for each new
-tile. The agent tool saves the definition only. Open Studio to run commands, connect viewers, and
-refresh data.
+tile. On create or update, give each intended save a new UUID in `requestId`. Reuse that ID with the
+same request if the reply is lost. The agent tool saves the definition only. Open Studio to run
+commands, connect viewers, and refresh data.
 
 ## Verify
 

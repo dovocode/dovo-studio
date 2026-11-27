@@ -4,11 +4,12 @@ Desktop and mobile show a notice when another thread needs human input. Mobile n
 default. Change this in Settings > Notifications > Inside Dovo. System push permission is not needed
 for these notices.
 
-A notice opens the thread on its owning computer. On mobile, opening a notice from a thread also
-shows "Return to [thread]". Tap it to return to that thread and computer. The return route keeps
-native-agent and parent-thread details. Composer drafts use the existing per-computer, per-thread
-storage. Navigation does not send or clear a draft. Opening a notice from a list or settings does
-not create a return target.
+A notice opens the request in its owning thread. On desktop and web, an answered approval leaves the
+in-app queue and any open background notification closes. On mobile, opening a notice from a thread
+also shows "Return to [thread]". Tap it to return to that thread and computer. The return route
+keeps native-agent and parent-thread details. Composer drafts use the existing per-computer,
+per-thread storage. Navigation does not send or clear a draft. Opening a notice from a list or
+settings does not create a return target.
 
 Mobile notices show the thread title and computer name. They do not show question text, commands or
 secret input. The app queues new requests, clears answered requests and skips the thread you are

@@ -90,6 +90,7 @@ export function TaskSearchDialog({
     restoring.current = true
   }, [mode])
   const search = useTaskSearch(entries, mode === 'messages' ? query : '')
+  const searchFailed = search.failures.length > 0
   const altHeld = useSearchSubthreads(mode === 'tasks')
   const revealSubthreads = showSubthreads || altHeld
   const threadGroups = useMemo(
@@ -299,22 +300,36 @@ export function TaskSearchDialog({
                 ? 'Search all conversations.'
                 : search.savedOnly
                   ? uiText('No matches in saved messages.')
-                  : search.error || search.offline
+                  : searchFailed || search.offline
                     ? 'No matches in available results.'
                     : 'No matches.'}
             </li>
           )}
         </ul>
         <p
-          role={search.error ? 'alert' : 'status'}
+          role={searchFailed ? 'alert' : 'status'}
           className={cn(
             'min-h-4 break-words px-3 text-xs [overflow-wrap:anywhere]',
-            search.error ? 'text-destructive' : 'text-muted-foreground',
+            searchFailed ? 'text-destructive' : 'text-muted-foreground',
           )}
         >
-          {search.error ? (
+          {searchFailed ? (
             <>
-              {search.error}
+              {search.failures.map(({ runtimeId, name, error }) => (
+                <span key={JSON.stringify(runtimeId)} className="block">
+                  {name}: {error}{' '}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      search.retry(runtimeId)
+                      input.current?.focus()
+                    }}
+                  >
+                    {uiText('Retry {value0}', { value0: name })}
+                  </button>
+                </span>
+              ))}
               {search.loading && <span role="status"> · Searching other computers…</span>}
             </>
           ) : search.loading ? (

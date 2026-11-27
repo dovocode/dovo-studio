@@ -1425,7 +1425,7 @@ export class WorkspaceStore {
     return row ? decode(rowSchema, row).value : undefined
   }
   /** The queue change and its receipt commit together, including live-snapshot rollback. */
-  restoreQueue(id: string, requestId: string, fingerprint: string, apply: () => void) {
+  applyQueueRequest(id: string, requestId: string, fingerprint: string, apply: () => void) {
     return this.transaction(() => {
       const row = this.db
         .prepare(

@@ -124,7 +124,16 @@ export function dashboardsRoute(
         )
         // A slow upload can outlast the device. Check it again before the write.
         s.devices.authenticate(token)
-        return { dashboard: s.dashboards.save(input.dashboard, input.expectedRevision) }
+        const save = () => s.dashboards.save(input.dashboard, input.expectedRevision)
+        return {
+          dashboard: input.requestId
+            ? s.dashboards.saveOnce(
+                `studio:${input.requestId}`,
+                [input.dashboard, input.expectedRevision],
+                save,
+              )
+            : save(),
+        }
       }
       if (path === '/api/dashboards/delete') {
         const input = decode(dashboardDeleteRequestSchema, yield* serviceResult(body(request)))

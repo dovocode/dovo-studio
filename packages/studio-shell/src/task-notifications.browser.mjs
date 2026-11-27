@@ -19,7 +19,7 @@ window.osNotifications=[];
 window.Notification=class {
  static permission='granted';
  constructor(title,options){this.title=title;this.options=options;window.osNotifications.push(this)}
- close(){}
+ close(){this.closed=true}
 };
 window.updateRuntimes=value=>{window.runtimes=value;for(const listener of window.listeners)listener()};
 // Keep expiry deterministic without waiting eight seconds for each queued notice.
@@ -122,6 +122,20 @@ try {
   await page.getByRole('button', { name: 'Open Task three · Needs input', exact: true }).waitFor()
   await page.evaluate(() => window.expireNotice())
   await page.waitForFunction(() => !document.querySelector('[role="status"]'))
+  // Resolving one approval elsewhere must leave the other approval on the same thread.
+  runtime.snapshot.approvals.push(approval('answered', 'one'), approval('still-waiting', 'one'))
+  await page.evaluate((entry) => window.updateRuntimes([entry]), runtime)
+  await page.getByText('1 more notifications', { exact: true }).waitFor()
+  runtime.snapshot.approvals = runtime.snapshot.approvals.filter(({ id }) => id !== 'answered')
+  await page.evaluate((entry) => window.updateRuntimes([entry]), runtime)
+  await page.getByText('1 more notifications', { exact: true }).waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Open Task one · Needs input', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.opens.at(-1).threadRequest), {
+    id: 'one',
+    kind: 'approval',
+    requestId: 'still-waiting',
+  })
+  runtime.snapshot.approvals = runtime.snapshot.approvals.filter(({ id }) => id !== 'still-waiting')
   // An additional request for an already-waiting thread still gets its own notice.
   runtime.snapshot.approvals.push(approval('fourth', 'one'))
   await page.evaluate((entry) => window.updateRuntimes([entry]), runtime)
@@ -168,6 +182,17 @@ try {
     true,
   )
   assert.equal(await page.getByRole('status').count(), 0)
+  runtime.snapshot.approvals = runtime.snapshot.approvals.filter(
+    ({ id }) => id !== 'background-one',
+  )
+  await page.evaluate((entry) => window.updateRuntimes([entry]), runtime)
+  await page.waitForFunction(() => window.osNotifications[0].closed)
+  await page.evaluate(() => window.osNotifications[1].onclick())
+  assert.deepEqual(await page.evaluate(() => window.opens.at(-1).threadRequest), {
+    id: 'two',
+    kind: 'approval',
+    requestId: 'background-two',
+  })
   assert.deepEqual(errors, [])
   console.log(
     'Task notification browser checks passed: queued arrivals, keyboard open, dismiss, expiry, request identity, active suppression, reconnect gating, preview sync, background notifications.',

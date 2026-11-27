@@ -71,19 +71,29 @@ export function WorkForm({
     snapshot,
   } = useWorkspace()
   const connected = online && available
-  const draftKey = JSON.stringify([
+  const destination = initialIssue?.destination ?? options.destination
+  const draftScope = [
     activeRuntimeId,
-    connection,
+    connection?.address,
     kind,
     repositoryId,
     jiraSourceId,
     initialIssue?.id,
+    destination,
+    ...(kind === 'run' ? [initialDefinition, initialRef] : []),
     workspace.repositories.find((item) => item.id === repositoryId)?.forge,
     (() => {
       const source = workspace.jiraSources?.find((item) => item.id === jiraSourceId)
       return source ? [source.id, source.site, source.project] : undefined
     })(),
-  ])
+  ]
+  const [{ draftKey, persistentComment }] = useApplicationState(() => {
+    const persistentComment = kind === 'comment' && !!destination && !!initialIssue?.id
+    return {
+      draftKey: JSON.stringify(persistentComment ? draftScope : [...draftScope, connection]),
+      persistentComment,
+    }
+  })
   const target = useMemo(
     () =>
       jiraSourceId
@@ -125,6 +135,7 @@ export function WorkForm({
     draftKey,
     'body',
     kind === 'edit' ? (issue?.body ?? '') : '',
+    persistentComment,
   )
   const [type, setType] = useWorkDraftText(
     draftKey,
@@ -319,7 +330,7 @@ export function WorkForm({
         },
         forgeWorkResultSchema,
       )
-      clearWorkDraft(draftKey)
+      clearWorkDraft(draftKey, persistentComment ? { submitted: body } : undefined)
       onDone(result.message, result)
     } catch (e) {
       setError(integrationMutationError(e))

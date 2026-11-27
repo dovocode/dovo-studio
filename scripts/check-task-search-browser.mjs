@@ -87,7 +87,12 @@ try {
     await page.getByText('Old A', { exact: true }).waitFor()
     await page.getByRole('status').filter({ hasText: 'Searching conversations…' }).waitFor()
     assert.equal(await page.getByText('Old B', { exact: true }).count(), 0)
-    await page.evaluate(() => window.calls[1].reply('Old B'))
+    await page.evaluate(() => window.calls[1].fail())
+    await page.getByRole('button', { name: 'Retry Computer b' }).click()
+    await page.waitForFunction(() => window.calls.length === 3)
+    assert.equal(await page.evaluate(() => window.calls[2].owner), 'b')
+    await page.getByText('Old A', { exact: true }).waitFor()
+    await page.evaluate(() => window.calls[2].reply('Old B'))
     await page.getByText('Old B', { exact: true }).waitFor()
     await page
       .getByRole('option')
@@ -105,8 +110,8 @@ try {
       0,
       'Changing computers invalidates old results immediately',
     )
-    await page.waitForFunction(() => window.calls.length === 3)
-    await page.evaluate(() => window.calls[2].reply('Current B'))
+    await page.waitForFunction(() => window.calls.length === 4)
+    await page.evaluate(() => window.calls[3].reply('Current B'))
     await page.getByText('Current B', { exact: true }).waitFor()
     await page.evaluate(() => window.change({ token: 'second' }))
     assert.equal(
@@ -114,8 +119,8 @@ try {
       0,
       'New pairing cannot reuse old pairing results',
     )
-    await page.waitForFunction(() => window.calls.length === 4)
-    assert.equal(await page.evaluate(() => window.calls[3].token), 'second')
+    await page.waitForFunction(() => window.calls.length === 5)
+    assert.equal(await page.evaluate(() => window.calls[4].token), 'second')
     await page.evaluate(() => window.change({ online: false }))
     await page.getByText('needle in saved messages', { exact: true }).waitFor()
     await page.getByRole('status').filter({ hasText: 'Offline computers' }).waitFor()
@@ -124,7 +129,7 @@ try {
     await page.getByText('No matches in saved messages.', { exact: true }).waitFor()
     await input.fill('needle')
     await page.evaluate(async () => {
-      window.calls[3].reply('Obsolete reply')
+      window.calls[4].reply('Obsolete reply')
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     })
     assert.equal(await page.getByText('Obsolete reply', { exact: true }).count(), 0)
@@ -140,7 +145,7 @@ try {
     )
     assert.equal(
       await page.evaluate(() => window.calls.length),
-      4,
+      5,
       'Streaming rerenders do not restart search requests',
     )
     await page.evaluate(() => window.change({ online: false }))

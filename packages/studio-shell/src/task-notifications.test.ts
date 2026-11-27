@@ -209,7 +209,12 @@ it('notifies in the main conversation for child approvals and waits for question
   expect(escalated).toEqual([
     expect.objectContaining({
       kind: 'input',
-      target: { runtimeId: profile.id, viewId: 'tasks', entityId: 'parent' },
+      target: {
+        runtimeId: profile.id,
+        viewId: 'tasks',
+        entityId: 'parent',
+        threadRequest: { id: 'parent', kind: 'input', requestId: 'question' },
+      },
     }),
   ])
   snapshot.questions = []

@@ -446,7 +446,7 @@ const tools: Array<
   {
     name: 'dashboards',
     description:
-      'Tiles: app taskId/appId from a2ui publish; API/iframe/browser url; CLI/command/TUI repositoryId, command (dovo:scratch for home); MCP taskId/server/tool/arguments. Read before edits; update/delete need expectedRevision.',
+      'App IDs come from a2ui publish. Use dovo:scratch for home. Read before edits. Update/delete need expectedRevision. Retry create/update with the same requestId.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -456,6 +456,7 @@ const tools: Array<
         },
         id: { type: 'string' as const },
         expectedRevision: { type: 'integer' as const, minimum: 1 },
+        requestId: { type: 'string' as const, format: 'uuid' },
         dashboard: {
           type: 'object' as const,
           properties: {

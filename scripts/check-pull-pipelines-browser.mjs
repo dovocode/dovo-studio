@@ -26,7 +26,7 @@ import {usePullPipelineRuns,PullPipelineRunsContent} from '${root}/packages/exte
 const run={id:'run-1',number:'1',title:'PR build',url:'https://github.com/team/project/actions/runs/1',status:'failure',attempt:1,sha:'a'.repeat(40),ref:'feature',workflow:'Build',updatedAt:'2026-10-14',createdAt:'2026-10-14',actor:'Dominic'};
 const job={id:'job-1',name:'Build job',status:'success',startedAt:'2026-10-14T10:00:00Z',completedAt:'2026-10-14T10:02:14Z',url:run.url+'/job/1',steps:[{id:'step-1',number:1,name:'Compile source',status:'success'},{id:'step-skip',number:2,name:'Optional upload',status:'skipped'},{id:'step-running',number:3,name:'Run tests',status:'in_progress'},{id:'step-queued',number:4,name:'Await publish',status:'queued'},{id:'step-unknown',number:5,name:'Provider step',status:'custom'}]};
 window.blocked=[];window.failed=[];window.releases={};window.run=run;window.release=section=>{window.blocked=window.blocked.filter(s=>s!==section);for(const done of window.releases[section]??[])done();window.releases[section]=[]};
-window.reads=[];window.store={connected:true,activeRuntimeId:'owner',runtimes:[],connection:{address:'http://owner.local'},workspace:{repositories:[{id:'repo',name:'Project',forge:{connectionId:'account-1',repository:'team/project'}}]},request:async(path,input)=>{
+window.reads=[];window.store={connected:true,snapshot:{githubPipelineComparisonSupported:true},activeRuntimeId:'owner',runtimes:[],connection:{address:'http://owner.local'},workspace:{repositories:[{id:'repo',name:'Project',forge:{connectionId:'account-1',repository:'team/project'}}]},request:async(path,input)=>{
 window.reads.push({path,input});
 if(path==='/api/scm/source/identity')return {readerIdentity:'fixture-account',destination:'fixture-destination'};
 const section=input.section??(path.endsWith('/options')?'options':'other');
@@ -35,6 +35,7 @@ if(window.failed.includes(section))throw new Error(section+' temporarily unavail
 if(path.endsWith('/options'))return {provider:'github',pipelines:true,issues:false,pipelineActions:[],pipelineDefinitions:[]};
 if(path.endsWith('/pipelines/list')&&input.sha!==run.sha)return {items:[{...run,id:'unrelated',title:'Another commit build',sha:'b'.repeat(40)}]};
 if(path.endsWith('/pipelines/list'))return window.listPages?(input.cursor?{items:[{...run,id:'older-run',number:'0',title:'Older PR build'}]}:{items:[run],next:'older'}):{items:[run]};
+if(path.endsWith('/pipelines/compare')){const before={...run,id:'successful-run',number:'0',attempt:2,url:'https://github.com/team/project/actions/runs/20'};const failing={...job,id:'windows',name:'Test (windows)',status:'failure',url:run.url+'/job/9',steps:[{id:'test',number:4,name:'Windows tests',status:'failure'}]};const passing={...failing,id:'old-windows',status:'success',url:before.url+'/job/10',steps:[{...failing.steps[0],status:'success'}]};return {current:{run,jobs:[job,failing]},baseline:{run:before,jobs:[job,passing]}}}
 if(path.endsWith('/pipelines/detail'))return {run:{...run},jobs:input.section==='jobs'?(input.cursor?[{...job,id:'job-2',name:'Publish job',status:'failure',steps:[{id:'step-2',number:1,name:'Upload artifact',status:'failure'}]}]:[job]):[],next:input.section==='jobs'&&!input.cursor?'2':undefined,graph:input.section==='graph'?[{id:'build',name:'Build job',needs:[],jobIds:[]},{id:'publish',name:'Publish job',needs:['build'],jobIds:[]}]:undefined};
 throw new Error('Unexpected request '+path);
 }};
@@ -247,6 +248,21 @@ try {
   await page.getByText('Upload artifact', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'View first failed job', exact: true }).click()
   await page.waitForFunction(() => document.activeElement?.id === 'pipeline-job-job-2')
+  await page.getByRole('button', { name: 'Compare with last success', exact: true }).click()
+  const comparison = page.getByRole('region', { name: 'Compare with last success' })
+  await comparison.getByRole('link', { name: 'Run 0 · Attempt 2' }).waitFor()
+  const failure = comparison.getByRole('listitem').first()
+  assert.match(await failure.innerText(), /Test \(windows\)/)
+  assert.deepEqual(
+    await failure
+      .getByRole('link', { name: 'Windows tests' })
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href'))),
+    [
+      'https://github.com/team/project/actions/runs/1/job/9#step:4:1',
+      'https://github.com/team/project/actions/runs/20/job/10#step:4:1',
+    ],
+  )
+  await comparison.getByRole('button', { name: 'Close comparison' }).click()
   await page.screenshot({ path: screenshots + '/desktop-dark.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(

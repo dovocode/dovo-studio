@@ -37,6 +37,15 @@ export const dashboardTileLabels = {
   jobs: 'Automations',
 } satisfies Record<DashboardTile['kind'], string>
 
+export const dashboardTileGroups = [
+  { label: 'Data sources', kinds: ['api', 'cli', 'mcp'] },
+  { label: 'Project activity', kinds: ['pipelines', 'threads', 'jobs'] },
+  {
+    label: 'Interactive tiles',
+    kinds: ['command', 'tui', 'terminal', 'iframe', 'browser', 'gui', 'app', 'extension'],
+  },
+] satisfies { label: string; kinds: DashboardTile['kind'][] }[]
+
 export const dashboardDisplayLabels = {
   table: 'Table',
   number: 'Metric',
@@ -207,6 +216,7 @@ export function useDashboards(
   readCache: RuntimeReadCache | null,
   focused = true,
   dataSources = false,
+  saveReceipts = false,
 ) {
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [selection, select] = useState('')
@@ -216,6 +226,7 @@ export function useDashboards(
   const [error, setError] = useState('')
   const [cacheError, setCacheError] = useState('')
   const busy = useRef(false)
+  const saveAttempt = useRef<{ key: string; requestId: string } | undefined>(undefined)
   const generation = useRef(0)
   const loaded = useRef(false)
   const dashboard = dashboards.find((entry) => entry.id === selection)
@@ -322,16 +333,25 @@ export function useDashboards(
     save: () =>
       perform(async () => {
         if (!draft) return
+        const dashboard = decode(dashboardSchema, draft)
+        const key = JSON.stringify(dashboard)
+        if (saveAttempt.current?.key !== key) saveAttempt.current = { key, requestId: randomUUID() }
         const result = await request(
           '/api/dashboards/save',
           {
-            dashboard: decode(dashboardSchema, draft),
+            dashboard,
             expectedRevision: draft.revision,
+            ...(saveReceipts ? { requestId: saveAttempt.current.requestId } : {}),
           },
           dashboardSaveResultSchema,
         )
+        saveAttempt.current = undefined
         const next = dashboards.some((entry) => entry.id === result.dashboard.id)
-          ? dashboards.map((entry) => (entry.id === result.dashboard.id ? result.dashboard : entry))
+          ? dashboards.map((entry) =>
+              entry.id === result.dashboard.id && result.dashboard.revision >= entry.revision
+                ? result.dashboard
+                : entry,
+            )
           : [...dashboards, result.dashboard]
         publish(next)
         select(result.dashboard.id)

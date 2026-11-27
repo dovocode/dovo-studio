@@ -563,3 +563,49 @@ it('loads overview, attempt-pinned jobs and commit-pinned dependencies independe
     `repos/me/app/contents/.github/workflows/ci.yml?ref=${gitRun.head_sha}`,
   ])
 })
+
+it('compares the failed attempt with the previous successful run on the same branch and fork', async () => {
+  const failed = {
+    ...gitRun,
+    workflow_id: 7,
+    run_number: 42,
+    run_attempt: 3,
+    head_repository: { id: 11 },
+  }
+  const successful = { ...failed, id: 39, run_number: 39, run_attempt: 2, conclusion: 'success' }
+  const requests: string[] = []
+  const json = vi.fn<WorkHttp['json']>().mockImplementation(async (path) => {
+    requests.push(path)
+    if (path.endsWith('actions/runs/42')) return failed
+    if (path.includes('actions/workflows/7/runs?')) {
+      return {
+        workflow_runs: [
+          { ...successful, id: 44, run_number: 44 },
+          { ...successful, id: 41, run_number: 41, head_repository: { id: 12 } },
+          successful,
+        ],
+      }
+    }
+    if (path.includes('runs/42/attempts/3/jobs'))
+      return { jobs: [{ ...gitJob, name: 'Test (windows)' }] }
+    if (path.includes('runs/39/attempts/2/jobs'))
+      return { jobs: [{ ...gitJob, id: 99, name: 'Test (windows)', conclusion: 'success' }] }
+    throw new Error(path)
+  })
+  const source = new GitForgeWork({ json }, 'github', 'me/app')
+  const comparison = await source.comparePipeline('42', JSON.stringify([gitRun.head_sha, 3]))
+  expect(comparison.current.run.attempt).toBe(3)
+  expect(comparison.current.jobs[0]?.steps?.[0]?.status).toBe('failure')
+  expect(comparison.baseline?.run).toMatchObject({ id: '39', attempt: 2 })
+  expect(comparison.baseline?.jobs[0]).toMatchObject({ name: 'Test (windows)', status: 'success' })
+  const query = new URLSearchParams(
+    requests.find((path) => path.includes('actions/workflows/7/runs?'))?.split('?')[1],
+  )
+  expect(query.get('branch')).toBe('feature')
+  expect(query.get('status')).toBe('success')
+  expect(query.get('created')).toBe(`<=${started}`)
+  expect(requests).toHaveLength(4)
+  await expect(source.comparePipeline('42', JSON.stringify([gitRun.head_sha, 2]))).rejects.toThrow(
+    'The run changed',
+  )
+})

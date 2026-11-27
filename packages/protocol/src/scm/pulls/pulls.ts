@@ -129,6 +129,18 @@ export const pullChangedFileSchema = mutableStruct({
     }),
   ),
 })
+export const pullRevisionComparisonInputSchema = mutableStruct({
+  number: pullSummarySchema.fields.number,
+  previousHead: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/i))),
+  head: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/i))),
+})
+export const pullRevisionComparisonSchema = mutableStruct({
+  files: mutableArray(pullChangedFileSchema),
+  url: link,
+  limited: Schema.Boolean,
+})
+export type PullRevisionComparison = typeof pullRevisionComparisonSchema.Type
+
 export const pullDetailSchema = mutableStruct({
   omittedFiles: Schema.optional(Schema.Number),
   destination: Schema.optional(forgeIdentityTokenSchema),

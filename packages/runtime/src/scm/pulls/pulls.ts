@@ -16,6 +16,8 @@ import {
   pullPageSchema,
   pullStackSchema,
   pullDetailSchema,
+  type pullRevisionComparisonInputSchema,
+  type PullRevisionComparison,
   type PullComment,
   type PullDetailSection,
   type PullCreate,
@@ -148,6 +150,43 @@ export class PullRequests {
   }
   private async json(cwd: string, args: string[], background = false): Promise<unknown> {
     return JSON.parse(await this.run(cwd, args, background))
+  }
+  async compareRevisions(
+    cwd: string,
+    { number, previousHead, head }: typeof pullRevisionComparisonInputSchema.Type,
+  ): Promise<PullRevisionComparison> {
+    const repo = await this.location(cwd)
+    const api = (path: string) =>
+      this.json(cwd, ['api', '--hostname', repo.host, `${repo.path}/${path}`])
+    const pull = decode(restDetail, await api(`pulls/${number}`))
+    if (pull.head.sha !== head)
+      throw new HttpError(409, 'The pull request head changed. Refresh before comparing revisions.')
+    const range = `${previousHead}...${head}`
+    const result = decode(
+      mutableStruct({
+        merge_base_commit: mutableStruct({ sha: Schema.String }),
+        files: Schema.optional(mutableArray(restFile)),
+      }),
+      await api(`compare/${range}?per_page=1`),
+    )
+    if (result.merge_base_commit.sha !== previousHead)
+      throw new HttpError(
+        409,
+        'The previous revision is no longer an ancestor of the current head. Open the full PR diff to review a rewritten branch.',
+      )
+    if (!result.files) throw new HttpError(502, 'GitHub did not return the comparison files.')
+    return {
+      files: result.files.map((file) => ({
+        path: file.filename,
+        previousPath: file.previous_filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+      })),
+      url: `${repo.url}/compare/${range}`,
+      limited: result.files.length >= 300,
+    }
   }
   async identity(cwd: string, refresh = false) {
     if (refresh) this.locations.delete(cwd)

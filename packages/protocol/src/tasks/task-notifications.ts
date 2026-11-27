@@ -17,6 +17,7 @@ export type TaskState = {
   running: boolean
   needsInput: boolean
   inputIds?: readonly string[]
+  inputRequests?: ReadonlyMap<string, SideThreadRequest>
   failed: boolean
   /** Delegated agents report successful completion to their parent conversation. */
   delegated?: boolean
@@ -34,19 +35,27 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
     const snapshot = entry.snapshot
     if (!snapshot || !entry.connected) continue
     const waiting = new Map<string, string[]>()
+    const inputRequests = new Map<string, SideThreadRequest>()
     const addInput = (taskId: string, id: string) => {
       const owner = taskInputOwner(snapshot.workspace.tasks, taskId)
       const ids = waiting.get(owner) ?? []
       ids.push(id)
       waiting.set(owner, ids)
     }
-    for (const approval of snapshot.approvals)
-      addInput(approval.taskId, JSON.stringify(['approval', approval.id]))
+    const addRequest = (taskId: string, requestId: string, kind: 'approval' | 'question') => {
+      const id = JSON.stringify([kind, requestId])
+      addInput(taskId, id)
+      inputRequests.set(id, {
+        id: taskInputOwner(snapshot.workspace.tasks, taskId),
+        kind: kind === 'question' ? 'input' : 'approval',
+        requestId,
+      })
+    }
+    for (const approval of snapshot.approvals) addRequest(approval.taskId, approval.id, 'approval')
     for (const input of snapshot.secureInputs ?? [])
       addInput(input.taskId, JSON.stringify(['secure-input', input.id]))
     for (const question of snapshot.questions)
-      if (question.routing !== 'parent')
-        addInput(question.taskId, JSON.stringify(['question', question.id]))
+      if (question.routing !== 'parent') addRequest(question.taskId, question.id, 'question')
     for (const task of snapshot.workspace.tasks)
       for (const watch of task.threadWatches ?? []) {
         if (
@@ -83,6 +92,7 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
         running: task.status === 'running',
         needsInput: inputIds.length > 0,
         inputIds,
+        inputRequests,
         failed: task.status === 'failed',
         cancelled: task.status === 'cancelled',
         delegated: !!(task.delegation || task.spawnParent),
@@ -127,15 +137,17 @@ export function taskNotificationEvents(
     const previousInputs = new Set(before.inputIds ?? [])
     const newInputs = state.inputIds?.filter((id) => !previousInputs.has(id)) ?? []
     if (state.needsInput && (newInputs.length || !before.needsInput)) {
-      for (const id of newInputs.length ? newInputs : [undefined])
+      for (const id of newInputs.length ? newInputs : [undefined]) {
+        const request = id === undefined ? undefined : state.inputRequests?.get(id)
         events.push({
           key: id === undefined ? key : JSON.stringify([key, 'input', id]),
           kind: 'input',
           inputId: id,
           title: state.title,
           automation,
-          target: state.target,
+          target: request ? { ...state.target, threadRequest: request } : state.target,
         })
+      }
     } else if (
       before.running &&
       !state.running &&
@@ -166,7 +178,30 @@ export function taskNotificationEvents(
   return events
 }
 
-export type TaskNotice = { title: string; target: NotificationTarget }
+export type TaskNotice = {
+  title: string
+  target: NotificationTarget
+  input?: { stateKey: string; id?: string }
+}
+
+export function taskNoticeStillWaiting(
+  states: ReadonlyMap<string, TaskState>,
+  input: NonNullable<TaskNotice['input']>,
+) {
+  const state = states.get(input.stateKey)
+  return !!state?.needsInput && (input.id === undefined || !!state.inputIds?.includes(input.id))
+}
+
+export function taskNoticeInput(event: ReturnType<typeof taskNotificationEvents>[number]) {
+  if (event.kind !== 'input') return undefined
+  const { runtimeId, entityId } = event.target
+  return {
+    stateKey: JSON.stringify(
+      event.automation ? [runtimeId, 'run', entityId] : [runtimeId, entityId],
+    ),
+    id: event.inputId,
+  }
+}
 
 /** Derive section dots from existing read state and pending human requests. */
 export function taskSectionIndicators(
@@ -187,6 +222,7 @@ export function enqueueTaskNotices(
   pending: readonly TaskNotice[],
   events: ReturnType<typeof taskNotificationEvents>,
   activeTarget?: NotificationTarget,
+  states?: ReadonlyMap<string, TaskState>,
 ): TaskNotice[] {
   const visible = (target: NotificationTarget) =>
     !activeTarget ||
@@ -201,12 +237,17 @@ export function enqueueTaskNotices(
     'checks-failed': 'Checks failed',
   }
   return [
-    ...pending.filter((notice) => visible(notice.target)),
+    ...pending.filter(
+      (notice) =>
+        visible(notice.target) &&
+        (!states || !notice.input || taskNoticeStillWaiting(states, notice.input)),
+    ),
     ...events
       .filter((event) => visible(event.target))
       .map((event) => ({
         title: `${event.title} · ${labels[event.kind]}`,
         target: event.target,
+        input: taskNoticeInput(event),
       })),
   ].slice(-50)
 }

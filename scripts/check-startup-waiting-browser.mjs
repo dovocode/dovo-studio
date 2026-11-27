@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
-import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { chromium } from './browser/harness.mjs'
+import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 // Use the real synchronization class: even an empty flush publishes sync state. A mock
 // flush that never updates the provider misses the draft-to-thread request feedback loop.
-const built = await build({
-  stdin: {
-    contents: `
+const built = await bundleBrowser(
+  {
+    stdin: {
+      contents: `
       import {useCallback,useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {createTask} from '${root}packages/studio-core/src/workspace/actions';
@@ -16,9 +16,13 @@ const built = await build({
       import {WorkspaceValueProvider} from '${root}packages/studio-core/src/workspace/selector';
       import {TemporaryTaskWorkspace} from '${root}packages/studio-core/src/workspace/temporary-task';
       import {WorkspaceSynchronization} from '${root}packages/studio-core/src/runtime/synchronization';
+      import {QueueTemplates} from '${root}packages/extension-tasks/src/chat/composer/queue-templates';
       import {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting';
       import {taskWaitingSchema,responses} from '@dovo/protocol';
       window.counts={waiting:0,flushes:0,publishes:0,commits:0};
+      window.stages=[];
+      const id='00000000-0000-4000-8000-000000000999';
+      const steps=['Reproduce the problem','Verify the fix'];
       const sync=new WorkspaceSynchronization(()=>{},undefined,undefined,()=>{
         window.counts.publishes++;
         // Bound a regression so a failing test cannot hang the browser indefinitely.
@@ -27,9 +31,18 @@ const built = await build({
       sync.bind({address:'http://projectless.lan:51464',token:'fixture-token'});
       const task=createTask({title:'New thread',objective:'',agentId:'',repositoryId:'scratch'});
       const flush=async()=>{window.counts.flushes++;await sync.flush()};
-      const request=async(path)=>{
+      const request=async(path,input)=>{
         await sync.flush();
         if(path==='/api/tasks/waiting')window.counts.waiting++;
+        if(path==='/api/tasks/queue-templates/list'){
+          window.templateInput=input;
+          return {templates:[{id,name:'Bugfix',steps}]};
+        }
+        if(path==='/api/tasks/queue-templates'){
+          window.stages.push(input);
+          if(window.stages.length===1)throw new Error('Acknowledgement lost');
+          return {ok:true};
+        }
         return path==='/api/tasks/waiting'?{dependencies:[],related:[]}:{ok:true};
       };
       function Waiting(){
@@ -45,6 +58,7 @@ const built = await build({
         return <>
           <button onClick={()=>store.setWorkspace(workspace=>({...workspace,tasks:workspace.tasks.map(item=>item.id===task.id?{...item,draft:'Hello'}:item)}))}>Save draft</button>
           <button onClick={()=>store.request('/api/tasks/message',{id:task.id,text:'Hello'},responses.ok)}>Send</button>
+          <QueueTemplates task={task}/>
           {committed&&<Waiting/>}
         </>;
       }
@@ -54,7 +68,7 @@ const built = await build({
         const [committed,setCommitted]=useState(false);
         window.saved=workspace.tasks;
         window.publish=()=>setVersion(value=>value+1);
-        return <WorkspaceValueProvider value={{workspace,setWorkspace,flush,request,version}}>
+        return <WorkspaceValueProvider value={{workspace,setWorkspace,flush,request,version,connected:true,snapshot:{queueTemplatesSupported:true}}}>
           <TemporaryTaskWorkspace task={task} onCommit={()=>{window.counts.commits++;setCommitted(true)}}>
             <Thread committed={committed}/>
           </TemporaryTaskWorkspace>
@@ -62,16 +76,32 @@ const built = await build({
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
-    resolveDir: `${root}packages/studio-ui`,
-    loader: 'tsx',
+      resolveDir: `${root}packages/studio-ui`,
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    jsx: 'automatic',
+    define: { 'process.env.NODE_ENV': '"production"' },
   },
-  bundle: true,
-  write: false,
-  format: 'iife',
-  platform: 'browser',
-  jsx: 'automatic',
-  define: { 'process.env.NODE_ENV': '"production"' },
-})
+  [
+    {
+      path: '@dovo/studio-core',
+      contents: `export {useWorkspace} from '${root}packages/studio-core/src/workspace/context';`,
+    },
+    {
+      path: '@dovo/studio-ui',
+      contents: `export const Button=({size,variant,...props})=><button {...props}/>;
+      export const Dialog=({children})=><section role="dialog">{children}</section>;
+      export const DialogContent=({children})=><div>{children}</div>;
+      export const DialogHeader=DialogContent;export const DialogTitle=DialogContent;export const DialogDescription=DialogContent;
+      export const Input=(props)=><input {...props}/>;
+      export const ChoicePicker=({onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}/>;`,
+    },
+  ],
+)
 const browser = await chromium.launch()
 try {
   for (const action of ['Save draft', 'Send']) {
@@ -102,6 +132,27 @@ try {
     assert.deepEqual(errors, [], action)
     await page.close()
   }
+  const page = await browser.newPage()
+  await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.getByRole('button', { name: 'Queue templates' }).click()
+  await page.getByText('Reproduce the problem').waitFor()
+  assert.equal(
+    await page.evaluate(() => window.saved.length),
+    0,
+    'Browsing templates does not create a thread',
+  )
+  assert.deepEqual(await page.evaluate(() => window.templateInput), { repositoryId: 'scratch' })
+  await page.getByRole('button', { name: 'Add template to queue' }).click()
+  await page.getByRole('alert').getByText('Acknowledgement lost').waitFor()
+  await page.getByRole('button', { name: 'Add template to queue' }).click()
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+  assert.equal(await page.evaluate(() => window.saved.length), 1)
+  const attempts = await page.evaluate(() => window.stages)
+  assert.equal(attempts.length, 2)
+  assert.equal(attempts[0].action, 'stage')
+  assert.deepEqual(attempts[0], attempts[1])
+  await page.close()
   console.log(
     'Projectless draft commit and first send settle after one watcher read through real sync publications; unrelated provider updates preserve the reader.',
   )

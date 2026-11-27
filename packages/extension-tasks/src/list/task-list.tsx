@@ -364,7 +364,6 @@ export function TaskList({
     searchIdentity,
     threadTree,
   ])
-  const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
   const confirm = useConfirmation(
     JSON.stringify([scope, selectedEntries.map((entry) => entry.key)]),
@@ -956,11 +955,23 @@ export function TaskList({
             </div>
           </div>
         </div>
-        {(error || actionError || searchError) && (
+        {(error || actionError) && (
           <p role="alert" className="px-3 pb-2 text-xs text-destructive">
-            {actionError || error || searchError}
+            {actionError || error}
           </p>
         )}
+        {search.failures.map(({ runtimeId, name, error }) => (
+          <p
+            key={JSON.stringify(runtimeId)}
+            role="alert"
+            className="px-3 pb-2 text-xs text-destructive"
+          >
+            {name}: {error}{' '}
+            <button type="button" className="underline" onClick={() => search.retry(runtimeId)}>
+              {uiText('Retry {value0}', { value0: name })}
+            </button>
+          </p>
+        ))}
         <div
           ref={attachScroll}
           onScroll={(event) => {

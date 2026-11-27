@@ -568,6 +568,13 @@ export class ForgeWork {
           validateSource,
         }),
       )
+    if (operation === 'pipelines/compare') {
+      if (!(provider instanceof GitForgeWork))
+        throw new HttpError(400, 'Run comparison requires a GitHub Actions workflow.')
+      const result = await provider.comparePipeline(id(), query.revision)
+      validateSource()
+      return result
+    }
     if (operation === 'pipelines/list')
       return runClientEffect(
         this.cache.readEffect({

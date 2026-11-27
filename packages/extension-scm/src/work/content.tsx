@@ -1,3 +1,5 @@
+import { forgePipelineComparisonSchema, pipelineRevision, pipelineSignal } from '@dovo/protocol'
+import { PipelineComparison } from './pipeline-comparison'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { jiraPromiseReader } from '@dovo/studio-core/jira-reads'
 import { useIssueDiscussion } from './use-issue-discussion'
@@ -136,7 +138,7 @@ export function WorkContent({
           },
     [jiraSourceId, repositoryId],
   )
-  const { workspace, readCache, activeRuntimeId } = useWorkspace()
+  const { workspace, readCache, activeRuntimeId, snapshot } = useWorkspace()
   const sources = useIssueSources(true, false)
   const origin = sources.find(
     (source) =>
@@ -1073,6 +1075,36 @@ export function WorkContent({
             <PipelineDetailView
               key={pipeline.run.url}
               detail={pipeline}
+              comparison={
+                snapshot?.githubPipelineComparisonSupported &&
+                options?.provider === 'github' &&
+                pipelineSignal(pipeline.run.status).tone === 'danger' && (
+                  <PipelineComparison
+                    key={JSON.stringify([
+                      destination,
+                      pipeline.run.url,
+                      pipelineRevision(pipeline.run),
+                    ])}
+                    connected={readConnected && !stale}
+                    load={async () => {
+                      const guard = reader
+                        ? await Effect.runPromise(sourceReadGuard(reader))
+                        : undefined
+                      return (reader?.request ?? request)(
+                        '/api/scm/work/pipelines/compare',
+                        {
+                          ...(reader ? sourceIdentityInput(reader) : target),
+                          ...guard,
+                          id: pipeline.run.id,
+                          revision: pipelineRevision(pipeline.run),
+                          expectedDestination: pipeline.run.destination ?? pipeline.destination,
+                        },
+                        forgePipelineComparisonSchema,
+                      )
+                    }}
+                  />
+                )
+              }
               notice={workOptionsError || options?.pipelineNotice}
               repositoryId={repositoryId}
               disabled={busy || stale}

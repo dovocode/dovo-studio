@@ -63,3 +63,11 @@ finishes after changes arrive is rejected. **Reset to folders** clears model gro
 also lets you browse by path while retaining the generated groups. Viewed progress keeps its
 existing persisted behavior. Organizer selection does not change the coding task's harness/model or
 the utility-model settings. Harnesses that cannot disable tools are excluded.
+
+## Review a GitHub follow-up push
+
+Keep the **Changes** tab open while a new PR head arrives. Choose **Since previous revision** to see
+the changed files and patches between the head you had open and the new head. Choose **Full PR
+diff** to go back to the normal review and its viewed marks and drafts. If a force push removes the
+previous head from the branch history, use the full PR diff. If GitHub withholds a patch or reaches
+its file limit, use **Open comparison on GitHub**.

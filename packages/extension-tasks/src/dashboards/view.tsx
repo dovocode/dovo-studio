@@ -1,16 +1,16 @@
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import {
-  ChevronDown,
-  ChevronRight,
   LayoutGrid,
   Maximize2,
   Minimize2,
   MoreHorizontal,
   Pencil,
+  Server,
   Plus,
 } from 'lucide-react'
 import { DataSource } from './data-source'
-import { lazy, Suspense, useRef, useState, type CSSProperties } from 'react'
+import { LayoutEditor, grid, tileCell, tileIcons, tileLayout } from './layout'
+import { lazy, Suspense, useId, useRef, useState } from 'react'
 import {
   STUDIO_BROWSER_SCOPE,
   runtimeComputerName,
@@ -35,6 +35,7 @@ import {
   isDashboardDisplay,
   readDashboardDataSource,
   dashboardTileLabels,
+  dashboardTileGroups,
   moveDashboardTile,
   newDashboardTile,
   useDashboardTile,
@@ -69,19 +70,7 @@ const menu =
 const menuItem =
   'cursor-pointer rounded-md px-2.5 py-1.5 text-sm outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
 const button = 'rounded-md border px-2.5 py-1.5 text-sm hover:bg-muted disabled:opacity-50'
-type TileStyle = CSSProperties & { '--tile-span': number }
-function tileLayout(tile: DashboardTile, expanded: boolean): TileStyle {
-  return {
-    '--tile-span': expanded ? 4 : tile.span,
-    height: expanded ? 'min(75dvh, 880px)' : `${tile.height * 112 + 42}px`,
-  }
-}
 const field = 'min-w-0 rounded-md border bg-background px-2 py-1.5 text-sm'
-const tileKinds = Object.keys(dashboardTileLabels).filter(isTileKind)
-function isTileKind(value: string): value is DashboardTile['kind'] {
-  return Object.hasOwn(dashboardTileLabels, value)
-}
-
 export default function DashboardsView() {
   const { runtimes, activeRuntimeId } = useWorkspace()
   const [owner, setOwner] = useState(activeRuntimeId ?? '')
@@ -91,9 +80,10 @@ export default function DashboardsView() {
     computers.find((entry) => entry.profile.id === activeRuntimeId) ??
     computers[0]
   return (
-    <main className="h-full overflow-auto p-4 md:p-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Dashboards</h1>
+    <main className="@container h-full overflow-auto bg-muted/15 p-4 md:p-6">
+      <header className="mb-4 flex items-center gap-2.5">
+        <LayoutGrid className="size-5 text-primary" aria-hidden="true" />
+        <h1 className="text-xl font-semibold tracking-tight">Dashboards</h1>
       </header>
       {selected ? (
         <WorkspaceScope
@@ -127,7 +117,14 @@ function Board({
 }) {
   const { request, connected, readCache, snapshot } = useWorkspace()
   const dataSources = snapshot?.studioDataSourcesSupported === true
-  const state = useDashboards(request, connected, readCache, true, dataSources)
+  const state = useDashboards(
+    request,
+    connected,
+    readCache,
+    true,
+    dataSources,
+    snapshot?.dashboardSaveReceiptsSupported === true,
+  )
   const { dashboard, draft } = state
   useSettingsDraft(state.dirty, !!draft && state.pending)
   const confirmNavigation = useConfirmSettingsNavigation()
@@ -140,9 +137,12 @@ function Board({
     extensionComponentVersion(snapshot),
   )
   const extensionOptions = extensionTileOptions(extensions.entries)
-  const availableKinds = tileKinds.filter(
-    (kind) => (kind !== 'extension' || supported) && (kind !== 'cli' || dataSources),
-  )
+  const tileGroups = dashboardTileGroups.map(({ label, kinds }) => ({
+    label,
+    kinds: kinds.filter(
+      (kind) => (kind !== 'extension' || supported) && (kind !== 'cli' || dataSources),
+    ),
+  }))
   const needsUpdate = !!draft && !dataSources && needsStudioDataSources(draft)
 
   const [editingTile, setEditingTile] = useState<string>()
@@ -152,6 +152,30 @@ function Board({
   const [expandedTile, setExpandedTile] = useState('')
   const [readingFile, setReadingFile] = useState(false)
   const picker = useRef<HTMLInputElement>(null)
+  const inspector = useRef<HTMLElement>(null)
+  const selectedIndex = draft?.tiles.findIndex((tile) => tile.id === editingTile) ?? -1
+  const selectedTile = draft?.tiles[selectedIndex]
+
+  function selectTile(id: string) {
+    setEditingTile(id)
+    requestAnimationFrame(() => {
+      const panel = inspector.current
+      const layout = panel?.parentElement?.firstElementChild
+      if (
+        !panel ||
+        !layout ||
+        panel.getBoundingClientRect().top <= layout.getBoundingClientRect().top + 1
+      )
+        return
+      panel.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
+  function editBoard() {
+    if (!dashboard) return
+    setEditingTile(dashboard.tiles[0]?.id)
+    state.beginEdit(dashboard)
+  }
 
   async function importFile(file: File) {
     setReadingFile(true)
@@ -195,11 +219,14 @@ function Board({
   }
   return (
     <>
-      <div
-        className={`mb-5 flex flex-wrap items-center justify-between gap-3 border-b pb-4 ${draft ? 'mx-auto max-w-3xl' : ''}`}
-      >
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-2xl border bg-card p-3 sm:p-4">
         {!draft ? (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {computers.length === 1 && (
+              <span className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground">
+                <Server className="size-3.5 shrink-0" aria-hidden="true" /> {computers[0].name}
+              </span>
+            )}
             {computers.length > 1 && (
               <select
                 aria-label="Computer"
@@ -218,7 +245,7 @@ function Board({
             {state.dashboards.length > 0 && (
               <select
                 aria-label="Dashboard"
-                className={field}
+                className={`${field} max-w-full font-medium`}
                 disabled={state.pending || readingFile}
                 value={dashboard?.id ?? ''}
                 onChange={(event) => state.select(event.target.value)}
@@ -288,15 +315,7 @@ function Board({
                 <Plus size={16} /> New dashboard
               </Button>
               {dashboard && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={state.pending || readingFile}
-                  onClick={() => {
-                    setEditingTile(dashboard.tiles[0]?.id)
-                    state.beginEdit(dashboard)
-                  }}
-                >
+                <Button size="sm" disabled={state.pending || readingFile} onClick={editBoard}>
                   <Pencil size={15} /> Edit dashboard
                 </Button>
               )}
@@ -443,130 +462,183 @@ function Board({
         </p>
       )}
       {draft ? (
-        <fieldset
-          data-dashboard-editing
-          disabled={state.pending}
-          className="mx-auto max-w-3xl space-y-3"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-medium">Tiles</h2>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={state.pending || draft.tiles.length >= 32}
+        <fieldset data-dashboard-editing disabled={state.pending} className="min-w-0">
+          <LayoutEditor
+            tiles={draft.tiles}
+            selected={editingTile}
+            select={selectTile}
+            reorder={(tiles) => state.edit({ ...draft, tiles })}
+            addTile={
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={state.pending || draft.tiles.length >= 32}
+                  >
+                    <Plus size={16} /> Add tile
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content className={menu} align="end" sideOffset={6}>
+                    {tileGroups.map(({ label, kinds }) => (
+                      <DropdownMenu.Group key={label}>
+                        <DropdownMenu.Label className="px-2.5 pb-1 pt-2 text-xs font-semibold text-muted-foreground">
+                          {label}
+                        </DropdownMenu.Label>
+                        {kinds.map((kind) => {
+                          const Icon = tileIcons[kind]
+                          return (
+                            <DropdownMenu.Item
+                              key={kind}
+                              className={`${menuItem} flex items-center gap-2`}
+                              onSelect={() => {
+                                const tile = newDashboardTile(kind)
+                                state.edit({ ...draft, tiles: [...draft.tiles, tile] })
+                                selectTile(tile.id)
+                              }}
+                            >
+                              <Icon
+                                size={16}
+                                className="text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                              {dashboardTileLabels[kind]}
+                            </DropdownMenu.Item>
+                          )
+                        })}
+                      </DropdownMenu.Group>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            }
+            settings={
+              selectedTile && (
+                <aside
+                  ref={inspector}
+                  aria-label="Tile settings"
+                  className="min-w-0 rounded-2xl border bg-card @min-[64rem]:sticky @min-[64rem]:top-0 @min-[64rem]:max-h-[calc(100dvh-8rem)] @min-[64rem]:overflow-auto"
                 >
-                  <Plus size={16} /> Add tile
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content className={menu} align="end" sideOffset={6}>
-                  {availableKinds.map((type) => (
-                    <DropdownMenu.Item
-                      key={type}
-                      className={menuItem}
-                      onSelect={() => {
-                        const tile = newDashboardTile(type)
-                        state.edit({ ...draft, tiles: [...draft.tiles, tile] })
-                        setEditingTile(tile.id)
-                      }}
-                    >
-                      {dashboardTileLabels[type]}
-                    </DropdownMenu.Item>
-                  ))}
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          </div>
-          {draft.tiles.map((tile, index) => {
-            const expanded = editingTile === tile.id
-            const label = dashboardTileLabels[tile.kind]
-            return (
-              <section key={tile.id} className="rounded-xl border bg-card">
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-muted/60"
-                  onClick={() => setEditingTile(expanded ? undefined : tile.id)}
-                >
-                  <LayoutGrid size={16} className="shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {tile.title || label}
-                  </span>
-                  {tile.title && tile.title !== label && (
-                    <span className="text-xs text-muted-foreground">{label}</span>
-                  )}
-                  {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </button>
-                {expanded && (
+                  <div className="border-b px-4 py-3">
+                    <h2 className="text-sm font-medium">Tile settings</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {dashboardTileLabels[selectedTile.kind]}
+                    </p>
+                  </div>
                   <TileEditor
+                    key={selectedTile.id}
                     extensionOptions={extensionOptions}
-                    tile={tile}
-                    change={(updated) =>
+                    tile={selectedTile}
+                    change={(tile) =>
                       state.edit({
                         ...draft,
-                        tiles: draft.tiles.map((entry) => (entry.id === tile.id ? updated : entry)),
+                        tiles: draft.tiles.map((entry) => (entry.id === tile.id ? tile : entry)),
                       })
                     }
                     move={(offset) =>
-                      state.edit({ ...draft, tiles: moveDashboardTile(draft.tiles, index, offset) })
+                      state.edit({
+                        ...draft,
+                        tiles: moveDashboardTile(draft.tiles, selectedIndex, offset),
+                      })
                     }
-                    first={index === 0}
-                    last={index === draft.tiles.length - 1}
+                    first={selectedIndex === 0}
+                    last={selectedIndex === draft.tiles.length - 1}
                     remove={() => {
-                      const remaining = draft.tiles.filter((entry) => entry.id !== tile.id)
+                      const remaining = draft.tiles.filter((entry) => entry.id !== selectedTile.id)
                       state.edit({ ...draft, tiles: remaining })
-                      setEditingTile(remaining[Math.min(index, remaining.length - 1)]?.id)
+                      setEditingTile(remaining[Math.min(selectedIndex, remaining.length - 1)]?.id)
                     }}
                   />
-                )}
-              </section>
-            )
-          })}
+                </aside>
+              )
+            }
+          />
         </fieldset>
-      ) : dashboard ? (
-        <div className="grid grid-cols-4 gap-3">
+      ) : dashboard?.tiles.length ? (
+        <div className={grid} aria-label={dashboard.title} role="group">
           {dashboard.tiles.map((tile) => (
-            <section
+            <BoardTile
               key={`${dashboard.id}:${tile.id}:${dashboard.revision}`}
-              className="col-span-4 flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-card-foreground md:[grid-column:span_var(--tile-span)]"
-              style={tileLayout(tile, expandedTile === tile.id)}
-            >
-              <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-                <h2 className="min-w-0 truncate text-sm font-medium">{tile.title}</h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label={`${expandedTile === tile.id ? 'Collapse' : 'Expand'} ${tile.title}`}
-                  aria-expanded={expandedTile === tile.id}
-                  onClick={() => setExpandedTile((id) => (id === tile.id ? '' : tile.id))}
-                >
-                  {expandedTile === tile.id ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                </Button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto">
-                <Suspense fallback={<p className="p-3 text-sm">Loading tile…</p>}>
-                  <TileContent dashboard={dashboard} tile={tile} />
-                </Suspense>
-              </div>
-            </section>
+              dashboard={dashboard}
+              tile={tile}
+              expanded={expandedTile === tile.id}
+              toggle={() => setExpandedTile((id) => (id === tile.id ? '' : tile.id))}
+            />
           ))}
-          {dashboard.tiles.length === 0 && (
-            <p className="col-span-4 text-sm text-muted-foreground">
-              Edit this dashboard to add tiles.
-            </p>
-          )}
         </div>
       ) : (
-        <div className="grid place-items-center gap-2 rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-          <LayoutGrid size={22} />
-          Create a dashboard to add your first tile.
+        <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-card px-4 text-center">
+          <span className="rounded-xl bg-primary/10 p-3 text-primary">
+            <LayoutGrid size={24} aria-hidden="true" />
+          </span>
+          <p className="text-sm text-muted-foreground">
+            {dashboard
+              ? 'This dashboard has no tiles yet.'
+              : 'Create a dashboard to add your first tile.'}
+          </p>
+          {dashboard && (
+            <Button size="sm" onClick={editBoard}>
+              <Plus size={16} /> Add tiles
+            </Button>
+          )}
         </div>
       )}
     </>
+  )
+}
+
+function BoardTile({
+  dashboard,
+  tile,
+  expanded,
+  toggle,
+}: {
+  dashboard: Dashboard
+  tile: DashboardTile
+  expanded: boolean
+  toggle: () => void
+}) {
+  const id = useId()
+  const Icon = tileIcons[tile.kind]
+  return (
+    <section
+      aria-labelledby={id}
+      className={`${tileCell} flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm`}
+      style={tileLayout(tile, expanded)}
+    >
+      <div className="flex items-center gap-2.5 border-b bg-muted/25 px-3 py-2">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+          <Icon size={16} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 id={id} className="truncate text-sm font-medium" title={tile.title}>
+            {tile.title}
+          </h2>
+          {tile.title !== dashboardTileLabels[tile.kind] && (
+            <p className="truncate text-xs text-muted-foreground">
+              {dashboardTileLabels[tile.kind]}
+            </p>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${tile.title}`}
+          aria-expanded={expanded}
+          onClick={toggle}
+        >
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Suspense fallback={<p className="p-3 text-sm">Loading tile…</p>}>
+          <TileContent dashboard={dashboard} tile={tile} />
+        </Suspense>
+      </div>
+    </section>
   )
 }
 
@@ -595,7 +667,7 @@ function TileEditor({
   )
   const apps = appSources?.data?.apps ?? []
   return (
-    <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+    <div className="grid min-w-0 gap-3 p-3">
       <label className="grid gap-1 text-sm">
         Tile title
         <input
@@ -605,6 +677,40 @@ function TileEditor({
           onChange={(event) => change({ ...tile, title: event.target.value })}
         />
       </label>
+      <div className="flex flex-wrap items-center gap-2 border-b pb-3">
+        {(['span', 'height'] as const).map((key) => (
+          <label key={key} className="flex items-center gap-1 text-sm">
+            {key === 'span' ? 'Width' : 'Height'}
+            <select
+              className={field}
+              value={tile[key]}
+              onChange={(event) => change({ ...tile, [key]: Number(event.target.value) })}
+            >
+              {[1, 2, 3, 4].map((size) => (
+                <option key={size} value={size}>
+                  {size}{' '}
+                  {key === 'span'
+                    ? size === 1
+                      ? 'column'
+                      : 'columns'
+                    : size === 1
+                      ? 'row'
+                      : 'rows'}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        <button className={button} disabled={first} onClick={() => move(-1)}>
+          Move earlier
+        </button>
+        <button className={button} disabled={last} onClick={() => move(1)}>
+          Move later
+        </button>
+        <button className={button} onClick={remove}>
+          Remove tile
+        </button>
+      </div>
       {tile.kind === 'extension' && (
         <label className="grid gap-1 text-sm">
           Extension contribution
@@ -751,31 +857,6 @@ function TileEditor({
           compound={snapshot?.studioDataSourcesSupported === true}
         />
       )}
-      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-        {(['span', 'height'] as const).map((key) => (
-          <label key={key} className="flex items-center gap-1 text-sm">
-            {key === 'span' ? 'Width' : 'Height'}
-            <select
-              className={field}
-              value={tile[key]}
-              onChange={(event) => change({ ...tile, [key]: Number(event.target.value) })}
-            >
-              {[1, 2, 3, 4].map((size) => (
-                <option key={size}>{size}</option>
-              ))}
-            </select>
-          </label>
-        ))}
-        <button className={button} disabled={first} onClick={() => move(-1)}>
-          Move earlier
-        </button>
-        <button className={button} disabled={last} onClick={() => move(1)}>
-          Move later
-        </button>
-        <button className={button} onClick={remove}>
-          Remove tile
-        </button>
-      </div>
     </div>
   )
 }
@@ -817,7 +898,7 @@ function DisplayEditor({
     </label>
   )
   return (
-    <div className="grid gap-2 sm:col-span-2">
+    <div className="grid gap-2 ">
       {panels.length === 0 && (
         <div className="max-w-xs">{display(tile.chart, (chart) => change({ ...tile, chart }))}</div>
       )}
@@ -827,7 +908,7 @@ function DisplayEditor({
             panels.map((item, position) => (position === index ? { ...item, ...patch } : item)),
           )
         return (
-          <div key={index} className="grid gap-2 rounded-lg border bg-muted/20 p-2 sm:grid-cols-3">
+          <div key={index} className="grid gap-2 rounded-lg border bg-muted/20 p-2">
             <label className="grid gap-1 text-sm">
               Display title
               <input

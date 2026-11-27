@@ -9,6 +9,7 @@ import {
   pullCreateSchema,
   pullDetailSectionSchema,
   pullLineCommentSchema,
+  pullRevisionComparisonInputSchema,
   pullSummarySchema,
   refine,
   urlSchema,
@@ -29,6 +30,10 @@ const pullOperationSchema = Schema.Union([
     path: maxValue(minValue(Schema.String, 1), 4096),
     headSha: maxValue(Schema.String, 100),
     baseSha: maxValue(Schema.String, 100),
+  }),
+  mutableStruct({
+    kind: Schema.Literal('compare-revisions'),
+    ...pullRevisionComparisonInputSchema.fields,
   }),
   mutableStruct({ kind: Schema.Literal('status'), number, background: Schema.Boolean }),
   mutableStruct({ kind: Schema.Literal('section'), number, section: pullDetailSectionSchema }),

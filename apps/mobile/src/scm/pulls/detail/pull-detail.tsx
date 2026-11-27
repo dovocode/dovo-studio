@@ -1,4 +1,6 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
+import { usePullRevisionComparison } from '@dovo/studio-core/comparison'
+import { PullRevisionComparisonView } from './revision-comparison'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PullReadinessPanel } from './readiness'
 import { MobilePullCodeReview } from './code-review'
@@ -163,6 +165,7 @@ export function PullDetail({
     refresh,
     invalidate,
     acceptCurrentAccount,
+    compareRevisions,
     readConnected,
   } = usePullDetail(repositoryId, number, account, { tab })
   const [previousChanges, setPreviousChanges] = useState<typeof detail>(null)
@@ -172,6 +175,16 @@ export function PullDetail({
   useEffect(() => {
     if (changesCurrent) setPreviousChanges(detail)
   }, [detail, changesCurrent])
+  const comparison = usePullRevisionComparison({
+    detail,
+    previous: previousChanges,
+    supported: snapshot?.githubPullRevisionComparisonSupported === true,
+    scope: JSON.stringify([repositoryId, number, account]),
+    load: compareRevisions,
+    switchRevision: () => setPreviousChanges(detail),
+  })
+  const comparisonEnabled = readConnected && sections.changes.ready && !detail?.stale
+
   const onPosted = () => {
     invalidate()
     invalidatePullList(readCache, repositoryId)
@@ -882,7 +895,7 @@ export function PullDetail({
                       secondary
                       label={uiText('Switch revision')}
                       disabled={!readConnected || !sections.changes.ready || detail.stale}
-                      onPress={() => setPreviousChanges(detail)}
+                      onPress={comparison.switchRevision}
                     />
                   </View>
                 )}
@@ -893,33 +906,70 @@ export function PullDetail({
                     </InterfaceText>
                   </Text>
                 )}
-                {changesOpened && changesDetail && (
-                  <PullChanges
-                    active={tab === 'changes' && changesCurrent}
-                    key={`${repositoryId}:${detail.pull.number}`}
-                    repositoryId={repositoryId}
-                    detail={changesDetail}
-                    onAskAgent={
-                      !changesCurrent || actionDisabled
-                        ? undefined
-                        : (path) => setAgentContext({ detail: changesDetail, path })
-                    }
-                    viewportHeight={bodyHeight}
-                    initialPath={destination?.path}
-                    fragment={fragment}
-                    onAnchor={tab === 'changes' ? scrollToAnchor : undefined}
-                    onOpen={open}
-                    onAction={actionDisabled || !changesCurrent ? undefined : openAction}
-                    onLineComment={
-                      actionDisabled || !changesCurrent
-                        ? undefined
-                        : (path) => {
-                            lineOrigin.current = detail
-                            setLineComment(path)
-                          }
-                    }
-                  />
+                {comparison.available && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    <Action
+                      secondary
+                      label={uiText('Full PR diff')}
+                      disabled={!comparison.visible}
+                      onPress={comparison.close}
+                    />
+                    <Action
+                      secondary
+                      label={uiText('Since previous revision')}
+                      disabled={!comparisonEnabled || comparison.visible}
+                      onPress={comparison.open}
+                    />
+                  </View>
                 )}
+                {comparison.visible && comparison.state.status === 'loading' && (
+                  <Text accessibilityLiveRegion="polite">{uiText('Loading comparison…')}</Text>
+                )}
+                {comparison.visible && comparison.state.status === 'failed' && (
+                  <>
+                    <Text style={styles.error} accessibilityLiveRegion="polite">
+                      {comparison.state.error}
+                    </Text>
+                    <Action
+                      secondary
+                      label={uiText('Retry')}
+                      disabled={!comparisonEnabled}
+                      onPress={comparison.open}
+                    />
+                  </>
+                )}
+                {comparison.visible && comparison.state.status === 'ready' && (
+                  <PullRevisionComparisonView comparison={comparison.state.value} onOpen={open} />
+                )}
+                <View style={{ display: comparison.visible ? 'none' : 'flex' }}>
+                  {changesOpened && changesDetail && (
+                    <PullChanges
+                      active={tab === 'changes' && changesCurrent && !comparison.visible}
+                      key={`${repositoryId}:${detail.pull.number}`}
+                      repositoryId={repositoryId}
+                      detail={changesDetail}
+                      onAskAgent={
+                        !changesCurrent || actionDisabled
+                          ? undefined
+                          : (path) => setAgentContext({ detail: changesDetail, path })
+                      }
+                      viewportHeight={bodyHeight}
+                      initialPath={destination?.path}
+                      fragment={fragment}
+                      onAnchor={tab === 'changes' ? scrollToAnchor : undefined}
+                      onOpen={open}
+                      onAction={actionDisabled || !changesCurrent ? undefined : openAction}
+                      onLineComment={
+                        actionDisabled || !changesCurrent
+                          ? undefined
+                          : (path) => {
+                              lineOrigin.current = detail
+                              setLineComment(path)
+                            }
+                      }
+                    />
+                  )}
+                </View>
               </View>
             </View>
           </ScrollView>

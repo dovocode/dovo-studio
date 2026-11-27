@@ -17,7 +17,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './intent-prefetch': `export const usePullIntentPrefetch=()=>({intent:()=>{},prefetch:null});`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:key==='checks'?(window.checksError??''):'',detail:window.detail,refresh:()=>{window.checkRefreshes=(window.checkRefreshes??0)+1}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:key==='checks'?(window.checksError??''):'',detail:window.detail,refresh:()=>{window.checkRefreshes=(window.checkRefreshes??0)+1}}])),detail:window.detail,compareRevisions:async(previousHead,head)=>{window.compared=[previousHead,head];return {url:'https://github.com/team/project/compare/'+previousHead+'...'+head,limited:false,files:[{path:'src/follow-up.ts',status:'modified',additions:1,deletions:1,patch:'@@ -1 +1 @@\\n-old\\n+new'}]};},readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export {PullPipelineRunsContent} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';export const usePullPipelineRuns=()=>({runs:(window.pipelineRuns??[]).map((run,index)=>({id:String(index),number:String(index+1),title:'Pipeline build',url:'https://github.com/team/project/actions/runs/'+index,updatedAt:'2026-10-04',...run})),connected:window.store.connected,busy:false,selected:null,setSelected:()=>{},load:()=>{window.pipelineRefreshes=(window.pipelineRefreshes??0)+1}});`,
   '../../work/content': `export const WorkContent=()=>null;`,
@@ -1297,6 +1297,31 @@ try {
     2,
   )
   assert.deepEqual(errors, [])
+  await page.evaluate(() => {
+    window.store.snapshot = { githubPullRevisionComparisonSupported: true }
+    window.detail = {
+      ...window.detail,
+      destination: 'verified-destination',
+      pull: { ...window.detail.pull, provider: 'github', headSha: 'a'.repeat(40) },
+    }
+    window.showDestination('changes', '#files')
+  })
+  await page
+    .getByRole('region', { name: 'PR files' })
+    .waitFor({ state: 'attached' })
+    .catch(() => {})
+  await page.evaluate(() => {
+    window.detail = { ...window.detail, pull: { ...window.detail.pull, headSha: 'c'.repeat(40) } }
+    window.showDestination('changes', '#files')
+  })
+  await page.getByRole('button', { name: 'Since previous revision' }).click()
+  await page
+    .getByRole('region', { name: 'Since previous revision' })
+    .getByRole('button', { name: 'src/follow-up.ts' })
+    .waitFor()
+  assert.deepEqual(await page.evaluate(() => window.compared), ['a'.repeat(40), 'c'.repeat(40)])
+  await page.getByRole('button', { name: 'Full PR diff' }).click()
+  assert.equal(await page.getByRole('region', { name: 'Since previous revision' }).count(), 0)
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts, embedded previews and visible merge/auto-merge footers at 1440×960, 1100×960 and 1440×720 passed.',
   )

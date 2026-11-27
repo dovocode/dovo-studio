@@ -1,3 +1,4 @@
+import { QueueTemplates } from './queue-templates'
 import { NativeGoal } from './native-goal'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Pause, CircleAlert } from 'lucide-react'
@@ -234,6 +235,7 @@ export function ComposerActivity(props: { task: Task; pending?: readonly Pending
     <>
       <NativeGoal key={`${props.task.id}:${props.task.sessionId}`} task={props.task} />
       <QueuedActivity {...props} />
+      <QueueTemplates key={`${props.task.repositoryId}:${props.task.id}`} task={props.task} />
     </>
   )
 }

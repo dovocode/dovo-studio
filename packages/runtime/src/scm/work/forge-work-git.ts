@@ -2,7 +2,7 @@ import type { ForgePipelineSection, ForgePipelineDetail } from '@dovo/protocol'
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { Schema, Effect } from 'effect'
-import { pipelineActionAllowed } from '@dovo/protocol'
+import { pipelineActionAllowed, pipelineRevision, pipelineSignal } from '@dovo/protocol'
 import type {
   ForgeIssue,
   ForgeIssueCreate,
@@ -50,6 +50,7 @@ const run = mutableStruct({
   title: Schema.optional(Schema.String),
   html_url: Schema.String,
   head_branch: Schema.optional(Schema.String),
+  head_repository: Schema.optional(Schema.NullOr(mutableStruct({ id: Schema.Number }))),
   head_sha: Schema.optional(Schema.String),
   prettyref: Schema.optional(Schema.String),
   commit_sha: Schema.optional(Schema.String),
@@ -445,6 +446,63 @@ export class GitForgeWork implements ForgeWorkProvider {
       throw new HttpError(409, 'GitHub did not return the requested run attempt.')
     return current.status === 'completed' && current.conclusion ? current.conclusion : undefined
   }
+  async comparePipeline(id: string, revision?: string) {
+    if (this.provider !== 'github' || !/^[1-9][0-9]*$/.test(id))
+      throw new HttpError(400, 'Run comparison requires a GitHub Actions workflow.')
+    const raw = decode(run, await this.get(`actions/runs/${id}`))
+    const current = this.normalizeRun(raw)
+    if (current.id !== id || pipelineRevision(current) !== revision)
+      throw new HttpError(409, 'The run changed. Refresh its details before comparing.')
+    if (
+      pipelineSignal(current.status).tone !== 'danger' ||
+      !raw.workflow_id ||
+      !raw.head_branch ||
+      !raw.created_at ||
+      !raw.run_attempt
+    )
+      throw new HttpError(409, 'This run has no failed GitHub Actions attempt to compare.')
+
+    const params = new URLSearchParams({
+      branch: raw.head_branch,
+      status: 'success',
+      created: `<=${raw.created_at}`,
+      per_page: '100',
+    })
+    const loadJobs = async (selected: typeof raw): Promise<ForgePipelineDetail> => {
+      const jobs: ForgePipelineDetail['jobs'] = []
+      for (let page = 1; page <= 21; page++) {
+        const batch = await this.pipelineJobs(selected, page, 'jobs')
+        jobs.push(...batch.jobs)
+        if (!batch.next) return { run: this.normalizeRun(selected), jobs }
+      }
+      throw new HttpError(
+        409,
+        'This run has too many jobs to compare in Studio. Open its logs on GitHub.',
+      )
+    }
+    for (let page = 1; page <= 10; page++) {
+      params.set('page', String(page))
+      const { workflow_runs: candidates } = decode(
+        mutableStruct({ workflow_runs: mutableArray(run) }),
+        await this.get(`actions/workflows/${encodeURIComponent(raw.workflow_id)}/runs?${params}`),
+      )
+      const previous = candidates.find(
+        (candidate) =>
+          candidate.id !== raw.id &&
+          !!candidate.run_attempt &&
+          candidate.conclusion === 'success' &&
+          candidate.head_branch === raw.head_branch &&
+          candidate.head_repository?.id === raw.head_repository?.id &&
+          (candidate.run_number ?? candidate.id) < (raw.run_number ?? raw.id),
+      )
+      if (previous) {
+        const [failed, baseline] = await Promise.all([loadJobs(raw), loadJobs(previous)])
+        return { current: failed, baseline }
+      }
+      if (candidates.length < 100) break
+    }
+    return { current: { run: current, jobs: [] }, baseline: null }
+  }
   async pipeline(
     id: string,
     cursor?: string,
@@ -465,10 +523,38 @@ export class GitForgeWork implements ForgeWorkProvider {
       page = workPage(cursor)
     const current = decode(run, await this.get(`actions/runs/${n}`))
     if (section === 'overview') return { run: this.normalizeRun(current), jobs: [] }
+    const { jobs: normalized, next } = await this.pipelineJobs(current, page, section)
+    let graph: ReturnType<typeof workflowGraph> | undefined
+    let graphNotice: string | undefined
+    if (section !== 'jobs' && this.provider === 'github' && current.path && current.head_sha) {
+      try {
+        const path = current.path.split('@')[0]
+        if (!path.startsWith('.github/workflows/') || path.split('/').includes('..'))
+          throw new Error('Workflow path is unavailable')
+        const file = decode(
+          mutableStruct({ encoding: Schema.String, content: Schema.String }),
+          await this.get(
+            `contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(current.head_sha)}`,
+          ),
+        )
+        if (file.encoding !== 'base64' || file.content.length > 1_500_000)
+          throw new Error('Workflow source is unavailable or too large')
+        graph = workflowGraph(Buffer.from(file.content, 'base64').toString('utf8'), normalized)
+      } catch (error) {
+        graphNotice = `Dependencies unavailable: ${errorMessage(error)}`
+      }
+    }
+    return { run: this.normalizeRun(current), jobs: normalized, graph, graphNotice, next }
+  }
+  private async pipelineJobs(
+    current: typeof run.Type,
+    page: number,
+    section?: ForgePipelineSection,
+  ) {
     const jobsPath =
       section === 'jobs' && this.provider === 'github' && current.run_attempt
-        ? `actions/runs/${n}/attempts/${current.run_attempt}/jobs`
-        : `actions/runs/${n}/jobs`
+        ? `actions/runs/${current.id}/attempts/${current.run_attempt}/jobs`
+        : `actions/runs/${current.id}/jobs`
     const data =
       section === 'graph'
         ? this.provider === 'forgejo'
@@ -503,31 +589,8 @@ export class GitForgeWork implements ForgeWorkProvider {
         completedAt: pipelineTime(step.completed_at),
       })),
     }))
-    let graph: ReturnType<typeof workflowGraph> | undefined
-    let graphNotice: string | undefined
-    if (section !== 'jobs' && this.provider === 'github' && current.path && current.head_sha) {
-      try {
-        const path = current.path.split('@')[0]
-        if (!path.startsWith('.github/workflows/') || path.split('/').includes('..'))
-          throw new Error('Workflow path is unavailable')
-        const file = decode(
-          mutableStruct({ encoding: Schema.String, content: Schema.String }),
-          await this.get(
-            `contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(current.head_sha)}`,
-          ),
-        )
-        if (file.encoding !== 'base64' || file.content.length > 1_500_000)
-          throw new Error('Workflow source is unavailable or too large')
-        graph = workflowGraph(Buffer.from(file.content, 'base64').toString('utf8'), normalized)
-      } catch (error) {
-        graphNotice = `Dependencies unavailable: ${errorMessage(error)}`
-      }
-    }
     return {
-      run: this.normalizeRun(current),
       jobs: normalized,
-      graph,
-      graphNotice,
       next: jobs.length === 50 && this.provider !== 'forgejo' ? String(page + 1) : undefined,
     }
   }

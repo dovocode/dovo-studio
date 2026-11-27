@@ -63,6 +63,7 @@ export * from './auth/access.js'
 
 export * from './tasks/title-generation.js'
 export * from './tasks/task-message.js'
+export * from './tasks/queue-templates.js'
 export * from './tasks/bot-work.js'
 export * from './tasks/bots.js'
 export * from './tasks/bot-template.js'

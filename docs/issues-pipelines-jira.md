@@ -424,3 +424,19 @@ removing its connection.
 
 On desktop and web, hover over or focus an issue link in a thread to see its title and status when
 Dovo can match one connected Git or Jira source. Select the link to use the normal link actions.
+
+## Recover work drafts and compare GitHub Actions runs
+
+A pipeline run draft belongs to its source, starting pipeline, and starting ref. You can leave one
+run form unfinished and open another. Submitting the second form clears its own draft. On mobile,
+use **Recover older pipeline draft** to move a draft saved before branch-specific drafts into the
+open form.
+
+On desktop and web, an issue comment with a verified source destination is saved in the local app or
+browser. Reopen the same issue after a restart to recover it. Different issues and source accounts
+have their own drafts.
+
+From a failed GitHub Actions run choose **Compare with last success**. Studio looks for an earlier
+successful run of the same workflow and branch. It shows failed jobs first and links to the logs for
+the two attempts. Where job and step names uniquely match, Studio links directly to the first failed
+step and its result in the successful run.

@@ -1,3 +1,5 @@
+import { usePullRevisionComparison } from '@dovo/studio-core/comparison'
+import { PullRevisionComparisonView } from './revision-comparison'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@dovo/studio-ui/tabs'
 import { PullReadinessPanel } from './readiness'
@@ -140,12 +142,8 @@ function PullDetailContent({
   const [starting, setStarting] = useApplicationState(false)
   const stateKey = usePullStateKey(repositoryId, number, connectionId)
   const [tab, setTab] = useRetainedPullState(tabCache, stateKey, initialTab ?? 'overview')
-  const { detail, error, busy, readConnected, refresh, invalidate, sections } = usePullDetail(
-    repositoryId,
-    number,
-    connectionId,
-    { tab, discussionInOverview: true },
-  )
+  const { detail, error, busy, readConnected, refresh, invalidate, sections, compareRevisions } =
+    usePullDetail(repositoryId, number, connectionId, { tab, discussionInOverview: true })
   const pipelineRuns = usePullPipelineRuns({
     repositoryId,
     sha: detail?.pull.headSha ?? '',
@@ -231,6 +229,15 @@ function PullDetailContent({
   useEffect(() => {
     if (changesCurrent) setPreviousChanges(detail)
   }, [detail, changesCurrent])
+  const comparison = usePullRevisionComparison({
+    detail,
+    previous: previousChanges,
+    supported: snapshot?.githubPullRevisionComparisonSupported === true,
+    scope: JSON.stringify([repositoryId, number, connectionId]),
+    load: compareRevisions,
+    switchRevision: () => setPreviousChanges(detail),
+  })
+  const comparisonEnabled = readConnected && sections.changes.ready && !detail?.stale
 
   const content = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef(
@@ -1035,7 +1042,7 @@ function PullDetailContent({
                     size="sm"
                     variant="outline"
                     disabled={!connected || !sections.changes.ready || detail.stale}
-                    onClick={() => setPreviousChanges(detail)}
+                    onClick={comparison.switchRevision}
                   >
                     Switch revision
                   </Button>
@@ -1046,26 +1053,70 @@ function PullDetailContent({
                   Updating files · showing the previous revision read-only.
                 </p>
               )}
-              {changesOpened && changesDetail && (
-                <PullChanges
-                  active={tab === 'changes' && changesCurrent}
-                  key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
-                  detail={changesDetail}
-                  embedded={embedded}
-                  initialFragment={summaryFragment || initialFragment}
-                  repositoryId={repositoryId}
-                  onPosted={changed}
-                  thread={thread}
-                  onAskAgent={repository ? (selection) => setAsking({ selection }) : undefined}
-                  onSteer={(value, baseline) => {
-                    if (!repository)
-                      throw new Error('Connect this project before starting an agent thread.')
-                    setObjective(value)
-                    setObjectiveBaseline(baseline)
-                    setStarting(true)
-                  }}
-                />
+              {comparison.available && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-pressed={!comparison.visible}
+                    onClick={comparison.close}
+                  >
+                    {uiText('Full PR diff')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-pressed={comparison.visible}
+                    disabled={!comparisonEnabled || comparison.visible}
+                    onClick={comparison.open}
+                  >
+                    {uiText('Since previous revision')}
+                  </Button>
+                </div>
               )}
+              {comparison.visible && comparison.state.status === 'loading' && (
+                <p role="status">{uiText('Loading comparison…')}</p>
+              )}
+              {comparison.visible && comparison.state.status === 'failed' && (
+                <>
+                  <p role="alert" className="text-destructive">
+                    {comparison.state.error}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!comparisonEnabled}
+                    onClick={comparison.open}
+                  >
+                    {uiText('Retry')}
+                  </Button>
+                </>
+              )}
+              {comparison.visible && comparison.state.status === 'ready' && (
+                <PullRevisionComparisonView comparison={comparison.state.value} />
+              )}
+              <div hidden={comparison.visible}>
+                {changesOpened && changesDetail && (
+                  <PullChanges
+                    active={tab === 'changes' && changesCurrent && !comparison.visible}
+                    key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
+                    detail={changesDetail}
+                    embedded={embedded}
+                    initialFragment={summaryFragment || initialFragment}
+                    repositoryId={repositoryId}
+                    onPosted={changed}
+                    thread={thread}
+                    onAskAgent={repository ? (selection) => setAsking({ selection }) : undefined}
+                    onSteer={(value, baseline) => {
+                      if (!repository)
+                        throw new Error('Connect this project before starting an agent thread.')
+                      setObjective(value)
+                      setObjectiveBaseline(baseline)
+                      setStarting(true)
+                    }}
+                  />
+                )}
+              </div>
             </TabsPanel>
           </div>
           {asking && (

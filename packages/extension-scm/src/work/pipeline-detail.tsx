@@ -25,12 +25,14 @@ export function PipelineDetail({
   graphReady = true,
   jobsStatus,
   graphStatus,
+  comparison,
 }: {
   detail: ForgePipelineDetail
   jobsReady?: boolean
   graphReady?: boolean
   jobsStatus?: ReactNode
   graphStatus?: ReactNode
+  comparison?: ReactNode
   notice?: string
   repositoryId: string
   disabled: boolean
@@ -130,6 +132,7 @@ export function PipelineDetail({
           </Button>
         )}
       </header>
+      {comparison}
       <WorkTaskLinks key={run.url} repositoryId={repositoryId} source={run} disabled={disabled} />
       {notice && (
         <p role="status" className="text-xs text-muted-foreground">

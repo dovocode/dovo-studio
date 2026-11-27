@@ -63,6 +63,7 @@ const idempotentPaths = new Set(['/api/tasks/message', '/api/tasks/steer'])
 // task creation or provider write here could replay a side effect after a lost response.
 const postReadPaths = new Set([
   '/api/tasks/commits/read',
+  '/api/tasks/queue-templates/list',
   '/api/tasks/commits/changes',
   '/api/tasks/commits/file-preview',
   '/api/tasks/files/directory',
@@ -78,12 +79,14 @@ const postReadPaths = new Set([
   '/api/scm/pulls',
   '/api/scm/pulls/overview',
   '/api/scm/pulls/detail',
+  '/api/scm/pulls/compare-revisions',
   '/api/scm/pulls/options/read',
   '/api/scm/work/options',
   '/api/scm/work/issues/list',
   '/api/scm/work/issues/detail',
   '/api/scm/work/pipelines/list',
   '/api/scm/work/pipelines/detail',
+  '/api/scm/work/pipelines/compare',
   '/api/scm/work/pipelines/definitions',
   '/api/scm/jira/projects/read',
   '/api/scm/connections/read',

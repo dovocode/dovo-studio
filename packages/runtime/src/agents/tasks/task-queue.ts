@@ -562,6 +562,44 @@ export class TaskQueue {
     this.store.updateTask(id, (task) => ({ ...task, queue, checkoutLocked: true }))
     this.activity?.add('queue', id, 'Queue reordered', { messageId, beforeMessageId })
   }
+  stageTemplate(
+    id: string,
+    requestId: string,
+    templateId: string,
+    readSteps: () => readonly string[],
+  ) {
+    return this.store.applyQueueRequest(id, `template:${requestId}`, templateId, () => {
+      const task = this.store.taskSummary(id)
+      if (task.machineHandoff || task.archived || task.archivedAt)
+        throw new HttpError(409, 'Open an active thread to add a queue template.')
+      if (task.queue?.some((message) => message.steering))
+        throw new HttpError(
+          409,
+          'Wait until the steering message is delivered before applying a template.',
+        )
+      const steps = readSteps()
+      const current = task.queue ?? []
+      if (current.length + steps.length > 50)
+        throw new HttpError(409, 'This template would exceed the 50-message queue limit.')
+      const createdAt = new Date().toISOString()
+      this.store.updateTask(id, (thread) => ({
+        ...thread,
+        checkoutLocked: true,
+        queuePaused: true,
+        queue: [
+          ...current,
+          ...steps.map((text) => ({
+            id: randomUUID(),
+            role: 'user' as const,
+            source: { kind: 'user' as const },
+            text,
+            createdAt,
+            explicitQueue: true,
+          })),
+        ],
+      }))
+    })
+  }
   restore(
     id: string,
     input: {
@@ -577,7 +615,7 @@ export class TaskQueue {
     },
   ) {
     const receipt = createHash('sha256').update(JSON.stringify(input)).digest('hex')
-    return this.store.restoreQueue(id, input.requestId, receipt, () => {
+    return this.store.applyQueueRequest(id, input.requestId, receipt, () => {
       const task = this.store.taskSummary(id)
       if (!sameTurnSettings(task.draftTurnSettings, input.expectedDraftTurnSettings))
         throw new HttpError(

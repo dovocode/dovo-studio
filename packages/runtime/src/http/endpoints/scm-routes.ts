@@ -9,6 +9,7 @@ import {
   jiraBoardsSchema,
   jiraSprintsSchema,
   pullDetailSectionSchema,
+  pullRevisionComparisonInputSchema,
   pullSummarySchema,
   forgeSourceIdentitySchema,
   forgeReadGuardFields,
@@ -61,6 +62,7 @@ import {
   removeWorktreeEffect,
   worktreeChoicesEffect,
 } from '../../scm/git/worktrees.js'
+import { guardSource } from '../../scm/forges/integration/source-context.js'
 import { branchChanges } from '../../scm/work/change-summary.js'
 import { ProjectInstructions } from '../../scm/repositories/project-instructions.js'
 import { repositoryPath } from '../../scm/repositories/paths.js'
@@ -515,6 +517,17 @@ export function scmRoute(request: IncomingMessage, path: string) {
             )
           if (input.taskId || input.number !== target.number)
             throw new HttpError(400, 'PR target does not match its URL')
+          if (path === '/api/scm/pulls/compare-revisions') {
+            const scope = yield* serviceResult(pulls.sourceContext())
+            guardSource(scope, input)
+            return yield* serviceResult(
+              s.pulls.compareRevisionsInContext(
+                pulls.cwd,
+                decode(pullRevisionComparisonInputSchema, input),
+                scope,
+              ),
+            )
+          }
           if (path === '/api/scm/pulls/detail' && input.filePath !== undefined)
             return yield* serviceResult(
               pulls.file(
@@ -593,6 +606,16 @@ export function scmRoute(request: IncomingMessage, path: string) {
           input.refresh === true
             ? yield* serviceResult(s.pulls.guard(cwd, input))
             : undefined
+        if (path === '/api/scm/pulls/compare-revisions') {
+          const scope = readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd)))
+          return yield* serviceResult(
+            s.pulls.compareRevisionsInContext(
+              cwd,
+              decode(pullRevisionComparisonInputSchema, input),
+              scope,
+            ),
+          )
+        }
         if (path === '/api/scm/pulls/detail' && input.filePath !== undefined) {
           const scope = readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd)))
           return yield* serviceResult(

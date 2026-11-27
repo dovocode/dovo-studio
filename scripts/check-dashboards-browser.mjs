@@ -100,8 +100,9 @@ const bundle = await bundleBrowser(
         const Workspace = createContext(null)
         const profile = { id: 'owner', name: 'Test runtime', connection: { address: 'http://test:51464' } }
         const workspace = { repositories: [{ id: 'repo', name: 'Example project' }], tasks: [{ id: 'thread', title: 'Delivery thread' }], automations: [] }
-        const snapshot = { dashboardsSupported: true, studioDataSourcesSupported: true, studioExtensionsSupported: true, studioExtensionComponentVersion: 1, studioExtensionCustomPropsSupported: true, studioExtensionMarketplaceSupported: true, workspace, terminals: [] }
+        const snapshot = { dashboardsSupported: true, dashboardSaveReceiptsSupported: true, studioDataSourcesSupported: true, studioExtensionsSupported: true, studioExtensionComponentVersion: 1, studioExtensionCustomPropsSupported: true, studioExtensionMarketplaceSupported: true, workspace, terminals: [] }
         const dashboards = []
+        const saveReceipts = new Map()
         let extension
         let marketplaceEntry
         let installedMarketplace
@@ -201,10 +202,17 @@ const bundle = await bundleBrowser(
             input.dataSources || !item.tiles.some((tile) => tile.kind === 'cli' || tile.refreshSeconds || tile.panels),
           ) }
           if (path.endsWith('/save')) {
+            const saved = saveReceipts.get(input.requestId)
+            if (saved) return { dashboard: saved }
             const index = dashboards.findIndex((item) => item.id === input.dashboard.id)
             if ((dashboards[index]?.revision ?? 0) !== input.expectedRevision) throw Error('Dashboard changed')
             const dashboard = { ...input.dashboard, revision: input.expectedRevision + 1 }
             dashboards.splice(index < 0 ? dashboards.length : index, index < 0 ? 0 : 1, dashboard)
+            if (input.requestId) saveReceipts.set(input.requestId, dashboard)
+            if (window.loseDashboardSaveReply) {
+              window.loseDashboardSaveReply = false
+              throw Error('Dashboard save response lost')
+            }
             return { dashboard }
           }
           if (path.endsWith('/session')) return { terminalId: sessions.get(input.tileId) ?? null }
@@ -334,16 +342,66 @@ try {
   )
   await page.getByRole('button', { name: 'Command', exact: true }).click()
   await page.getByLabel('Project').selectOption('repo')
-  await page.getByLabel('Command', { exact: true }).fill('pnpm build')
+  await page.getByRole('textbox', { name: 'Command', exact: true }).fill('pnpm build')
   await page.getByRole('button', { name: 'Move earlier' }).last().click()
   await addTile('Iframe')
   await page.getByLabel('URL', { exact: true }).last().fill('https://dashboard-embed.invalid/')
+  const layout = page.getByRole('group', { name: 'Dashboard layout', exact: true })
+  const settings = page.getByRole('complementary', { name: 'Tile settings' })
+  const tile = (name) =>
+    layout.locator('[data-layout-tile]').filter({
+      has: page.getByRole('button', { name, exact: true }),
+    })
+  const order = () =>
+    layout
+      .getByRole('button')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label')))
+  await settings.getByLabel('Height').selectOption('1')
+  const short = await tile('Iframe').boundingBox()
+  const tall = await tile('Command').boundingBox()
+  assert.ok(tall.height > short.height * 2, 'Height immediately spans another row and its gutter')
+  await settings.getByLabel('Height').selectOption('2')
+  await settings.getByLabel('Width').selectOption('4')
+  assert.ok(
+    (await tile('Iframe').boundingBox()).width > tall.width * 1.9,
+    'Width updates the draft grid',
+  )
+  await settings.getByLabel('Width').selectOption('2')
+  await tile('Iframe').locator('[draggable=true]').dragTo(tile('HTTP data'))
+  assert.deepEqual(await order(), ['Command', 'Iframe', 'HTTP data'])
+  const [firstBox, secondBox] = await Promise.all([
+    tile('Command').boundingBox(),
+    tile('Iframe').boundingBox(),
+  ])
+  assert.equal(firstBox.y, secondBox.y)
+  assert.ok(secondBox.x > firstBox.x + firstBox.width)
+  await settings.getByRole('button', { name: 'Move later' }).focus()
+  await page.keyboard.press('Enter')
+  assert.deepEqual(await order(), ['Command', 'HTTP data', 'Iframe'])
+  assert.equal(
+    await layout.getByRole('button', { name: 'Iframe', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
 
   await page.evaluate(() => window.setConnected(false))
   await page.getByRole('status').getByText('Computer offline.', { exact: false }).waitFor()
   assert.equal(await page.getByLabel('Dashboard title').inputValue(), 'Delivery')
   await page.evaluate(() => window.setConnected(true))
+  await page.evaluate(() => {
+    window.loseDashboardSaveReply = true
+  })
   await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await page.getByText('Dashboard save response lost', { exact: true }).waitFor()
+  assert.equal(await page.getByLabel('Dashboard title').inputValue(), 'Delivery')
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  const deliverySaves = await page.evaluate(() =>
+    window.calls.filter(
+      ({ path, input }) => path === '/api/dashboards/save' && input.dashboard.title === 'Delivery',
+    ),
+  )
+  assert.equal(deliverySaves.length, 2)
+  assert.match(deliverySaves[0].input.requestId, /^[0-9a-f-]{36}$/i)
+  assert.deepEqual(deliverySaves[0].input, deliverySaves[1].input)
   await page.getByRole('heading', { name: 'HTTP data' }).waitFor()
   assert.deepEqual(await page.locator('section h2').allTextContents(), [
     'Command',
@@ -463,7 +521,10 @@ try {
   await retryPicker.setFiles(path)
   assert.equal(await page.getByLabel('Dashboard title').inputValue(), 'Delivery')
   assert.equal(await page.getByLabel('Project').inputValue(), '')
-  assert.equal(await page.getByLabel('Command').inputValue(), 'pnpm build')
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Command', exact: true }).inputValue(),
+    'pnpm build',
+  )
   assert.equal((await page.evaluate(() => window.calls)).length, calls.length)
 
   await page.evaluate(() => window.setConnected(true))
@@ -859,7 +920,7 @@ try {
   await page.getByLabel('Dashboard title').fill('Local metrics')
   await addTile('CLI data')
   await page.getByLabel('Project').selectOption('repo')
-  await page.getByLabel('Command', { exact: true }).fill('your-cli --json')
+  await page.getByRole('textbox', { name: 'Command', exact: true }).fill('your-cli --json')
   await page.getByLabel('Display').selectOption('number')
   await page.getByLabel('Refresh interval in seconds').fill('30')
   await page.getByRole('button', { name: 'Add display' }).click()

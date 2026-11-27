@@ -472,10 +472,12 @@ async function checkStartupDefaults(browser) {
           import {CreateBot} from './apps/mobile/src/bots/bot-create';
           import {CreatePull} from './apps/mobile/src/scm/pulls/list/create-pull';
           import {WorkForm} from './apps/mobile/src/scm/work/work-form';
+          import {computerIntegrationDraftKey} from './apps/mobile/src/runtime/state/detail-drafts';
           const connection={address:'http://studio.local:51464',token:'fixture-device-token-123456',runtimeId:'runtime-a'};
           const profile={id:'computer-a',name:'Studio',connection};
           const repositories=[{id:'repo',name:'App',path:'/app',branch:'main'},{id:'dovo:scratch',name:'No Project',kind:'scratch',path:'/scratch',branch:'main'}];
           const snapshot={botsSupported:true,workspace:{repositories,tasks:[],agents:[],automations:[]}};
+          window.legacyWorkKey='dovo.detail-drafts.v1.work-form:'+computerIntegrationDraftKey(profile,snapshot,'repo',undefined,'work-form',undefined,'run',undefined,undefined);
           const results={'/api/scm/pulls/options/read':{draft:true},'/api/scm/pulls/overview':{pulls:[],hasMore:false},
             '/api/scm/work/pipelines/definitions':{items:[{id:'build',name:'Build'},{id:'deploy',name:'Deploy'}],manual:false}};
           // A held pipeline list stands in for a slow forge.
@@ -495,7 +497,7 @@ async function checkStartupDefaults(browser) {
             window.openEditor=setEditor;
             return editor==='bot'?<CreateBot onClose={()=>setEditor(null)} onCreated={()=>{}}/>
               :editor==='pull'?<CreatePull repositoryId="repo" onClose={()=>setEditor(null)} onCreated={()=>{}}/>
-              :editor==='work'?<WorkForm kind="run" repositoryId="repo" options={options} disabled={false} onClose={()=>setEditor(null)} onDone={()=>{}}/>:null;
+              :editor?.startsWith('work')?<WorkForm key={editor} kind="run" repositoryId="repo" initialRef={editor==='work-other-ref'?'another-ref':undefined} options={options} disabled={false} onClose={()=>setEditor(null)} onDone={()=>{}}/>:null;
           }
           createRoot(document.getElementById('app')).render(<App/>);
         `,
@@ -747,6 +749,36 @@ async function checkStartupDefaults(browser) {
   await waitForRecord('work-form', 'ref', 'hotfix')
   await waitForPipeline('deploy')
   assert.equal((await record('work-form')).definition, 'deploy')
+  await open('work-other-ref')
+  await waitForPipeline('build')
+  await waitForValue('Branch or ref', 'another-ref')
+  await open('work')
+  await waitForPipeline('deploy')
+  await waitForValue('Branch or ref', 'hotfix')
+  await page.evaluate(() => {
+    localStorage.setItem(
+      window.legacyWorkKey,
+      JSON.stringify({
+        title: '',
+        body: '',
+        type: 'Issue',
+        state: '',
+        assignees: '',
+        labels: '',
+        definition: 'deploy',
+        ref: 'older-draft-ref',
+        inputs: '{"target":"staging"}',
+      }),
+    )
+  })
+  await restart()
+  await open('work-other-ref')
+  await waitForValue('Branch or ref', 'another-ref')
+  await page.getByRole('button', { name: 'Recover older pipeline draft' }).click()
+  await waitForValue('Branch or ref', 'older-draft-ref')
+  await page.waitForFunction(() => localStorage.getItem(window.legacyWorkKey) === null)
+  await open('work')
+  await waitForValue('Branch or ref', 'hotfix')
   const stored = await page.evaluate(() => JSON.stringify(localStorage))
   assert.ok(!stored.includes('fixture-device-token-123456'), 'Pairing token reached storage')
   assert.deepEqual(errors, [])

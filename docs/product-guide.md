@@ -318,8 +318,9 @@ The desktop and web command palette (⌘/Ctrl+K) lists a section only while the 
 **Open Browser** focuses a detached browser window first, as the sidebar does. Settings pages appear
 as **Open … settings**, for example **Open Browser settings**. **New thread**, **Go to thread…** and
 **Search conversations…** work from every view while Threads is in the sidebar. Outside Threads they
-open Threads first. With a thread selected, use the palette to pin, snooze, settle, or archive it.
-The same commands show the reverse action when it is available.
+open Threads first. If one computer cannot search, select **Retry** beside that computer. Results
+from other computers stay visible. With a thread selected, use the palette to pin, snooze, settle,
+or archive it. The same commands show the reverse action when it is available.
 
 - **This app** (stored on this device only):
   - **General** — project organization, default task sort, navigation, 12- or 24-hour time,

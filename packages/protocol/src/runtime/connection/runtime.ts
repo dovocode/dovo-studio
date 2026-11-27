@@ -397,6 +397,7 @@ export const snapshotSchema = mutableStruct({
   attachmentPreparationSupported: Schema.optional(Schema.Literal(true)),
   queueRestoreReceiptsSupported: Schema.optional(Schema.Literal(true)),
   /** Prepared queue restores accept and compare `expectedPlan` and `expectedDraftPlan`. */
+  queueTemplatesSupported: Schema.optional(Schema.Literal(true)),
   queueRestorePlanSupported: Schema.optional(Schema.Literal(true)),
   checkedDraftMoveSupported: Schema.optional(Schema.Literal(true)),
   threadServersSupported: Schema.optional(Schema.Boolean),
@@ -447,6 +448,9 @@ export const snapshotSchema = mutableStruct({
   projectRtfPreviewSupported: Schema.optional(Schema.Literal(true)),
   studioDataSourcesSupported: Schema.optional(Schema.Literal(true)),
   studioSourcePoliciesSupported: Schema.optional(Schema.Literal(true)),
+  githubPullRevisionComparisonSupported: Schema.optional(Schema.Literal(true)),
+  githubPipelineComparisonSupported: Schema.optional(Schema.Literal(true)),
+  dashboardSaveReceiptsSupported: Schema.optional(Schema.Literal(true)),
   dashboardsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionCustomPropsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionAppViewsSupported: Schema.optional(Schema.Literal(true)),

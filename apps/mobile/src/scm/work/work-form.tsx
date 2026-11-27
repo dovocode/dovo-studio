@@ -85,21 +85,43 @@ export function WorkForm({
   const { read, connected, readEffect: mutationEffect, profile, snapshot } = useRuntime()
   const { readEffect } = useSourceReader(repositoryId, jiraSourceId)
   const { focused } = useNavigation()
+  const destination = initialIssue?.destination ?? options.destination
+  const scope = [destination, kind, initialIssue?.id, initialDefinition]
+  const draftKey = useRef(
+    computerIntegrationDraftKey(
+      profile,
+      snapshot,
+      repositoryId,
+      jiraSourceId,
+      'work-form',
+      ...scope,
+      ...(kind === 'run' ? [initialRef ?? ''] : []),
+    ),
+  ).current
+  const legacyKey = useRef(
+    kind === 'run'
+      ? computerIntegrationDraftKey(
+          profile,
+          snapshot,
+          repositoryId,
+          jiraSourceId,
+          'work-form',
+          ...scope,
+        )
+      : undefined,
+  ).current
+  const [legacyDraft, setLegacyDraft] =
+    useApplicationState<ReturnType<typeof workDrafts.read>>(undefined)
+  useEffect(() => {
+    if (!legacyKey) return
+    const read = () => setLegacyDraft(workDrafts.read(legacyKey))
+    const unsubscribe = workDrafts.subscribe(legacyKey, read)
+    read()
+    return unsubscribe
+  }, [legacyKey, setLegacyDraft])
   const { draft, setField, initializeField, clear, persistence } = useDetailDraft(
     workDrafts,
-    useRef(
-      computerIntegrationDraftKey(
-        profile,
-        snapshot,
-        repositoryId,
-        jiraSourceId,
-        'work-form',
-        initialIssue?.destination ?? options.destination,
-        kind,
-        initialIssue?.id,
-        initialDefinition,
-      ),
-    ).current,
+    draftKey,
     () => ({
       expectedDestination: initialIssue?.destination ?? options.destination,
       issue: initialIssue,
@@ -385,6 +407,24 @@ export function WorkForm({
       }),
     )
   }
+  const canRecoverPipelineDraft =
+    legacyKey &&
+    legacyDraft &&
+    ref === (initialRef ?? '') &&
+    inputs === '{}' &&
+    definition === (initialDefinition ?? definitions?.items[0]?.id ?? '')
+  async function recoverPipelineDraft() {
+    if (
+      !legacyKey ||
+      !legacyDraft ||
+      !canRecoverPipelineDraft ||
+      !workDrafts.write(draftKey, legacyDraft)
+    )
+      return
+    const failure = await workDrafts.settled?.(draftKey)
+    if (!failure && workDrafts.read(legacyKey) === legacyDraft) workDrafts.remove(legacyKey)
+  }
+
   return (
     <Sheet
       ref={sheet}
@@ -554,6 +594,14 @@ export function WorkForm({
             {'This action is no longer available for this issue source.'}
           </InterfaceText>
         </Text>
+      )}
+      {canRecoverPipelineDraft && (
+        <Action
+          secondary
+          label={uiText('Recover older pipeline draft')}
+          disabled={busy}
+          onPress={() => void recoverPipelineDraft()}
+        />
       )}
       <DraftStorageNotice persistence={persistence} />
       {!!error && (

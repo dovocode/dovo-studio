@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vite-plus/test'
+import { queueTemplateSource } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 import { HttpError } from '../../errors'
@@ -820,6 +821,71 @@ it('keeps the queued message and Plan when a bare restore request is out of date
     expect((await restore({ expectedPlan: false, expectedDraftPlan: true })).status).toBe(200)
     expect(store.taskSummary(task.id)).toMatchObject({ draft: 'Queued text', queue: [] })
     expect(store.taskSummary(task.id).draftPlan).toBeUndefined()
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('copies a project queue template into a paused editable queue once and preserves the composer draft', async () => {
+  const ownerToken = 'queue-template-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        { id: 'repo', name: 'Project', path: '/project', branch: 'main' },
+        { id: 'other', name: 'Other', path: '/other', branch: 'main' },
+      ],
+    }))
+    const thread = (repositoryId = 'repo') =>
+      tasks.create({ title: 'Template test', repositoryId, agentId: '', objective: '' })
+    const origin = thread()
+    const target = thread()
+    store.updateTask(target.id, (task) => ({ ...task, draft: 'Keep this draft' }))
+    tasks.queue.add(
+      origin.id,
+      'first',
+      'Reproduce the issue',
+      [],
+      undefined,
+      false,
+      false,
+      undefined,
+      { queueOnly: true },
+    )
+    tasks.queue.add(origin.id, 'second', 'Verify the fix')
+    const queueFingerprint = queueTemplateSource(
+      store.taskSummary(origin.id).queue ?? [],
+    )?.fingerprint
+    const post = (suffix: string, input: unknown) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue-templates${suffix}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+    const id = '30000000-0000-4000-8000-000000000001'
+    const requestId = '30000000-0000-4000-8000-000000000002'
+    const save = { action: 'save', taskId: origin.id, id, name: 'Bugfix', queueFingerprint }
+    expect((await post('', { ...save, queueFingerprint: 'stale' })).status).toBe(409)
+    expect((await post('', save)).status).toBe(200)
+    expect(await (await post('/list', { repositoryId: 'other' })).json()).toEqual({ templates: [] })
+    const stage = { action: 'stage', taskId: target.id, id, requestId }
+    expect((await post('', stage)).status).toBe(200)
+    expect((await post('', stage)).status).toBe(200)
+    const staged = store.taskSummary(target.id)
+    expect(staged.queue?.map(({ text }) => text)).toEqual(['Reproduce the issue', 'Verify the fix'])
+    expect(staged).toMatchObject({ queuePaused: true, draft: 'Keep this draft' })
+    expect(staged.status).not.toBe('running')
+    const message = staged.queue![0]
+    tasks.queue.edit(target.id, message.id, 'Reproduce on mobile', message.text)
+    expect((await post('', { action: 'delete', taskId: target.id, id })).status).toBe(200)
+    expect((await post('', stage)).status).toBe(200)
+    expect(store.taskSummary(target.id).queue?.map(({ text }) => text)).toEqual([
+      'Reproduce on mobile',
+      'Verify the fix',
+    ])
+    expect(await (await post('/list', { repositoryId: 'repo' })).json()).toEqual({ templates: [] })
   } finally {
     await runtime.close()
   }

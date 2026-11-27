@@ -10,6 +10,7 @@ const independentReads = new Set([
   '/api/scm/work/issues/detail',
   '/api/scm/work/pipelines/list',
   '/api/scm/work/pipelines/detail',
+  '/api/scm/work/pipelines/compare',
   '/api/scm/work/pipelines/definitions',
   '/api/scm/jira/projects/read',
   '/api/tasks/history',

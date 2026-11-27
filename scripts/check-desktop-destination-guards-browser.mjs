@@ -27,15 +27,16 @@ window.store={activeRuntimeId:'a',connection:{address:'http://a',token:'paired'}
  if(window.guardReads&&(input.expectedDestination!==window.currentDestination||input.expectedReaderIdentity!==window.currentReader))throw new RuntimeRequestError({kind:'response',status:409,message:'The read account or destination changed.'});
  if(path==='/api/scm/pulls/options/read')return decode(schema,{provider:'github',draft:true,destination:'old-destination'});
  if(path==='/api/scm/pulls/overview')return decode(schema,{pulls:[],page:1,hasMore:false});
- if(path==='/api/scm/work/pipelines/definitions')return decode(schema,{items:[{id:'build',name:'Build'}]});
+ if(path==='/api/scm/work/pipelines/definitions')return decode(schema,{items:[{id:'build',name:'Build'},{id:'release',name:'Release'}]});
+ if(window.acceptWork&&path.startsWith('/api/scm/work/'))return decode(schema,{message:'Accepted'});
  throw new RuntimeRequestError({kind:'response',status:409,message:'The displayed destination changed before dispatch.'});
 }};
 function ReadProbe(){const read=useVerifiedRead({repositoryId:'repo'});window.readVerified=()=>read('/api/scm/pulls/options/read',{repositoryId:'repo'},Schema.Unknown).then(()=>({ok:true}),error=>({error:error.message}));return <div>Read probe</div>}
 const app=createRoot(document.getElementById('app'));window.render=(mode=window.mode)=>{window.mode=mode;app.render(<ApplicationStateProvider><div key={mode}>
- {mode==='read-probe'?<ReadProbe/>:mode==='comment'?<PullCommentComposer repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['comment']}}} onDone={()=>window.completed.push('comment')}/>:
+ {mode==='empty'?null:mode==='read-probe'?<ReadProbe/>:mode==='comment'?<PullCommentComposer repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['comment']}}} onDone={()=>window.completed.push('comment')}/>:
  mode==='edit-pr'?<PullActions repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['edit'],reviewDecisions:[],mergeMethods:[]}}} mergeStatus={{headSha:window.pull.headSha,signals:[],warnings:[],checks:{busy:false,ready:true,error:'',readConnected:true,refresh:()=>{}}}} onDone={()=>window.completed.push('edit')}/>:
  mode==='create-pr'?<CreatePull initialRepositoryId="repo" onClose={()=>window.completed.push('close')} onCreated={()=>window.completed.push('create')}/>:
- <WorkForm kind={mode==='pipeline'?'run':mode.startsWith('create-')?'create':'edit'} repositoryId={mode==='create-jira'?undefined:'repo'} jiraSourceId={mode==='create-jira'?'jira':undefined} issue={mode==='edit-issue'?window.issue:undefined} initialRef="main" options={mode==='create-jira'?{...window.options,provider:'jira'}:window.options} onClose={()=>window.completed.push('close')} onDone={()=>window.completed.push('work')}/>}
+ <WorkForm kind={mode.startsWith('pipeline')?'run':mode==='issue-comment'?'comment':mode.startsWith('create-')?'create':'edit'} repositoryId={mode==='create-jira'?undefined:'repo'} jiraSourceId={mode==='create-jira'?'jira':undefined} issue={mode==='edit-issue'||mode==='issue-comment'?window.issue:undefined} initialRef={mode==='pipeline-other-ref'?'release-branch':'main'} initialDefinition={mode==='pipeline-release'?'release':mode.startsWith('pipeline')?'build':undefined} options={mode==='create-jira'?{...window.options,provider:'jira'}:window.options} onClose={()=>window.completed.push('close')} onDone={()=>window.completed.push('work')}/>}
  </div></ApplicationStateProvider>)};
 `,
     },
@@ -266,6 +267,52 @@ try {
     1,
   )
   await page.close()
+  const drafts = await browser.newPage()
+  await drafts.route('http://drafts.test/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await drafts.goto('http://drafts.test')
+  const render = (mode) => drafts.evaluate((mode) => window.render(mode), mode)
+  await drafts.addScriptTag({ content: built.outputFiles[0].text })
+  await render('pipeline')
+  const inputs = drafts.getByLabel('Inputs (optional JSON)')
+  const ref = drafts.getByLabel('Branch or ref')
+  await ref.fill('feature/two')
+  await inputs.fill('{"target":"staging"}')
+  await render('pipeline-release')
+  await drafts.getByLabel('Pipeline', { exact: true }).waitFor()
+  assert.equal(await ref.inputValue(), 'main')
+  assert.equal(await inputs.inputValue(), '{}')
+  await render('pipeline-other-ref')
+  await drafts.waitForFunction(
+    () => document.querySelector('[aria-label="Branch or ref"]')?.value === 'release-branch',
+  )
+  assert.equal(await inputs.inputValue(), '{}')
+  await drafts.evaluate(() => {
+    window.acceptWork = true
+  })
+  await drafts.getByRole('button', { name: 'Run pipeline', exact: true }).click()
+  await drafts.waitForFunction(() => window.completed.includes('work'))
+  await render('pipeline')
+  await drafts.waitForFunction(
+    () => document.querySelector('[aria-label="Branch or ref"]')?.value === 'feature/two',
+  )
+  assert.equal(await inputs.inputValue(), '{"target":"staging"}')
+  await render('issue-comment')
+  const comment = drafts.getByRole('textbox', { name: 'Description' })
+  await comment.fill('Recover this comment after reload')
+  await drafts.reload()
+  await drafts.addScriptTag({ content: built.outputFiles[0].text })
+  await render('issue-comment')
+  assert.equal(await comment.inputValue(), 'Recover this comment after reload')
+  await render('empty')
+  await drafts.evaluate(() => {
+    window.issue = { ...window.issue, destination: 'other-account' }
+    window.render('issue-comment')
+  })
+  await comment.waitFor()
+  assert.equal(await comment.inputValue(), '')
+  await drafts.close()
   console.log(
     'Real desktop forms retain displayed targets and drafts on 409. Concurrent verified reads share identity discovery and pin both account and destination across later reads.',
   )

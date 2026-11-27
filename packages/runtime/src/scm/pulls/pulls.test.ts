@@ -554,3 +554,47 @@ it.each([false, true])(
     ).rejects.toThrow('Revision verification unavailable')
   },
 )
+
+it('compares the two viewed GitHub heads and refuses a merge-base diff after a rewrite', async () => {
+  const previousHead = 'c'.repeat(40)
+  let mergeBase = previousHead
+  const file = {
+    filename: 'test.ts',
+    status: 'modified',
+    additions: 1,
+    deletions: 1,
+    patch: '@@ -1 +1 @@\n-old\n+new',
+  }
+  const git = new GitService()
+  const api = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    return JSON.stringify(
+      args[3] === 'repos/team/project/pulls/7'
+        ? pull
+        : {
+            merge_base_commit: { sha: mergeBase },
+            files: [file],
+          },
+    )
+  })
+  const requests = new PullRequests(git)
+  const input = { number: 7, previousHead, head: pull.head.sha }
+  expect(await requests.compareRevisions('/fixture', input)).toMatchObject({
+    files: [{ path: 'test.ts', additions: 1, deletions: 1, patch: file.patch }],
+    limited: false,
+  })
+  expect(api.mock.calls[2]?.[1]?.[3]).toBe(
+    `repos/team/project/compare/${previousHead}...${pull.head.sha}?per_page=1`,
+  )
+  mergeBase = pull.base.sha
+  await expect(requests.compareRevisions('/fixture', input)).rejects.toThrow(
+    'no longer an ancestor',
+  )
+  await expect(
+    requests.compareRevisions('/fixture', { ...input, head: previousHead }),
+  ).rejects.toThrow('head changed')
+})

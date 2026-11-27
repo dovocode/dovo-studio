@@ -94,6 +94,8 @@ export class Dashboards {
     this.policies = new SourcePolicies(db, 'dashboard')
     db.exec(
       `CREATE TABLE IF NOT EXISTS dashboards(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,definition TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS dashboard_save_receipts(
+        request_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,definition TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS dashboard_sessions(dashboard TEXT NOT NULL,tile TEXT NOT NULL,
         fingerprint TEXT NOT NULL,terminal TEXT NOT NULL,PRIMARY KEY(dashboard,tile));`,
     )
@@ -130,6 +132,33 @@ export class Dashboards {
       return undefined
     }
   }
+  saveOnce(requestId: string, input: unknown, save: () => Dashboard): Dashboard {
+    const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex')
+    return this.db
+      .transaction(() => {
+        const receipt = this.db
+          .prepare('SELECT fingerprint,definition FROM dashboard_save_receipts WHERE request_id=?')
+          .get(requestId)
+        if (receipt) {
+          const saved = decode(
+            mutableStruct({ fingerprint: Schema.String, definition: Schema.String }),
+            receipt,
+          )
+          if (saved.fingerprint !== fingerprint)
+            throw new HttpError(409, 'This dashboard request ID belongs to a different save.')
+          return decode(dashboardSchema, JSON.parse(saved.definition))
+        }
+        const saved = save()
+        this.db
+          .prepare(
+            'INSERT INTO dashboard_save_receipts(request_id,fingerprint,definition) VALUES(?,?,?)',
+          )
+          .run(requestId, fingerprint, JSON.stringify(saved))
+        return saved
+      })
+      .immediate()
+  }
+
   /** Creates with expected revision 0. Updates must name the revision the client edited. */
   save(input: Dashboard, expectedRevision: number): Dashboard {
     const issues = input.tiles.map(tileIssue).filter((issue) => issue !== undefined)

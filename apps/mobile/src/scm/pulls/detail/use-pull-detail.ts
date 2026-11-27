@@ -1,3 +1,4 @@
+import { pullRevisionComparisonSchema } from '@dovo/protocol'
 import { readPullDetail } from '@dovo/studio-core/pull-reads'
 import { pullDetailReadSchema, pullSectionInterval } from '@dovo/protocol'
 import {
@@ -428,6 +429,14 @@ export function usePullDetail(
   return {
     ...overview,
     detail,
+    compareRevisions: (previousHead: string, head: string, expectedDestination?: string) =>
+      runClientEffect(
+        reader.readEffect(
+          '/api/scm/pulls/compare-revisions',
+          { repositoryId, number, connectionId, previousHead, head, expectedDestination },
+          pullRevisionComparisonSchema,
+        ),
+      ),
     sections,
     refreshing: overview.refreshing || active.refreshing,
     refresh: () => {
